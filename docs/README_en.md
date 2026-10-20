@@ -28,9 +28,6 @@ A modern, high-performance proxy client based on [Tauri 2](https://github.com/ta
 - Fixed the upstream issue where minimizing or running in the background halted WebSocket subscriptions and created gaps in traffic stats.
 - Decouples background data sampling from frontend rendering: traffic curves and cumulative totals remain continuous throughout the application's lifecycle.
 
-### 4. 🛡️ 100% Ad-Free Experience
-- Completely removed all third-party promotions, affiliate links, and advertisements.
-
 ---
 
 ## 📦 Downloads & Installation
