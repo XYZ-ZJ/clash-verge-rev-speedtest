@@ -48,30 +48,6 @@ Consulte a [documentação do projeto](https://clash-verge-rev.github.io/) para 
 
 Entre em [@clash_verge_rev](https://t.me/clash_verge_re) para acompanhar as novidades.
 
----
-
-## Promoções
-
-#### [Doggygo VPN — Acelerador global focado em desempenho](https://cvr.dginv.click/#/register?code=oaxsAGo6)
-
-- Serviço internacional de alto desempenho com teste gratuito, planos com desconto, desbloqueio de streaming e suporte de primeira linha ao protocolo Hysteria.
-- Cadastre-se pelo link exclusivo do Clash Verge e ganhe um teste de 3 dias com 1 GB de tráfego diário: [Cadastre-se](https://cvr.dginv.click/#/register?code=oaxsAGo6)
-- Cupom exclusivo de 20% de desconto para usuários do Clash Verge: `verge20` (limitado a 500 usos)
-- Plano promocional a partir de ¥15,8 por mês com 160 GB, mais 20% de desconto adicional no pagamento anual
-- Equipe sediada no exterior para um serviço confiável, com até 50% de comissão compartilhada
-- Clusters balanceados com rotas dedicadas de alta velocidade (compatíveis com clientes antigos), latência extremamente baixa, reprodução 4K sem travamentos
-- Primeiro provedor global com **protocolo QUIC**, agora com protocolos da família QUIC mais rápidos (ideal para o cliente Clash Verge)
-- Desbloqueia serviços de streaming e acesso ao ChatGPT
-- Site oficial: [https://狗狗加速.com](https://cvr.dginv.click/#/register?code=oaxsAGo6)
-
-### 🤖 [GPTKefu — Plataforma de atendimento ao cliente com IA integrada ao Crisp](https://gptkefu.com)
-
-- 🧠 Compreensão profunda de todo o contexto da conversa + reconhecimento de imagens, com respostas profissionais e precisas de forma automática, sem respostas robóticas.
-- ♾️ **Respostas ilimitadas**, sem preocupação com cotas — ao contrário de outros produtos de IA que cobram por mensagem.
-- 💬 Consultas de pré-venda, suporte pós-venda, resolução de problemas complexos — cobre todos os cenários com facilidade, com casos reais comprovados.
-- ⚡ Configuração em 3 minutos, sem curva de aprendizado — melhora na hora a eficiência e a satisfação do cliente.
-- 🎁 Teste gratuito de 14 dias do plano Premium — experimente antes de pagar: 👉 [Testar grátis](https://gptkefu.com)
-- 📢 Canal do Telegram do atendimento com IA: [@crisp_ai](https://t.me/crisp_ai)
 
 ---
 
