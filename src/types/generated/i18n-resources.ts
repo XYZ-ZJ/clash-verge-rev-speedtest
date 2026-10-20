@@ -120,6 +120,19 @@ export interface TranslationResources {
             tunMode: string
           }
         }
+        speedTest: {
+          actions: {
+            start: string
+            testing: string
+          }
+          metrics: {
+            download: string
+            latency: string
+            packetLoss: string
+            upload: string
+          }
+          title: string
+        }
         systemInfo: {
           actions: {
             settings: string
@@ -149,6 +162,8 @@ export interface TranslationResources {
             smooth: string
           }
           diagnostics: string
+          directTraffic: string
+          downloaded: string
           legends: {
             download: string
             upload: string
@@ -162,7 +177,9 @@ export interface TranslationResources {
           patterns: {
             minutes: string
           }
+          proxyTraffic: string
           unknownTime: string
+          uploaded: string
         }
       }
       page: {
@@ -179,6 +196,7 @@ export interface TranslationResources {
             network: string
             profile: string
             proxyMode: string
+            speedtest: string
             systemInfo: string
             tests: string
             traffic: string

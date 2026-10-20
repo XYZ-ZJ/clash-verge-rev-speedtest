@@ -69,6 +69,7 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd::open_devtools,
             cmd::exit_app,
             cmd::get_network_interfaces_info,
+            cmd::test_network_speed,
             cmd::get_profiles,
             cmd::enhance_profiles,
             cmd::patch_profiles_config,

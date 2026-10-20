@@ -1056,3 +1056,23 @@ export type WebDavFile = {
 export type YamlMapping = { [key in string]: JsonValue }
 
 export type YamlValue = JsonValue
+
+export type SpeedTestProgress = {
+  stage: string
+  latency: number | null
+  loss_rate: number | null
+  download_speed: number | null
+  upload_speed: number | null
+  location: string | null
+  timestamp: string | null
+  error: string | null
+}
+
+export type SpeedTestResult = {
+  latency: number
+  loss_rate: number
+  download_speed: number
+  upload_speed: number
+  location: string
+  timestamp: string
+}

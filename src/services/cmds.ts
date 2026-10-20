@@ -11,6 +11,8 @@ import type {
   ListenerProbe,
   ProxyPortSettings,
   UnlockItem,
+  SpeedTestProgress,
+  SpeedTestResult,
   ProxyViewV1_Serialize as ProxyViewV1,
   ProfileSelection,
   ProfilePatch,
@@ -511,4 +513,8 @@ export async function checkMediaUnlock(onComplete: Channel<UnlockItem>) {
 
 export async function checkMediaUnlockItem(name: string) {
   return commands.checkMediaUnlockItem(name)
+}
+
+export async function testNetworkSpeed(onProgress: Channel<SpeedTestProgress>) {
+  return commands.testNetworkSpeed(onProgress)
 }

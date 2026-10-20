@@ -39,6 +39,10 @@ import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
 import { openExternalUrl } from '@/utils/open-external-url'
 
+const preloadSpeedTestCard = () =>
+  import('@/components/home/network-speed-test-card').then((module) => ({
+    default: module.NetworkSpeedTestCard,
+  }))
 const preloadTestCard = () =>
   import('@/components/home/test-card').then((module) => ({
     default: module.TestCard,
@@ -56,6 +60,7 @@ const preloadSystemInfoCard = () =>
     default: module.SystemInfoCard,
   }))
 
+const LazySpeedTestCard = lazy(preloadSpeedTestCard)
 const LazyTestCard = lazy(preloadTestCard)
 const LazyIpInfoCard = lazy(preloadIpInfoCard)
 const LazyClashInfoCard = lazy(preloadClashInfoCard)
@@ -65,6 +70,7 @@ const LazySystemInfoCard = lazy(preloadSystemInfoCard)
 // eslint-disable-next-line react-refresh/only-export-components
 export const preloadHomePageCards = () =>
   Promise.all([
+    preloadSpeedTestCard().catch(() => {}),
     preloadTestCard().catch(() => {}),
     preloadIpInfoCard().catch(() => {}),
     preloadClashInfoCard().catch(() => {}),
@@ -78,6 +84,7 @@ interface HomeCardsSettings {
   network: boolean
   mode: boolean
   traffic: boolean
+  speedtest: boolean
   info: boolean
   clashinfo: boolean
   systeminfo: boolean
@@ -93,6 +100,7 @@ const DEFAULT_HOME_CARDS: HomeCardsSettings = {
   network: true,
   mode: true,
   traffic: true,
+  speedtest: true,
   clashinfo: true,
   systeminfo: true,
   test: true,
@@ -292,6 +300,12 @@ const HomePage = () => {
           <EnhancedTrafficStats />
         </EnhancedCard>,
         12,
+      ),
+      renderCard(
+        'speedtest',
+        <Suspense fallback={<Skeleton variant="rectangular" height={200} />}>
+          <LazySpeedTestCard />
+        </Suspense>,
       ),
       renderCard(
         'test',

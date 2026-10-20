@@ -97,3 +97,290 @@ pub struct AutoProxy {
     pub enable: bool,
     pub url: String,
 }
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct SpeedTestProgress {
+    pub stage: std::string::String,
+    pub latency: Option<u32>,
+    pub loss_rate: Option<f64>,
+    pub download_speed: Option<f64>,
+    pub upload_speed: Option<f64>,
+    pub location: Option<std::string::String>,
+    pub timestamp: Option<std::string::String>,
+    pub error: Option<std::string::String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct SpeedTestResult {
+    pub latency: u32,
+    pub loss_rate: f64,
+    pub download_speed: f64,
+    pub upload_speed: f64,
+    pub location: std::string::String,
+    pub timestamp: std::string::String,
+}
+
+static SPEEDTEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+#[specta::specta]
+pub async fn test_network_speed(
+    on_progress: tauri::ipc::Channel<SpeedTestProgress>,
+) -> CmdResult<SpeedTestResult> {
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+
+    if SPEEDTEST_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(super::CommandFailure::plain("测速正在进行中，请稍候"));
+    }
+
+    let _guard = scopeguard::guard((), |_| {
+        SPEEDTEST_RUNNING.store(false, Ordering::SeqCst);
+    });
+
+    let port = crate::config::MixedPort::effective().await;
+    if port == 0 {
+        return Err(super::CommandFailure::plain("内核未运行或未获取到代理端口"));
+    }
+
+    let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))
+        .map_err(|e| super::CommandFailure::plain(format!("创建代理失败: {e}")))?;
+
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .tcp_keepalive(Duration::from_secs(30))
+        .proxy(proxy)
+        .build()
+        .map_err(|e| super::CommandFailure::plain(format!("创建HTTP客户端失败: {e}")))?;
+
+    let _ = on_progress.send(SpeedTestProgress {
+        stage: "start".to_string(),
+        latency: None,
+        loss_rate: None,
+        download_speed: None,
+        upload_speed: None,
+        location: None,
+        timestamp: None,
+        error: None,
+    });
+
+    // Phase 1: Ping / Latency, packet loss, and location
+    let probe_count = 8;
+    let mut delays = Vec::with_capacity(probe_count);
+    let mut failed_probes = 0;
+    let mut location: Option<std::string::String> = None;
+
+    for _ in 0..probe_count {
+        let t0 = Instant::now();
+        let resp = tokio::time::timeout(
+            Duration::from_millis(2500),
+            client.get("https://speed.cloudflare.com/__down?bytes=0").send(),
+        )
+        .await;
+
+        match resp {
+            Ok(Ok(response)) if response.status().is_success() => {
+                let rtt = t0.elapsed().as_millis() as u32;
+                delays.push(rtt);
+
+                if location.is_none() {
+                    let headers = response.headers();
+                    let city = headers
+                        .get("cf-meta-city")
+                        .or_else(|| headers.get("city"))
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    let country = headers
+                        .get("cf-meta-country")
+                        .or_else(|| headers.get("country"))
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+
+                    location = match (city, country) {
+                        (Some(c), Some(co)) => Some(format!("{c}, {co}")),
+                        (Some(c), None) => Some(c.to_string()),
+                        (None, Some(co)) => Some(co.to_string()),
+                        (None, None) => None,
+                    };
+                }
+            }
+            _ => {
+                failed_probes += 1;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+
+    if delays.is_empty() {
+        let err_msg = "测速失败：所有网络探测均超时或连接失败";
+        let _ = on_progress.send(SpeedTestProgress {
+            stage: "error".to_string(),
+            latency: None,
+            loss_rate: Some(100.0),
+            download_speed: None,
+            upload_speed: None,
+            location: None,
+            timestamp: None,
+            error: Some(err_msg.to_string()),
+        });
+        return Err(super::CommandFailure::plain(err_msg));
+    }
+
+    let avg_latency = delays.iter().sum::<u32>() / (delays.len() as u32);
+    let loss_rate = (failed_probes as f64 / probe_count as f64) * 100.0;
+    let rounded_loss_rate = (loss_rate * 10.0).round() / 10.0;
+
+    let _ = on_progress.send(SpeedTestProgress {
+        stage: "ping".to_string(),
+        latency: Some(avg_latency),
+        loss_rate: Some(rounded_loss_rate),
+        download_speed: None,
+        upload_speed: None,
+        location: location.clone(),
+        timestamp: None,
+        error: None,
+    });
+
+    // Phase 2: Download test
+    let dl_start = Instant::now();
+    let max_dl_duration = Duration::from_secs(8);
+    let mut total_dl_bytes = 0u64;
+    let mut last_progress = Instant::now();
+
+    if let Ok(Ok(mut resp)) = tokio::time::timeout(
+        Duration::from_secs(10),
+        client.get("https://speed.cloudflare.com/__down?bytes=25000000").send(),
+    )
+    .await
+    {
+        if resp.status().is_success() {
+            while let Ok(Some(chunk)) = resp.chunk().await {
+                total_dl_bytes += chunk.len() as u64;
+                let elapsed = dl_start.elapsed();
+
+                if last_progress.elapsed() >= Duration::from_millis(200) {
+                    let secs = elapsed.as_secs_f64();
+                    if secs > 0.05 {
+                        let mb = (total_dl_bytes as f64) / (1024.0 * 1024.0);
+                        let spd = (mb / secs * 10.0).round() / 10.0;
+                        let _ = on_progress.send(SpeedTestProgress {
+                            stage: "download".to_string(),
+                            latency: Some(avg_latency),
+                            loss_rate: Some(rounded_loss_rate),
+                            download_speed: Some(spd),
+                            upload_speed: None,
+                            location: location.clone(),
+                            timestamp: None,
+                            error: None,
+                        });
+                    }
+                    last_progress = Instant::now();
+                }
+
+                if elapsed >= max_dl_duration {
+                    break;
+                }
+            }
+        }
+    }
+
+    let dl_secs = dl_start.elapsed().as_secs_f64();
+    let final_dl_speed = if dl_secs > 0.05 && total_dl_bytes > 0 {
+        let mb = (total_dl_bytes as f64) / (1024.0 * 1024.0);
+        (mb / dl_secs * 10.0).round() / 10.0
+    } else {
+        0.0
+    };
+
+    let _ = on_progress.send(SpeedTestProgress {
+        stage: "upload_start".to_string(),
+        latency: Some(avg_latency),
+        loss_rate: Some(rounded_loss_rate),
+        download_speed: Some(final_dl_speed),
+        upload_speed: Some(0.0),
+        location: location.clone(),
+        timestamp: None,
+        error: None,
+    });
+
+    // Phase 3: Upload test
+    let ul_start = Instant::now();
+    let mut final_ul_speed = 0.0;
+    let payload_size = 5 * 1024 * 1024; // 5MB
+    let payload = vec![0u8; payload_size];
+
+    let ul_result = tokio::time::timeout(
+        Duration::from_secs(8),
+        client
+            .post("https://speed.cloudflare.com/__up")
+            .body(payload)
+            .send(),
+    )
+    .await;
+
+    match ul_result {
+        Ok(Ok(resp)) if resp.status().is_success() => {
+            let ul_secs = ul_start.elapsed().as_secs_f64();
+            if ul_secs > 0.05 {
+                let mb = (payload_size as f64) / (1024.0 * 1024.0);
+                final_ul_speed = (mb / ul_secs * 10.0).round() / 10.0;
+            }
+        }
+        _ => {
+            // Fallback with 1MB payload
+            let small_payload_size = 1024 * 1024;
+            let small_payload = vec![0u8; small_payload_size];
+            let small_start = Instant::now();
+            if let Ok(Ok(resp)) = tokio::time::timeout(
+                Duration::from_secs(4),
+                client
+                    .post("https://speed.cloudflare.com/__up")
+                    .body(small_payload)
+                    .send(),
+            )
+            .await
+            {
+                if resp.status().is_success() {
+                    let small_secs = small_start.elapsed().as_secs_f64();
+                    if small_secs > 0.05 {
+                        let mb = (small_payload_size as f64) / (1024.0 * 1024.0);
+                        final_ul_speed = (mb / small_secs * 10.0).round() / 10.0;
+                    }
+                }
+            }
+        }
+    }
+
+    let timestamp = chrono::Local::now().format("%Y/%m/%d %H:%M").to_string();
+    let final_location = location.unwrap_or_else(|| "Unknown".to_string());
+
+    let result = SpeedTestResult {
+        latency: avg_latency,
+        loss_rate: rounded_loss_rate,
+        download_speed: final_dl_speed,
+        upload_speed: final_ul_speed,
+        location: final_location.clone(),
+        timestamp: timestamp.clone(),
+    };
+
+    let _ = on_progress.send(SpeedTestProgress {
+        stage: "finished".to_string(),
+        latency: Some(result.latency),
+        loss_rate: Some(result.loss_rate),
+        download_speed: Some(result.download_speed),
+        upload_speed: Some(result.upload_speed),
+        location: Some(result.location.clone()),
+        timestamp: Some(result.timestamp.clone()),
+        error: None,
+    });
+
+    Ok(result)
+}
+

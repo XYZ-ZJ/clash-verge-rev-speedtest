@@ -20,7 +20,8 @@
         "tests": "Website Tests Card",
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
-        "systemInfo": "System Info Cards"
+        "systemInfo": "System Info Cards",
+        "speedtest": "Speed Test Card"
       },
       "title": "Home Settings"
     },
@@ -135,7 +136,11 @@
         "smooth": "Smooth",
         "linear": "Linear"
       },
-      "diagnostics": "Points: {{points}} | Compressed: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Points: {{points}} | Compressed: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Proxy Traffic",
+      "directTraffic": "Direct Traffic",
+      "downloaded": "Downloaded",
+      "uploaded": "Uploaded"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,19 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "Speed Test",
+      "actions": {
+        "start": "Start Test",
+        "testing": "Testing"
+      },
+      "metrics": {
+        "latency": "Latency",
+        "packetLoss": "Packet Loss",
+        "download": "Download",
+        "upload": "Upload"
       }
     }
   }

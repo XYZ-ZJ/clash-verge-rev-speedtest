@@ -20,7 +20,8 @@
         "tests": "網站測試卡",
         "ip": "IP資訊卡",
         "clashInfo": "Clash 資訊卡",
-        "systemInfo": "系統資訊卡"
+        "systemInfo": "系統資訊卡",
+        "speedtest": "網路測速卡"
       },
       "title": "首頁設定"
     },
@@ -135,7 +136,11 @@
         "smooth": "平滑",
         "linear": "線性"
       },
-      "diagnostics": "資料點：{{points}} | 壓縮後：{{compressed}} | 影格率：{{fps}}"
+      "diagnostics": "資料點：{{points}} | 壓縮後：{{compressed}} | 影格率：{{fps}}",
+      "proxyTraffic": "代理流量",
+      "directTraffic": "直連流量",
+      "downloaded": "下載量",
+      "uploaded": "上傳量"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,19 @@
         "rule": "依照規則自動選擇代理。",
         "global": "將所有網路請求轉送至所選代理。",
         "direct": "略過代理，直接連線至網際網路。"
+      }
+    },
+    "speedTest": {
+      "title": "網路測速",
+      "actions": {
+        "start": "開始測速",
+        "testing": "測速中"
+      },
+      "metrics": {
+        "latency": "延遲",
+        "packetLoss": "丟包率",
+        "download": "下載速度",
+        "upload": "上傳速度"
       }
     }
   }

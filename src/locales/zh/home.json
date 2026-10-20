@@ -20,7 +20,8 @@
         "tests": "网站测试卡",
         "ip": "IP 信息卡",
         "clashInfo": "Clash 信息卡",
-        "systemInfo": "系统信息卡"
+        "systemInfo": "系统信息卡",
+        "speedtest": "网络测速卡"
       },
       "title": "首页设置"
     },
@@ -135,7 +136,11 @@
         "smooth": "平滑",
         "linear": "线性"
       },
-      "diagnostics": "数据点：{{points}} | 压缩后：{{compressed}} | 帧率：{{fps}}"
+      "diagnostics": "数据点：{{points}} | 压缩后：{{compressed}} | 帧率：{{fps}}",
+      "proxyTraffic": "代理流量",
+      "directTraffic": "直连流量",
+      "downloaded": "下载量",
+      "uploaded": "上传量"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,19 @@
         "rule": "基于预设规则智能判断流量走向，提供灵活的代理策略",
         "global": "所有流量均通过代理服务器，适用于需要全局科学上网的场景",
         "direct": "所有流量不经过代理节点，但经过 Clash 内核转发连接目标服务器，适用于需要通过内核进行分流的特定场景"
+      }
+    },
+    "speedTest": {
+      "title": "网络测速",
+      "actions": {
+        "start": "开始测速",
+        "testing": "测速中"
+      },
+      "metrics": {
+        "latency": "延迟",
+        "packetLoss": "丢包率",
+        "download": "下载速度",
+        "upload": "上传速度"
       }
     }
   }

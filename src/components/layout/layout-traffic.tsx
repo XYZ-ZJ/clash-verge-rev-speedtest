@@ -29,7 +29,7 @@ export const LayoutTraffic = () => {
 
   const {
     response: { data: traffic },
-  } = useTrafficData({ enabled: pageVisible })
+  } = useTrafficData({ enabled: true })
   const {
     response: { data: memory },
   } = useMemoryData({ enabled: displayMemory && pageVisible })
