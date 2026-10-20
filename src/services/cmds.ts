@@ -30,6 +30,8 @@ export type {
   ListenerTransport,
   ListenerProbe,
   UnlockItem,
+  SpeedTestProgress,
+  SpeedTestResult,
 } from './bindings'
 
 export async function copyClashEnv() {

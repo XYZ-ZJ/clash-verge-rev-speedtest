@@ -226,6 +226,8 @@ export const commands = {
     __TAURI_INVOKE<UnlockItem[]>('check_media_unlock', { onComplete }),
   checkMediaUnlockItem: (name: string) =>
     __TAURI_INVOKE<UnlockItem>('check_media_unlock_item', { name }),
+  testNetworkSpeed: (onProgress: Channel<SpeedTestProgress>) =>
+    __TAURI_INVOKE<SpeedTestResult>('test_network_speed', { onProgress }),
 }
 
 /* Types */
