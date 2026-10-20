@@ -1,5 +1,7 @@
 # Clash Verge Rev (SpeedTest & Traffic Enhanced)
 
+> 本项目 Fork 自上游官方仓库主分支：[clash-verge-rev/clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) (分支：`dev`)
+
 基于 [Tauri 2](https://github.com/tauri-apps/tauri) 与 [Mihomo(Clash.Meta)](https://github.com/MetaCubeX/mihomo) 内核的现代化代理客户端增强版，新增**当前代理节点测速卡片**、**代理与直连双流分类流量统计**，并彻底修复了**后台运行时不统计流量**的问题。
 
 ---

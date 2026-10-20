@@ -1,5 +1,7 @@
 # Clash Verge Rev (SpeedTest & Traffic Enhanced)
 
+> Forked from the upstream official repository main branch: [clash-verge-rev/clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) (branch: `dev`).
+
 A modern, high-performance proxy client based on [Tauri 2](https://github.com/tauri-apps/tauri) and the [Mihomo (Clash.Meta)](https://github.com/MetaCubeX/mihomo) core. This fork features an **Active Proxy Speedtest Card**, **Proxy & Direct Split Traffic Stats**, and a comprehensive fix for **background traffic tracking**.
 
 ---
