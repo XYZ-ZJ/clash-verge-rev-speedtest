@@ -1,106 +1,50 @@
-<h1 align="center">
-  <img src="../src-tauri/icons/icon.png" alt="Clash" width="128" />
-  <br>
-  Continuation of <a href="https://github.com/zzzgydi/clash-verge">Clash Verge</a>
-  <br>
-</h1>
+# Clash Verge Rev (SpeedTest & Traffic Enhanced)
 
-<h3 align="center">
-A Clash Meta GUI built with <a href="https://github.com/tauri-apps/tauri">Tauri</a>.
-</h3>
-
-<p align="center">
-  Languages:
-  <a href="./README_en.md">English</a> ·
-  <a href="./README_es.md">Español</a> ·
-  <a href="./README_fa.md">فارسی</a> ·
-  <a href="./README_ja.md">日本語</a> ·
-  <a href="./README_ko.md">한국어</a> ·
-  <a href="./README_pt.md">Português</a> ·
-  <a href="./README_ru.md">Русский</a> ·
-  <a href="../README.md">简体中文</a>
-</p>
-
-## Preview
-
-| Dark                                | Light                                 |
-| ----------------------------------- | ------------------------------------- |
-| ![Dark Preview](./preview_dark.png) | ![Light Preview](./preview_light.png) |
-
-## Install
-
-Visit the [Release page](https://github.com/clash-verge-rev/clash-verge-rev/releases) to download the installer that matches your platform.<br>
-We provide packages for Windows (x64/x86), Linux (x64/arm64), and macOS 10.15+ (Intel/Apple).
-
-#### Choosing a Release Channel
-
-| Channel     | Description                                                           | Link                                                                                   |
-| :---------- | :-------------------------------------------------------------------- | :------------------------------------------------------------------------------------- |
-| Stable      | Official builds with high reliability, ideal for daily use.           | [Release](https://github.com/clash-verge-rev/clash-verge-rev/releases)                 |
-| Alpha (EOL) | Legacy builds used to validate the publish pipeline.                  | [Alpha](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/alpha)         |
-| AutoBuild   | Rolling builds for testing and feedback. Expect experimental changes. | [AutoBuild](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/autobuild) |
-
-#### Installation Guides & FAQ
-
-Read the [project documentation](https://clash-verge-rev.github.io/) for install steps, troubleshooting, and frequently asked questions.
-
-### Telegram Channel
-
-Join [@clash_verge_rev](https://t.me/clash_verge_re) for update announcements.
-
+A modern, high-performance proxy client based on [Tauri 2](https://github.com/tauri-apps/tauri) and the [Mihomo (Clash.Meta)](https://github.com/MetaCubeX/mihomo) core. This fork features an **Active Proxy Speedtest Card**, **Proxy & Direct Split Traffic Stats**, and a comprehensive fix for **background traffic tracking**.
 
 ---
 
-## Features
+## 🌟 Enhanced Features in This Fork
 
-- Built on high-performance Rust with the Tauri 2 framework
-- Ships with the embedded [Clash.Meta (mihomo)](https://github.com/MetaCubeX/mihomo) core and supports switching to the `Alpha` channel
-- Clean, polished UI with theme color controls, proxy group/tray icons, and `CSS Injection`
-- Enhanced profile management (Merge and Script helpers) with configuration syntax hints
-- System proxy controls, guard mode, and `TUN` (virtual network adapter) support
-- Visual editors for nodes and rules
-- WebDAV-based backup and sync for configurations
+### 1. 🚀 Active Proxy Network Speedtest
+- **True Proxy Testing**: Integrated directly on the main dashboard, speed tests route strictly through the active proxy node via the live Mixed Port tunnel.
+- **4 Key Metrics**:
+  - **Latency (Ping)**: Average round-trip time across multiple probes.
+  - **Packet Loss (%)**: Probe failure percentage.
+  - **Download Speed (MB/s)**: Real-time streaming download bandwidth test.
+  - **Upload Speed (MB/s)**: Real-time upload bandwidth test.
+- **Node Location & Timestamp**:
+  - Automatically identifies and displays the outbound location of the tested node (e.g. `Singapore, SG`).
+  - Displays the completion timestamp on the bottom-right.
+- **Persistent State**: Test results are automatically cached locally; the card can be toggled on/off in the home settings dialog.
 
-### FAQ
+### 2. 📊 Split Traffic Stats (Proxy vs. Direct)
+- Refactored cluttered individual metric cards into two clean, informative cards:
+  - **● Proxy Traffic**: Real-time upload/download speeds and cumulative downloaded/uploaded volume routed through proxy nodes.
+  - **● Direct Traffic**: Real-time upload/download speeds and cumulative downloaded/uploaded volume routed through DIRECT connections.
+- Clean dual-color styling paired with the real-time canvas traffic graph.
 
-See the [FAQ page](https://clash-verge-rev.github.io/faq/windows.html) for platform-specific guidance.
+### 3. 🔄 Continuous Background Traffic Tracking
+- Fixed the upstream issue where minimizing or running in the background halted WebSocket subscriptions and created gaps in traffic stats.
+- Decouples background data sampling from frontend rendering: traffic curves and cumulative totals remain continuous throughout the application's lifecycle.
 
-### Donation
+### 4. 🛡️ 100% Ad-Free Experience
+- Completely removed all third-party promotions, affiliate links, and advertisements.
 
-[Support Clash Verge Rev development](https://github.com/sponsors/clash-verge-rev)
+---
 
-## Development
+## 📦 Downloads & Installation
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed contribution guidelines.
+Download the latest releases from this repository:
 
-After installing all **Tauri** prerequisites, run the development shell with:
+👉 **[Download Latest Release](https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases)**
 
-```shell
-pnpm i
-pnpm run prebuild
-pnpm dev
-```
+| Architecture | Package | Description |
+| :--- | :--- | :--- |
+| **Windows x64** | `Clash.Verge_2.5.9_x64-setup.exe` | Recommended 64-bit installer, signed with dedicated Minisign key |
 
-## Contributions
+---
 
-Issues and pull requests are welcome!
+## 📜 License
 
-## Acknowledgement
-
-Clash Verge Rev builds on or draws inspiration from these projects:
-
-- [zzzgydi/clash-verge](https://github.com/zzzgydi/clash-verge): A Tauri-based Clash GUI for Windows, macOS, and Linux.
-- [tauri-apps/tauri](https://github.com/tauri-apps/tauri): Build smaller, faster, more secure desktop apps with a web frontend.
-- [Dreamacro/clash](https://github.com/Dreamacro/clash): A rule-based tunnel written in Go.
-- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo): A rule-based tunnel written in Go.
-- [Fndroid/clash_for_windows_pkg](https://github.com/Fndroid/clash_for_windows_pkg): A Clash GUI for Windows and macOS.
-- [vitejs/vite](https://github.com/vitejs/vite): Next-generation frontend tooling with blazing-fast DX.
-
-## Privacy
-
-Clash Verge Rev does not collect any user data; configuration and logs stay on
-your own device. See the [Privacy Policy](../PRIVACY.md) for details.
-
-## License
-
-GPL-3.0 License. See the [license file](../LICENSE) for details.
+This project is licensed under the [GPL-3.0 License](./LICENSE).

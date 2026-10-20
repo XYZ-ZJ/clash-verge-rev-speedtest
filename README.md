@@ -1,112 +1,62 @@
-<h1 align="center">
-  <img src="./src-tauri/icons/icon.png" alt="Clash" width="128" />
-  <br>
-  Continuation of <a href="https://github.com/zzzgydi/clash-verge">Clash Verge</a>
-  <br>
-</h1>
+# Clash Verge Rev (SpeedTest & Traffic Enhanced)
 
-<h3 align="center">
-A Clash Meta GUI based on <a href="https://github.com/tauri-apps/tauri">Tauri</a>.
-</h3>
-
-<p align="center">
-  Languages:
-  <a href="./docs/README_en.md">English</a> ·
-  <a href="./docs/README_es.md">Español</a> ·
-  <a href="./docs/README_fa.md">فارسی</a> ·
-  <a href="./docs/README_ja.md">日本語</a> ·
-  <a href="./docs/README_ko.md">한국어</a> ·
-  <a href="./docs/README_pt.md">Português</a> ·
-  <a href="./docs/README_ru.md">Русский</a> ·
-  <a href="./README.md">简体中文</a>
-</p>
-
-## Preview
-
-| Dark                             | Light                             |
-| -------------------------------- | --------------------------------- |
-| ![预览](./docs/preview_dark.png) | ![预览](./docs/preview_light.png) |
-
-## Install
-
-请到发布页面下载对应的安装包：[Release page](https://github.com/clash-verge-rev/clash-verge-rev/releases)<br>
-Go to the [Release page](https://github.com/clash-verge-rev/clash-verge-rev/releases) to download the corresponding installation package<br>
-Supports Windows (x64/x86), Linux (x64/arm64) and macOS 11+ (intel/apple).
-支持 Windows (x64/x86)、Linux (x64/arm64) 和 macOS 11+ (intel/apple)。
-
-#### 我应当怎样选择发行版
-
-| 版本        | 特征                                     | 链接                                                                                   |
-| :---------- | :--------------------------------------- | :------------------------------------------------------------------------------------- |
-| Stable      | 正式版，高可靠性，适合日常使用。         | [Release](https://github.com/clash-verge-rev/clash-verge-rev/releases)                 |
-| Alpha(废弃) | 测试发布流程。                           | [Alpha](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/alpha)         |
-| AutoBuild   | 滚动更新版，适合测试反馈，可能存在缺陷。 | [AutoBuild](https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/autobuild) |
-
-#### 安装说明和常见问题，请到 [文档页](https://clash-verge-rev.github.io/) 查看
-
-### TG 频道: [@clash_verge_rev](https://t.me/clash_verge_re)
-
+基于 [Tauri 2](https://github.com/tauri-apps/tauri) 与 [Mihomo(Clash.Meta)](https://github.com/MetaCubeX/mihomo) 内核的现代化代理客户端增强版，新增**当前代理节点测速卡片**、**代理与直连双流分类流量统计**，并彻底修复了**后台运行时不统计流量**的问题。
 
 ---
 
-## Features
+## 🌟 本版本新增与增强功能
 
-- 基于性能强劲的 Rust 和 Tauri 2 框架
-- 内置[Clash.Meta(mihomo)](https://github.com/MetaCubeX/mihomo)内核，并支持切换 `Alpha` 版本内核。
-- 简洁美观的用户界面，支持自定义主题颜色、代理组/托盘图标以及 `CSS Injection`。
-- 配置文件管理和增强（Merge 和 Script），配置文件语法提示。
-- 系统代理和守卫、`TUN(虚拟网卡)` 模式。
-- 可视化节点和规则编辑
-- WebDav 配置备份和同步
+### 1. 🚀 当前代理节点网络测速 (Active Proxy Speedtest)
+- **精准测速**：在主界面新增专属网络测速卡片，测速流量严格通过当前生效的代理节点（Mixed Port）隧道发出，真实反映代理节点的出海网络表现。
+- **四维核心指标**：
+  - **延迟 (Ping)**：毫秒级多轮探测平均 RTT。
+  - **丢包率 (%)**：HTTPS 探测失败率。
+  - **下载速度 (MB/s)**：真实流式下载测速。
+  - **上传速度 (MB/s)**：真实上行测速。
+- **出口属地与时间记录**：
+  - 卡片左下角自动解析并显示测速节点的出口所在地（例如 `Singapore, SG`）。
+  - 右下角展示测速完成时间戳。
+- **状态记忆与首页设置**：测速结果自动持久化至本地缓存，重新启动或切换路由仍保留上次测速数据；支持在首页设置弹窗中自定义开启或关闭卡片展示。
 
-### FAQ
+### 2. 📊 代理流量与直连流量分类统计 (Split Traffic Stats)
+- 将原来分散的指标卡片重构为清晰直观的分类流量双卡片：
+  - **「● 代理流量」卡片**：展示经由代理节点转发的实时下载/上传速率，以及代理连接的累计下载/上传总量。
+  - **「● 直连流量」卡片**：展示走直连（DIRECT）规则的实时下载/上传速率，以及直连连接的累计下载/上传总量。
+- 采用双色主题与自适应栅格布局，搭配顶部的平滑流量曲线图，网络使用情况一目了然。
 
-Refer to [Doc FAQ Page](https://clash-verge-rev.github.io/faq/windows.html)
+### 3. 🔄 彻底解决后台不统计流量的问题
+- 针对原版在窗口最小化或后台运行状态下暂停 WebSocket 监听导致流量统计中断的问题进行了彻底重构：
+  - **数据采集与界面渲染解耦**：Mihomo 内核流量与连接数据长连接在后台持续保持，实时采样与累计统计不间断。
+  - **平滑重绘**：窗口从系统托盘唤醒时自动同步后台全量采样数据，流量图连贯完整，彻底告别流量断层与数据空白。
 
-### Donation
+### 4. 🛡️ 纯净体验，无广告推广
+- 彻底移除了原版文档及页面中混入的所有机场推荐与商业推广内容，还原本体客户端的纯粹体验。
 
-[捐助Clash Verge Rev的开发](https://github.com/sponsors/clash-verge-rev)
+---
 
-## Development
+## 📦 下载与安装
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for more details.
+请前往本仓库的发布页面下载最新构建的安装包：
 
-To run the development server, execute the following commands after all prerequisites for **Tauri** are installed:
+👉 **[下载最新版本 (Releases)](https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases)**
 
-```shell
-pnpm i
-pnpm run prebuild
-pnpm dev
-```
+| 系统架构 | 安装包格式 | 说明 |
+| :--- | :--- | :--- |
+| **Windows x64** | `Clash.Verge_2.5.9_x64-setup.exe` | 推荐，64位 Windows 独立安装包（已使用专属密钥完成安全签名） |
 
-`pnpm dev` preserves the Development Channel's installed service state: an
-existing service is used, while a previously uninstalled service remains
-uninstalled and the app starts in Sidecar mode. Use `pnpm dev:service` to
-explicitly install or update the isolated development service before launch,
-or `pnpm dev:sidecar` to force the unprivileged Sidecar workflow.
+---
 
-## Contributions
+## 🛠️ 核心基础特性
 
-Issue and PR welcome!
+- 基于高性能的 **Rust** 与 **Tauri 2** 架构构建。
+- 内置 **Clash.Meta (Mihomo)** 核心，支持自适应切换与参数增强。
+- 强大的配置扩展能力（支持 Merge 与脚本扩展）。
+- 完善的系统代理守卫与 **TUN（虚拟网卡）** 模式。
+- 可视化代理组策略选择与节点延迟检测。
+- 支持 WebDAV 云端备份与多端配置同步。
 
-## Acknowledgement
+---
 
-Clash Verge rev was based on or inspired by these projects and so on:
+## 📜 开源协议
 
-- [zzzgydi/clash-verge](https://github.com/zzzgydi/clash-verge): A Clash GUI based on tauri. Supports Windows, macOS and Linux.
-- [tauri-apps/tauri](https://github.com/tauri-apps/tauri): Build smaller, faster, and more secure desktop applications with a web frontend.
-- [Dreamacro/clash](https://github.com/Dreamacro/clash): A rule-based tunnel in Go.
-- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo): A rule-based tunnel in Go.
-- [Fndroid/clash_for_windows_pkg](https://github.com/Fndroid/clash_for_windows_pkg): A Windows/macOS GUI based on Clash.
-- [vitejs/vite](https://github.com/vitejs/vite): Next generation frontend tooling. It's fast!
-
-## Privacy
-
-Clash Verge Rev 不收集任何用户数据，配置与日志仅保存在本地。详见[隐私政策](./PRIVACY.md)。
-
-Clash Verge Rev does not collect any user data; configuration and logs stay on
-your own device. See the [Privacy Policy](./PRIVACY.md) for details.
-
-## License
-
-GPL-3.0 License. See [License here](./LICENSE) for details.
+本项目基于 [GPL-3.0 License](./LICENSE) 开源。
