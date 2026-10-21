@@ -93,20 +93,31 @@ interface StoredTrafficTotals {
   kernelUpTotal: number
 }
 
-const loadStoredTotals = (): StoredTrafficTotals => {
+const loadStoredTotals = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PROXY_TOTALS)
+    const raw =
+      typeof window !== 'undefined'
+        ? localStorage.getItem(STORAGE_KEY_PROXY_TOTALS)
+        : null
     if (raw) {
-      return JSON.parse(raw) as StoredTrafficTotals
+      const parsed = JSON.parse(raw)
+      return {
+        seen: new Map<string, { down: number; up: number }>(),
+        proxyDownTotal: Number(parsed.proxyDownTotal) || 0,
+        proxyUpTotal: Number(parsed.proxyUpTotal) || 0,
+        lastKernelDownTotal: Number(parsed.kernelDownTotal) || 0,
+        lastKernelUpTotal: Number(parsed.kernelUpTotal) || 0,
+      }
     }
   } catch {
     // ignore
   }
   return {
+    seen: new Map<string, { down: number; up: number }>(),
     proxyDownTotal: 0,
     proxyUpTotal: 0,
-    kernelDownTotal: 0,
-    kernelUpTotal: 0,
+    lastKernelDownTotal: 0,
+    lastKernelUpTotal: 0,
   }
 }
 
@@ -133,27 +144,7 @@ export const EnhancedTrafficStats = () => {
   } = useConnectionData({ enabled: true })
 
   // 追踪连接生命周期中确凿属于代理节点的累计流量
-  const trafficTrackerRef = useRef<{
-    seen: Map<string, { down: number; up: number }>
-    proxyDownTotal: number
-    proxyUpTotal: number
-    lastKernelDownTotal: number
-    lastKernelUpTotal: number
-  }>(() => {
-    const stored = loadStoredTotals()
-    return {
-      seen: new Map(),
-      proxyDownTotal: stored.proxyDownTotal,
-      proxyUpTotal: stored.proxyUpTotal,
-      lastKernelDownTotal: stored.kernelDownTotal,
-      lastKernelUpTotal: stored.kernelUpTotal,
-    }
-  })
-
-  // 仅在初始时初始化一次 ref
-  if (typeof trafficTrackerRef.current === 'function') {
-    trafficTrackerRef.current = (trafficTrackerRef.current as any)()
-  }
+  const trafficTrackerRef = useRef(loadStoredTotals())
 
   // 增量统计代理节点流量
   useEffect(() => {
