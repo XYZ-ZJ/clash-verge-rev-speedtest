@@ -4,6 +4,10 @@
 
 基于 [Tauri 2](https://github.com/tauri-apps/tauri) 与 [Mihomo(Clash.Meta)](https://github.com/MetaCubeX/mihomo) 内核的现代化代理客户端增强版，新增**当前代理节点测速卡片**、**代理与直连双流分类流量统计**，并彻底修复了**后台运行时不统计流量**的问题。
 
+<p align="center">
+  <img src="./docs/speedtest_preview.png" alt="Clash Verge Rev 测速增强版界面预览" width="880" />
+</p>
+
 ---
 
 ## 🌟 本版本新增与增强功能
