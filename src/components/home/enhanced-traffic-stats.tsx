@@ -84,42 +84,17 @@ const isThroughProxyNode = (
   return true
 }
 
-const STORAGE_KEY_PROXY_TOTALS = 'cv_proxy_traffic_accumulators'
-
-interface StoredTrafficTotals {
-  proxyDownTotal: number
-  proxyUpTotal: number
-  kernelDownTotal: number
-  kernelUpTotal: number
-}
-
-const loadStoredTotals = () => {
-  try {
-    const raw =
-      typeof window !== 'undefined'
-        ? localStorage.getItem(STORAGE_KEY_PROXY_TOTALS)
-        : null
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      return {
-        seen: new Map<string, { down: number; up: number }>(),
-        proxyDownTotal: Number(parsed.proxyDownTotal) || 0,
-        proxyUpTotal: Number(parsed.proxyUpTotal) || 0,
-        lastKernelDownTotal: Number(parsed.kernelDownTotal) || 0,
-        lastKernelUpTotal: Number(parsed.kernelUpTotal) || 0,
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return {
-    seen: new Map<string, { down: number; up: number }>(),
-    proxyDownTotal: 0,
-    proxyUpTotal: 0,
-    lastKernelDownTotal: 0,
-    lastKernelUpTotal: 0,
-  }
-}
+// 初始状态生成器
+const createInitialTracker = () => ({
+  initialized: false,
+  proxyDownTotal: 0,
+  proxyUpTotal: 0,
+  directDownTotal: 0,
+  directUpTotal: 0,
+  lastKernelDownTotal: 0,
+  lastKernelUpTotal: 0,
+  seen: new Map<string, { down: number; up: number }>(),
+})
 
 export const EnhancedTrafficStats = () => {
   const { t } = useTranslation()
@@ -143,10 +118,10 @@ export const EnhancedTrafficStats = () => {
     response: { data: connectionData },
   } = useConnectionData({ enabled: true })
 
-  // 追踪连接生命周期中确凿属于代理节点的累计流量
-  const trafficTrackerRef = useRef(loadStoredTotals())
+  // 追踪连接生命周期中代理与直连的累计流量
+  const trafficTrackerRef = useRef(createInitialTracker())
 
-  // 增量统计代理节点流量
+  // 增量统计代理与直连流量
   useEffect(() => {
     if (!connectionData) return
     const tracker = trafficTrackerRef.current
@@ -164,26 +139,67 @@ export const EnhancedTrafficStats = () => {
     ) {
       tracker.proxyDownTotal = 0
       tracker.proxyUpTotal = 0
+      tracker.directDownTotal = 0
+      tracker.directUpTotal = 0
       tracker.seen.clear()
+      tracker.initialized = false
     }
     tracker.lastKernelDownTotal = globalDownTotal
     tracker.lastKernelUpTotal = globalUpTotal
 
+    // 首次加载建立已有连接的基准数据，防止重复累加历史存量
+    if (!tracker.initialized) {
+      tracker.initialized = true
+      let initProxyDown = 0
+      let initProxyUp = 0
+      let initDirectDown = 0
+      let initDirectUp = 0
+
+      allConns.forEach((conn) => {
+        const isProxy = isThroughProxyNode(conn, currentMode)
+        const d = conn.download || 0
+        const u = conn.upload || 0
+        if (isProxy) {
+          initProxyDown += d
+          initProxyUp += u
+        } else {
+          initDirectDown += d
+          initDirectUp += u
+        }
+        tracker.seen.set(conn.id, { down: d, up: u })
+      })
+
+      tracker.proxyDownTotal = initProxyDown
+      tracker.proxyUpTotal = initProxyUp
+      tracker.directDownTotal = initDirectDown
+      tracker.directUpTotal = initDirectUp
+      return
+    }
+
+    // 后续仅增量统计 delta 流量
     allConns.forEach((conn) => {
       const isProxy = isThroughProxyNode(conn, currentMode)
       const curDown = conn.download || 0
       const curUp = conn.upload || 0
       const prev = tracker.seen.get(conn.id)
 
-      if (isProxy) {
-        if (!prev) {
+      if (!prev) {
+        if (isProxy) {
           tracker.proxyDownTotal += curDown
           tracker.proxyUpTotal += curUp
         } else {
-          const deltaDown = Math.max(0, curDown - prev.down)
-          const deltaUp = Math.max(0, curUp - prev.up)
+          tracker.directDownTotal += curDown
+          tracker.directUpTotal += curUp
+        }
+      } else {
+        const deltaDown = Math.max(0, curDown - prev.down)
+        const deltaUp = Math.max(0, curUp - prev.up)
+        if (isProxy) {
           tracker.proxyDownTotal += deltaDown
           tracker.proxyUpTotal += deltaUp
+        } else {
+          tracker.directDownTotal += deltaDown
+          tracker.directUpTotal += deltaUp
         }
       }
       tracker.seen.set(conn.id, { down: curDown, up: curUp })
@@ -197,21 +213,6 @@ export const EnhancedTrafficStats = () => {
           tracker.seen.delete(id)
         }
       }
-    }
-
-    // 缓存至本地
-    try {
-      localStorage.setItem(
-        STORAGE_KEY_PROXY_TOTALS,
-        JSON.stringify({
-          proxyDownTotal: tracker.proxyDownTotal,
-          proxyUpTotal: tracker.proxyUpTotal,
-          kernelDownTotal: globalDownTotal,
-          kernelUpTotal: globalUpTotal,
-        }),
-      )
-    } catch {
-      // ignore
     }
   }, [connectionData, traffic, currentMode])
 
@@ -254,10 +255,10 @@ export const EnhancedTrafficStats = () => {
       directDownSpeed = globalDown
       directUpSpeed = globalUp
     } else {
-      // 实时下载速率：仅在有确切代理活跃连接产生速率时分摊至代理，其余全部归直连
-      if (measuredProxyDown > 0 && measuredDirectDown > 0) {
-        const ratio =
-          measuredProxyDown / (measuredProxyDown + measuredDirectDown)
+      // 实时下载速率：按实测速率比例分配，未测得明确代理流速时默认全部归直连
+      const totalMeasuredDown = measuredProxyDown + measuredDirectDown
+      if (totalMeasuredDown > 0 && globalDown > 0) {
+        const ratio = measuredProxyDown / totalMeasuredDown
         proxyDownSpeed = globalDown * ratio
         directDownSpeed = globalDown * (1 - ratio)
       } else if (measuredProxyDown > 0) {
@@ -267,7 +268,6 @@ export const EnhancedTrafficStats = () => {
         proxyDownSpeed = 0
         directDownSpeed = globalDown
       } else {
-        // 未检测到明确代理流时，默认全部归直连
         if (proxyActiveCount > 0 && directActiveCount === 0) {
           proxyDownSpeed = globalDown
           directDownSpeed = 0
@@ -277,10 +277,10 @@ export const EnhancedTrafficStats = () => {
         }
       }
 
-      // 实时上传速率：仅在有确切代理活跃连接产生速率时分摊至代理，其余全部归直连
-      if (measuredProxyUp > 0 && measuredDirectUp > 0) {
-        const ratio =
-          measuredProxyUp / (measuredProxyUp + measuredDirectUp)
+      // 实时上传速率：按实测速率比例分配，未测得明确代理流速时默认全部归直连
+      const totalMeasuredUp = measuredProxyUp + measuredDirectUp
+      if (totalMeasuredUp > 0 && globalUp > 0) {
+        const ratio = measuredProxyUp / totalMeasuredUp
         proxyUpSpeed = globalUp * ratio
         directUpSpeed = globalUp * (1 - ratio)
       } else if (measuredProxyUp > 0) {
@@ -300,35 +300,51 @@ export const EnhancedTrafficStats = () => {
       }
     }
 
-    // 累计总量：代理卡只显示确凿通过代理节点的流量，直连卡显示除代理节点之外的所有流量
+    // 累计总量：双轨真实累加，并以各自实测比例校准至内核权威总流量，绝不发生减法截断为0
     const tracker = trafficTrackerRef.current
     const globalDownTotal = traffic?.downTotal || 0
     const globalUpTotal = traffic?.upTotal || 0
 
-    const finalProxyDownTotal = Math.min(
-      globalDownTotal,
-      tracker.proxyDownTotal,
-    )
-    const finalProxyUpTotal = Math.min(globalUpTotal, tracker.proxyUpTotal)
+    const measuredDownTotal =
+      tracker.proxyDownTotal + tracker.directDownTotal
+    const measuredUpTotal = tracker.proxyUpTotal + tracker.directUpTotal
 
-    const finalDirectDownTotal = Math.max(
-      0,
-      globalDownTotal - finalProxyDownTotal,
-    )
-    const finalDirectUpTotal = Math.max(0, globalUpTotal - finalProxyUpTotal)
+    let displayProxyDownTotal = tracker.proxyDownTotal
+    let displayDirectDownTotal = tracker.directDownTotal
+    let displayProxyUpTotal = tracker.proxyUpTotal
+    let displayDirectUpTotal = tracker.directUpTotal
+
+    if (measuredDownTotal > 0 && globalDownTotal > 0) {
+      const proxyRatio = tracker.proxyDownTotal / measuredDownTotal
+      displayProxyDownTotal = globalDownTotal * proxyRatio
+      displayDirectDownTotal = globalDownTotal * (1 - proxyRatio)
+    } else if (globalDownTotal > 0) {
+      displayProxyDownTotal = 0
+      displayDirectDownTotal = globalDownTotal
+    }
+
+    if (measuredUpTotal > 0 && globalUpTotal > 0) {
+      const proxyRatio = tracker.proxyUpTotal / measuredUpTotal
+      displayProxyUpTotal = globalUpTotal * proxyRatio
+      displayDirectUpTotal = globalUpTotal * (1 - proxyRatio)
+    } else if (globalUpTotal > 0) {
+      displayProxyUpTotal = 0
+      displayDirectUpTotal = globalUpTotal
+    }
 
     const [proxyDownVal, proxyDownUnit] = parseTraffic(proxyDownSpeed)
     const [proxyUpVal, proxyUpUnit] = parseTraffic(proxyUpSpeed)
     const [proxyTotalDownVal, proxyTotalDownUnit] =
-      parseTraffic(finalProxyDownTotal)
-    const [proxyTotalUpVal, proxyTotalUpUnit] = parseTraffic(finalProxyUpTotal)
+      parseTraffic(displayProxyDownTotal)
+    const [proxyTotalUpVal, proxyTotalUpUnit] =
+      parseTraffic(displayProxyUpTotal)
 
     const [directDownVal, directDownUnit] = parseTraffic(directDownSpeed)
     const [directUpVal, directUpUnit] = parseTraffic(directUpSpeed)
     const [directTotalDownVal, directTotalDownUnit] =
-      parseTraffic(finalDirectDownTotal)
+      parseTraffic(displayDirectDownTotal)
     const [directTotalUpVal, directTotalUpUnit] =
-      parseTraffic(finalDirectUpTotal)
+      parseTraffic(displayDirectUpTotal)
 
     return {
       proxy: {
