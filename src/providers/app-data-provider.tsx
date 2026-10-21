@@ -86,6 +86,7 @@ export const AppDataProvider = ({
     queryKey: ['getRules'],
     queryFn: getRules,
     ...TQ_MIHOMO,
+    revalidateOnMount: false,
   })
 
   const { data: sysproxy, refetch: _refetchSysproxy } = useQuery({

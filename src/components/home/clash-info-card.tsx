@@ -1,6 +1,6 @@
 import { DeveloperBoardOutlined } from '@mui/icons-material'
 import { Divider, Stack, Typography } from '@mui/material'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClash } from '@/hooks/use-clash'
@@ -28,6 +28,15 @@ export const ClashInfoCard = () => {
   const { clashConfig } = useClashConfigData()
   const displayedMixedPort = useDisplayedMixedPort()
   const { rules } = useRulesData()
+  const { refreshRules } = useAppRefreshers()
+
+  // 延迟在后台空闲时获取规则数量，避免应用启动时全量反序列化数万条规则对象
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      refreshRules()
+    }, 2500)
+    return () => clearTimeout(timer)
+  }, [refreshRules])
   const uptime = useAppUptime()
   const { systemProxyAddress } = useSystemData()
 

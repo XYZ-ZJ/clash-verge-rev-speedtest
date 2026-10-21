@@ -63,12 +63,10 @@ export const createEventBus = (deps: BusHandlerDeps) => {
     'verge://refresh-clash-config': () =>
       deps.revalidateKeys([
         'getProxyView',
-        'getVersion',
         'getClashConfig',
         'getClashInfo',
         'getClashMode',
         'getRuntimeConfig',
-        'getRules',
         'getRuleProviders',
       ]),
     'verge://refresh-verge-config': () =>

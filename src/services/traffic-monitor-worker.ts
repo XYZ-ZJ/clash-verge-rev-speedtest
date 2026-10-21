@@ -17,6 +17,7 @@ let config!: ITrafficWorkerInitMessage['config']
 let sampler!: TrafficDataSampler
 let currentRangeMinutes!: number
 let throttleTimer: ReturnType<typeof setTimeout> | null = null
+let agingTimer: ReturnType<typeof setInterval> | null = null
 let lastTimestamp: number | undefined
 let lastBroadcast: ITrafficDataPoint[] = []
 

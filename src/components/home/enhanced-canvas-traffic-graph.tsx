@@ -619,23 +619,21 @@ export const EnhancedCanvasTrafficGraph = memo(
         ctx.lineWidth = GRAPH_CONFIG.lineWidth.grid
         ctx.globalAlpha = 0.7
 
+        ctx.beginPath()
         const horizontalLines = 4
         for (let i = 1; i <= horizontalLines; i++) {
           const y = padding.top + (effectiveHeight / (horizontalLines + 1)) * i
-          ctx.beginPath()
           ctx.moveTo(padding.left, y)
           ctx.lineTo(width - padding.right, y)
-          ctx.stroke()
         }
 
         const verticalLines = 6
         for (let i = 1; i <= verticalLines; i++) {
           const x = padding.left + (effectiveWidth / (verticalLines + 1)) * i
-          ctx.beginPath()
           ctx.moveTo(x, padding.top)
           ctx.lineTo(x, height - padding.bottom)
-          ctx.stroke()
         }
+        ctx.stroke()
 
         ctx.restore()
       },
