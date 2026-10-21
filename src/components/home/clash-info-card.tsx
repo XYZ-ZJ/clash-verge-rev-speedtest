@@ -7,6 +7,7 @@ import { useClash } from '@/hooks/use-clash'
 import { useDisplayedMixedPort } from '@/hooks/use-displayed-mixed-port'
 import { useAppUptime } from '@/hooks/use-system-state'
 import {
+  useAppRefreshers,
   useClashConfigData,
   useRulesData,
   useSystemData,
