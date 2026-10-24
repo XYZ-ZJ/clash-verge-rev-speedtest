@@ -493,10 +493,10 @@ fn create_staging_file(directory: &Path, core_name: &OsStr) -> Result<(PathBuf, 
 /// write without bound.
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 
-fn copy_bounded(reader: &mut impl std::io::Read, out: &mut File) -> Result<()> {
+fn copy_bounded(mut reader: impl std::io::Read, out: &mut File) -> Result<()> {
     // `take(MAX + 1)` makes an over-large body surface as an error instead of
     // a silently truncated write.
-    let mut limited = reader.by_ref().take(MAX_UNPACKED_BYTES + 1);
+    let mut limited = reader.take(MAX_UNPACKED_BYTES + 1);
     let copied = std::io::copy(&mut limited, out)?;
     anyhow::ensure!(
         copied <= MAX_UNPACKED_BYTES,
@@ -509,13 +509,13 @@ fn copy_bounded(reader: &mut impl std::io::Read, out: &mut File) -> Result<()> {
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(package)).context("invalid core archive")?;
     let mut entry = archive.by_index(0).context("the core archive is empty")?;
-    copy_bounded(&mut entry, out).context("failed to extract the core")
+    copy_bounded(entry, out).context("failed to extract the core")
 }
 
 #[cfg(not(windows))]
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
     let mut decoder = flate2::read::GzDecoder::new(package);
-    copy_bounded(&mut decoder, out).context("failed to decompress the core")
+    copy_bounded(decoder, out).context("failed to decompress the core")
 }
 
 impl StagedCore {

@@ -59,7 +59,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
 
         match itype {
             "script" => Some(ChainItem {
-                uid,
+                uid: uid.clone(),
                 data: ChainType::Script(
                     match fs::read_to_string(&path).await {
                         Ok(content) => content.into(),
@@ -71,7 +71,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                 ),
             }),
             "merge" => Some(ChainItem {
-                uid,
+                uid: uid.clone(),
                 data: ChainType::Merge(
                     match help::read_mapping(&path).await {
                         Ok(mapping) => mapping,
@@ -91,7 +91,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     }
                 };
                 Some(ChainItem {
-                    uid,
+                    uid: uid.clone(),
                     data: ChainType::Rules(seq_map),
                 })
             }
@@ -104,7 +104,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     }
                 };
                 Some(ChainItem {
-                    uid,
+                    uid: uid.clone(),
                     data: ChainType::Proxies(seq_map),
                 })
             }
@@ -117,7 +117,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     }
                 };
                 Some(ChainItem {
-                    uid,
+                    uid: uid.clone(),
                     data: ChainType::Groups(seq_map),
                 })
             }
