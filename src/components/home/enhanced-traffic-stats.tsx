@@ -10,7 +10,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material'
-import { useEffect, useMemo, useRef } from 'react'
+import { cloneElement, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { TrafficErrorBoundary } from '@/components/shared/traffic-error-boundary'
@@ -39,7 +39,7 @@ const NON_PROXY_KEYWORDS = new Set([
  * 严格判断连接是否真正经由代理节点转发
  * 只有具备实际出海代理节点链路的连接才认定为代理连接，其余均认定为直连/外部流量
  */
-const isThroughProxyNode = (
+export const isThroughProxyNode = (
   conn: IConnectionsItem,
   mode?: string | null,
 ): boolean => {
@@ -48,34 +48,27 @@ const isThroughProxyNode = (
     return false
   }
 
-  // 2. 匹配规则明确为 DIRECT / REJECT 等内置策略
-  if (conn.rule && NON_PROXY_KEYWORDS.has(conn.rule.trim().toUpperCase())) {
-    return false
-  }
-  if (
-    conn.rulePayload &&
-    NON_PROXY_KEYWORDS.has(conn.rulePayload.trim().toUpperCase())
-  ) {
-    return false
-  }
+  // 注：mihomo 连接对象中 `rule` 是规则类型（如 DomainSuffix/GeoIP/Match），
+  // `rulePayload` 是匹配的域名/IP；出站策略只出现在 `chains` 里，因此无需
+  // （也无法）通过 rule 字段判断直连，下面的 chains 与 metadata 检查已覆盖。
 
-  // 3. 内核内部自用连接或 DNS 查询
+  // 2. 内核内部自用连接或 DNS 查询
   if (conn.metadata?.type && ['Inner', 'DNS'].includes(conn.metadata.type)) {
     return false
   }
 
   const chains = conn.chains
-  // 4. 没有节点链路信息的连接不属于代理节点流量
+  // 3. 没有节点链路信息的连接不属于代理节点流量
   if (!chains || chains.length === 0) {
     return false
   }
 
-  // 5. 链路上包含 DIRECT 或 REJECT 等字样（例如代理组选择了 DIRECT）
+  // 4. 链路上包含 DIRECT 或 REJECT 等字样（例如代理组选择了 DIRECT）
   if (chains.some((c) => NON_PROXY_KEYWORDS.has(c.trim().toUpperCase()))) {
     return false
   }
 
-  // 6. 检查出口叶子节点（Mihomo chains[0] 为叶子节点）
+  // 5. 检查出口叶子节点（Mihomo chains[0] 为叶子节点）
   const exitNode = chains[0]?.trim()
   if (!exitNode || NON_PROXY_KEYWORDS.has(exitNode.toUpperCase())) {
     return false
@@ -96,10 +89,141 @@ const createInitialTracker = () => ({
   seen: new Map<string, { down: number; up: number }>(),
 })
 
+interface TrafficSideStats {
+  downSpeed: string
+  upSpeed: string
+  downloadTotal: string
+  uploadTotal: string
+}
+
+const SpeedRow = ({
+  icon,
+  color,
+  value,
+}: {
+  icon: React.ReactElement
+  color: string
+  value: string
+}) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+    {cloneElement(icon, { sx: { fontSize: 22, color, mr: 0.5, flexShrink: 0 } })}
+    <Typography
+      variant="body1"
+      noWrap
+      sx={{ fontWeight: 700, fontSize: '1.0625rem', color: 'text.primary' }}
+    >
+      {value}
+    </Typography>
+  </Box>
+)
+
+const TotalLabel = ({ label, value }: { label: string; value: string }) => (
+  <Typography variant="caption" color="text.secondary" noWrap>
+    {label}{' '}
+    <Box component="span" sx={{ color: 'text.primary', fontWeight: 500 }}>
+      {value}
+    </Box>
+  </Typography>
+)
+
+const TrafficCard = ({
+  paletteKey,
+  title,
+  stats,
+  downloadedLabel,
+  uploadedLabel,
+}: {
+  paletteKey: 'info' | 'success'
+  title: string
+  stats: TrafficSideStats
+  downloadedLabel: string
+  uploadedLabel: string
+}) => {
+  const theme = useTheme()
+  const isDark = theme.palette.mode === 'dark'
+  const color = theme.palette[paletteKey].main
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        height: '100%',
+        bgcolor: isDark ? alpha(color, 0.08) : alpha(color, 0.04),
+        border: `1px solid ${alpha(color, isDark ? 0.25 : 0.18)}`,
+        transition: 'all 0.2s ease-in-out',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+      }}
+    >
+      {/* 卡片头部 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: `${paletteKey}.main`,
+            mr: 1,
+            boxShadow: `0 0 6px ${color}`,
+            flexShrink: 0,
+          }}
+        />
+        <Typography
+          variant="subtitle2"
+          sx={{
+            fontWeight: 700,
+            fontSize: '0.9375rem',
+            color: `${paletteKey}.main`,
+          }}
+        >
+          {title}
+        </Typography>
+      </Box>
+
+      {/* 实时速率 */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 1,
+          mb: 1.5,
+        }}
+      >
+        <SpeedRow
+          icon={<ArrowDownwardRounded />}
+          color={`${paletteKey}.main`}
+          value={stats.downSpeed}
+        />
+        <SpeedRow
+          icon={<ArrowUpwardRounded />}
+          color={`${paletteKey}.main`}
+          value={stats.upSpeed}
+        />
+      </Box>
+
+      {/* 累计总量 */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 1,
+          pt: 1,
+          borderTop: `1px dashed ${alpha(color, 0.2)}`,
+        }}
+      >
+        <TotalLabel label={downloadedLabel} value={stats.downloadTotal} />
+        <TotalLabel label={uploadedLabel} value={stats.uploadTotal} />
+      </Box>
+    </Paper>
+  )
+}
+
 export const EnhancedTrafficStats = () => {
   const { t } = useTranslation()
   const theme = useTheme()
-  const isDark = theme.palette.mode === 'dark'
   const { verge } = useVerge()
   const trafficRef = useRef<EnhancedCanvasTrafficGraphRef>(null)
   const pageVisible = useVisibility()
@@ -402,256 +526,24 @@ export const EnhancedTrafficStats = () => {
 
         {/* 代理流量卡片 */}
         <Grid size={{ xs: 12, sm: 6 }}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: isDark
-                ? alpha(theme.palette.info.main, 0.08)
-                : alpha(theme.palette.info.main, 0.04),
-              border: `1px solid ${alpha(theme.palette.info.main, isDark ? 0.25 : 0.18)}`,
-              transition: 'all 0.2s ease-in-out',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            {/* 卡片头部 */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  bgcolor: 'info.main',
-                  mr: 1,
-                  boxShadow: `0 0 6px ${theme.palette.info.main}`,
-                  flexShrink: 0,
-                }}
-              />
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  fontWeight: 700,
-                  fontSize: '0.9375rem',
-                  color: 'info.main',
-                }}
-              >
-                {t('home.components.traffic.proxyTraffic', '代理流量')}
-              </Typography>
-            </Box>
-
-            {/* 实时速率 */}
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 1,
-                mb: 1.5,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                <ArrowDownwardRounded
-                  sx={{
-                    fontSize: 22,
-                    color: 'info.main',
-                    mr: 0.5,
-                    flexShrink: 0,
-                  }}
-                />
-                <Typography
-                  variant="body1"
-                  noWrap
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '1.0625rem',
-                    color: 'text.primary',
-                  }}
-                >
-                  {trafficStats.proxy.downSpeed}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                <ArrowUpwardRounded
-                  sx={{
-                    fontSize: 22,
-                    color: 'info.main',
-                    mr: 0.5,
-                    flexShrink: 0,
-                  }}
-                />
-                <Typography
-                  variant="body1"
-                  noWrap
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '1.0625rem',
-                    color: 'text.primary',
-                  }}
-                >
-                  {trafficStats.proxy.upSpeed}
-                </Typography>
-              </Box>
-            </Box>
-
-            {/* 累计总量 */}
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 1,
-                pt: 1,
-                borderTop: `1px dashed ${alpha(theme.palette.info.main, 0.2)}`,
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {t('home.components.traffic.downloaded', '下载量')}{' '}
-                <Box
-                  component="span"
-                  sx={{ color: 'text.primary', fontWeight: 500 }}
-                >
-                  {trafficStats.proxy.downloadTotal}
-                </Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {t('home.components.traffic.uploaded', '上传量')}{' '}
-                <Box
-                  component="span"
-                  sx={{ color: 'text.primary', fontWeight: 500 }}
-                >
-                  {trafficStats.proxy.uploadTotal}
-                </Box>
-              </Typography>
-            </Box>
-          </Paper>
+          <TrafficCard
+            paletteKey="info"
+            title={t('home.components.traffic.proxyTraffic', '代理流量')}
+            stats={trafficStats.proxy}
+            downloadedLabel={t('home.components.traffic.downloaded', '下载量')}
+            uploadedLabel={t('home.components.traffic.uploaded', '上传量')}
+          />
         </Grid>
 
         {/* 直连流量卡片 */}
         <Grid size={{ xs: 12, sm: 6 }}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: isDark
-                ? alpha(theme.palette.success.main, 0.08)
-                : alpha(theme.palette.success.main, 0.04),
-              border: `1px solid ${alpha(theme.palette.success.main, isDark ? 0.25 : 0.18)}`,
-              transition: 'all 0.2s ease-in-out',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
-            {/* 卡片头部 */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  bgcolor: 'success.main',
-                  mr: 1,
-                  boxShadow: `0 0 6px ${theme.palette.success.main}`,
-                  flexShrink: 0,
-                }}
-              />
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  fontWeight: 700,
-                  fontSize: '0.9375rem',
-                  color: 'success.main',
-                }}
-              >
-                {t('home.components.traffic.directTraffic', '直连流量')}
-              </Typography>
-            </Box>
-
-            {/* 实时速率 */}
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 1,
-                mb: 1.5,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                <ArrowDownwardRounded
-                  sx={{
-                    fontSize: 22,
-                    color: 'success.main',
-                    mr: 0.5,
-                    flexShrink: 0,
-                  }}
-                />
-                <Typography
-                  variant="body1"
-                  noWrap
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '1.0625rem',
-                    color: 'text.primary',
-                  }}
-                >
-                  {trafficStats.direct.downSpeed}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                <ArrowUpwardRounded
-                  sx={{
-                    fontSize: 22,
-                    color: 'success.main',
-                    mr: 0.5,
-                    flexShrink: 0,
-                  }}
-                />
-                <Typography
-                  variant="body1"
-                  noWrap
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '1.0625rem',
-                    color: 'text.primary',
-                  }}
-                >
-                  {trafficStats.direct.upSpeed}
-                </Typography>
-              </Box>
-            </Box>
-
-            {/* 累计总量 */}
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 1,
-                pt: 1,
-                borderTop: `1px dashed ${alpha(theme.palette.success.main, 0.2)}`,
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {t('home.components.traffic.downloaded', '下载量')}{' '}
-                <Box
-                  component="span"
-                  sx={{ color: 'text.primary', fontWeight: 500 }}
-                >
-                  {trafficStats.direct.downloadTotal}
-                </Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {t('home.components.traffic.uploaded', '上传量')}{' '}
-                <Box
-                  component="span"
-                  sx={{ color: 'text.primary', fontWeight: 500 }}
-                >
-                  {trafficStats.direct.uploadTotal}
-                </Box>
-              </Typography>
-            </Box>
-          </Paper>
+          <TrafficCard
+            paletteKey="success"
+            title={t('home.components.traffic.directTraffic', '直连流量')}
+            stats={trafficStats.direct}
+            downloadedLabel={t('home.components.traffic.downloaded', '下载量')}
+            uploadedLabel={t('home.components.traffic.uploaded', '上传量')}
+          />
         </Grid>
       </Grid>
     </TrafficErrorBoundary>

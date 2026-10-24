@@ -259,6 +259,18 @@ class DelayManager {
     return { ...entry }
   }
 
+  /** Drops cache entries past their TTL in one pass. Entries for nodes that
+   * vanished from a subscription are never read again, so without this sweep
+   * the map only grows across profile switches and provider refreshes. */
+  private sweepExpiredCacheEntries() {
+    const now = Date.now()
+    for (const [key, entry] of this.cache) {
+      if (now - entry.updatedAt > CACHE_TTL) {
+        this.cache.delete(key)
+      }
+    }
+  }
+
   getDelay(member: ResolvedProxyMember, group: string) {
     const update = this.getDelayUpdate(member, group)
     return update ? update.delay : -1
@@ -327,25 +339,33 @@ class DelayManager {
     try {
       debugLog(`[DelayManager] 调用API测试延迟，代理: ${name}, URL: ${url}`)
 
+      // The invoke keeps running when the client-side timeout wins the race;
+      // attach a no-op catch so its later rejection (IPC error, dead node)
+      // cannot surface as an unhandled rejection during batch checks.
+      const invokePromise = this.unifiedDelayCheck(apiName, url, timeout, providerName)
+      invokePromise.catch(() => {})
+
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
       const timeoutPromise = new Promise<ProxyDelay>((resolve) => {
-        setTimeout(() => resolve({ delay: 0 }), timeout)
+        timeoutHandle = setTimeout(() => resolve({ delay: 0 }), timeout)
       })
 
-      const result = await Promise.race([
-        this.unifiedDelayCheck(apiName, url, timeout, providerName),
-        timeoutPromise,
-      ])
+      try {
+        const result = await Promise.race([invokePromise, timeoutPromise])
 
-      const elapsedTime = Date.now() - startTime
-      if (elapsedTime < 500) {
-        await new Promise((resolve) => setTimeout(resolve, 500 - elapsedTime))
+        const elapsedTime = Date.now() - startTime
+        if (elapsedTime < 500) {
+          await new Promise((resolve) => setTimeout(resolve, 500 - elapsedTime))
+        }
+
+        const delay = result.delay
+        const elapsed = elapsedTime
+        debugLog(`[DelayManager] 延迟测试完成，代理: ${name}, 结果: ${delay}ms`)
+
+        return this.setDelay(member, group, delay, { elapsed, url })
+      } finally {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
       }
-
-      const delay = result.delay
-      const elapsed = elapsedTime
-      debugLog(`[DelayManager] 延迟测试完成，代理: ${name}, 结果: ${delay}ms`)
-
-      return this.setDelay(member, group, delay, { elapsed, url })
     } catch (error) {
       await new Promise((resolve) => setTimeout(resolve, 500))
       console.error(`[DelayManager] 延迟测试出错，代理: ${name}`, error)
@@ -420,6 +440,10 @@ class DelayManager {
         this.activeBatches.delete(group)
         this.queueGroupNotification(group)
       }
+      // Cache entries for nodes that disappeared from subscriptions are only
+      // evicted lazily on read; sweep expired entries per batch so long
+      // sessions with rotating node lists cannot grow the map forever.
+      this.sweepExpiredCacheEntries()
     }
     const totalTime = Date.now() - startTime
     debugLog(

@@ -204,7 +204,9 @@ const fn refusal_classification(service_usable: Option<bool>) -> SysproxyFailure
 }
 
 const LOOPBACK_HOST: &str = "127.0.0.1";
-const MACOS_DEFAULT_BYPASS: &str =
+/// Shared with the Sidecar write path (`sysopt`) so macOS Service mode and
+/// Sidecar mode can never drift apart on the default bypass list.
+pub(crate) const MACOS_DEFAULT_BYPASS: &str =
     "127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,localhost,*.local,*.crashlytics.com,<local>";
 const MAX_SERVICE_BYPASS_LEN: usize = 8192;
 
@@ -287,12 +289,24 @@ impl ServiceProxyOperations {
             {
                 return Ok(false);
             }
-            service_apply_result(requested, request().await?)?;
+            // The service IPC client's own backoff can stall for minutes on a
+            // wedged helper; without a deadline that keeps the global
+            // operation_lock away from apply/clear/stop for the whole stall.
+            let outcome = tokio::time::timeout(GUARD_REQUEST_TIMEOUT, request())
+                .await
+                .map_err(|_| {
+                    anyhow::anyhow!("service proxy request timed out after {GUARD_REQUEST_TIMEOUT:?}")
+                })?;
+            let outcome = outcome?;
+            service_apply_result(requested, outcome)?;
             Ok(true)
         })
         .await
     }
 }
+
+/// Bound for a single guard-cycle Service proxy request.
+const GUARD_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProxyBackendRoute {

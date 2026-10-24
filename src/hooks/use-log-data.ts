@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { MihomoWebSocket, type LogLevel } from 'tauri-plugin-mihomo-api'
 
 import { getClashLogs } from '@/services/cmds'
+import { WS_ERROR_PREFIX } from '@/services/ws-protocol'
 
 import { useClashLog } from './use-clash-log'
 import { useMihomoWsSubscription } from './use-mihomo-ws-subscription'
@@ -83,7 +84,7 @@ export const useLogData = () => {
 
       return {
         handleMessage: (data) => {
-          if (data.startsWith('Websocket error')) {
+          if (data.startsWith(WS_ERROR_PREFIX)) {
             next(data)
             void scheduleReconnect()
             return

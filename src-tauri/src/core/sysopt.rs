@@ -7,15 +7,8 @@ use crate::{
 use anyhow::Result;
 use clash_verge_logging::{Type, logging};
 use parking_lot::RwLock;
-use scopeguard::defer;
 use smartstring::alias::String;
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use sysproxy::{Autoproxy, GuardMonitor, GuardType, Sysproxy};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -243,7 +236,9 @@ async fn current_os_proxy_state(sys: Sysproxy, auto: Autoproxy) -> OsProxyState 
 pub(crate) struct Sysopt {
     update_lock: TokioMutex<()>,
     guard_operation_lock: TokioMutex<()>,
-    reset_sysproxy: AtomicBool,
+    /// Serializes resets: a concurrent caller waits for the in-flight reset to
+    /// finish instead of being told `Ok(())` while the OS write may still fail.
+    reset_sysproxy_lock: TokioMutex<()>,
     inner_proxy: Arc<RwLock<(Sysproxy, Autoproxy)>>,
     guard: Arc<RwLock<GuardMonitor>>,
 }
@@ -253,7 +248,7 @@ impl Default for Sysopt {
         Self {
             update_lock: TokioMutex::new(()),
             guard_operation_lock: TokioMutex::new(()),
-            reset_sysproxy: AtomicBool::new(false),
+            reset_sysproxy_lock: TokioMutex::new(()),
             inner_proxy: Arc::new(RwLock::new((Sysproxy::default(), Autoproxy::default()))),
             guard: Arc::new(RwLock::new(GuardMonitor::new(GuardType::None, Duration::from_secs(30)))),
         }
@@ -269,8 +264,7 @@ static DEFAULT_BYPASS: &str = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 static BYPASS_SEPARATOR: &str = ",";
 #[cfg(target_os = "macos")]
-static DEFAULT_BYPASS: &str =
-    "127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,localhost,*.local,*.crashlytics.com,<local>";
+static DEFAULT_BYPASS: &str = crate::core::proxy_control::MACOS_DEFAULT_BYPASS;
 
 fn format_bypass(use_default: bool, custom_bypass: &str) -> String {
     if custom_bypass.is_empty() {
@@ -360,8 +354,21 @@ impl Sysopt {
                 );
             }
         }
+        // The guard stays Pending until its first real OS proxy write finishes
+        // (seconds on macOS networksetup). yield_now would spin one worker to
+        // 100% CPU; poll with sleep instead, and give up after the shared
+        // drain deadline so a wedged guard write cannot hang this caller.
+        let wait_started = std::time::Instant::now();
         while self.access_guard().read().get_state().is_pendding() {
-            tokio::task::yield_now().await;
+            if wait_started.elapsed() >= GUARD_DRAIN_TIMEOUT {
+                logging!(
+                    warn,
+                    Type::Core,
+                    "the system proxy guard did not leave Pending within {GUARD_DRAIN_TIMEOUT:?}; continuing"
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
         // `start()` false may also mean a guard was already running.
         !self.access_guard().read().get_state().is_stopped()
@@ -529,16 +536,12 @@ impl Sysopt {
 
     /// reset the sysproxy
     pub(super) async fn reset_sysproxy(&self) -> Result<()> {
-        if self
-            .reset_sysproxy
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            return Ok(());
-        }
-        defer! {
-            self.reset_sysproxy.store(false, Ordering::SeqCst);
-        }
+        // Serialize concurrent resets instead of short-circuiting them: the
+        // second caller used to receive Ok(()) while the first reset could
+        // still fail (e.g. macOS networksetup needs admin), leaving callers
+        // that already treated "cleared" as fact. Re-running after the first
+        // finishes is idempotent and observes the true final OS state.
+        let _reset_serialized = self.reset_sysproxy_lock.lock().await;
         let _lock = self.update_lock.lock().await;
         let _guard_operation = self.guard_operation_lock.lock().await;
         let drained = self.stop_proxy_guard_locked().await;

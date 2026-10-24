@@ -34,14 +34,23 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
         Err(err) => return (config, vec![], vec![("exception".into(), err.to_string().into())]),
     };
 
+    let name_for_log = name.clone();
     let evaluated = AsyncHandler::spawn_blocking(move || eval_script(&script, &json, &name));
     let (outcome, mut logs) = match tokio::time::timeout(SCRIPT_TIMEOUT, evaluated).await {
         Ok(Ok(evaluated)) => evaluated,
         Ok(Err(join_err)) => (Err(format!("script task panicked: {join_err}")), vec![]),
-        Err(_elapsed) => (
-            Err(format!("script execution timed out after {SCRIPT_TIMEOUT:?}")),
-            vec![],
-        ),
+        Err(_elapsed) => {
+            // Dropping the JoinHandle only detaches the blocking task: the
+            // Boa evaluation keeps running on the blocking pool (its
+            // iteration limit cannot bound single heavy operations), so make
+            // the leaked worker visible in the logs.
+            logging!(
+                warn,
+                Type::Config,
+                "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; its worker thread keeps running until it finishes"
+            );
+            (Err(format!("script execution timed out after {SCRIPT_TIMEOUT:?}")), vec![])
+        }
     };
 
     match outcome {
@@ -211,14 +220,23 @@ fn strip_outer_quotes(s: &str) -> &str {
 
 // 安全地转义字符串
 fn escape_js_string_for_single_quote(s: &str) -> String {
-    // 限制处理的字符串长度
-    if s.len() > 10240 {
-        return s[..10240].replace('\\', "\\\\").replace('\'', "\\'").into();
-    }
+    // 限制处理的字符串长度。切片必须落在字符边界上：订阅服务器控制
+    // profile 名，超长的多字节名称会让 `s[..10240]` 落在 UTF-8 字符中间
+    // 而 panic（表现为 Script 链被静默跳过）。
+    let bounded = if s.len() > 10240 {
+        let mut cut = 10240;
+        while !s.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        &s[..cut]
+    } else {
+        s
+    };
 
-    s.replace('\\', "\\\\")
+    bounded
+        .replace('\\', "\\\\")
         .replace('\'', "\\'")
         .replace('\n', "\\n") // 添加换行符转义
-        .replace('\r', "\\r") // 添加回车转义
+        .replace('\r', "\\r") // 添加回车符转义
         .into()
 }

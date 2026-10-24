@@ -313,6 +313,9 @@ impl Hotkey {
     pub async fn init(&self, skip: bool) -> Result<()> {
         if skip {
             logging!(debug, Type::Hotkey, "skip register all hotkeys");
+            // Nothing is registered on this path; keep the diff baseline empty
+            // so a later update() does not try to unregister stale keys.
+            self.current.store(Arc::new(vec![]));
             return Ok(());
         }
         let verge = Config::verge().await;
@@ -383,6 +386,9 @@ impl Hotkey {
         let app_handle = handle::Handle::app_handle();
         let manager = app_handle.global_shortcut();
         manager.unregister_all()?;
+        // Keep the diff baseline in sync: a stale `current` would make the
+        // next update() unregister keys that are no longer registered.
+        self.current.store(Arc::new(vec![]));
         Ok(())
     }
 
@@ -412,13 +418,28 @@ impl Hotkey {
             let _ = self.unregister(key);
         });
 
+        // Best-effort registration: an OS-rejected combination (reserved
+        // shortcut, already taken) must not leave `current` describing the old
+        // list while some new keys are actually live — the next diff would
+        // then re-register/unregister the wrong set.
+        let mut first_error = None;
         for (key, func) in add.iter() {
-            self.register(key, func).await?;
+            if let Err(err) = self.register(key, func).await {
+                logging!(error, Type::Hotkey, "Failed to register hotkey {key} -> {func}: {err:?}");
+                if first_error.is_none() {
+                    first_error = Some(err);
+                }
+            }
         }
 
-        // Update the current hotkeys after all async operations
+        // Record the requested list even on partial failure so the diff base
+        // matches what is (mostly) registered.
         self.current.store(Arc::new(new_hotkeys));
-        Ok(())
+
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
     }
 
     fn get_map_from_vec(hotkeys: &[String]) -> HashMap<&str, &str> {

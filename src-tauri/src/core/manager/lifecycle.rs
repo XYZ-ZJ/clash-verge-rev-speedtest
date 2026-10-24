@@ -863,7 +863,32 @@ impl CoreManager {
         // transient transport failure must not overwrite the last confirmed install state.
         let attempts = (timing::SERVICE_WAIT_MAX.as_millis() / timing::SERVICE_WAIT_INTERVAL.as_millis()) as usize;
         let wait = crate::core::runstate::RUN_STATE.await_ready(attempts, timing::SERVICE_WAIT_INTERVAL);
-        let _ = tokio::time::timeout(timing::SERVICE_WAIT_MAX, wait).await;
+        let deadline = tokio::time::Instant::now() + timing::SERVICE_WAIT_MAX;
+        tokio::pin!(wait);
+        loop {
+            // This wait runs while holding the lifecycle lock; shutdown's
+            // stop_core queues on the same lock. Poll so an app exit can
+            // abandon the wait within one interval instead of blocking
+            // cleanup for the whole window.
+            let exit_poll = tokio::time::sleep(timing::SERVICE_WAIT_INTERVAL);
+            tokio::pin!(exit_poll);
+            tokio::select! {
+                _ = &mut wait => break,
+                _ = &mut exit_poll => {
+                    if Handle::global().is_exiting() {
+                        logging!(
+                            info,
+                            Type::Core,
+                            "app is exiting; abandoning the service readiness wait"
+                        );
+                        break;
+                    }
+                    if tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]

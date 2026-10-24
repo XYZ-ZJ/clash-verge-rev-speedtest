@@ -75,6 +75,9 @@ export interface TranslationResources {
             noActiveNode: string
             proxy: string
           }
+          menu: {
+            truncated: string
+          }
           status: {
             error: string
             latencyExcellent: string
@@ -124,6 +127,13 @@ export interface TranslationResources {
           actions: {
             start: string
             testing: string
+          }
+          errors: {
+            busy: string
+            clientSetupFailed: string
+            noPort: string
+            probeFailed: string
+            proxySetupFailed: string
           }
           metrics: {
             download: string

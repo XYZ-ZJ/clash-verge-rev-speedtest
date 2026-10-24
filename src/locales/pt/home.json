@@ -20,7 +20,8 @@
         "tests": "Cartão de testes de sites",
         "ip": "Cartão de informações de IP",
         "clashInfo": "Cartões de informações do Clash",
-        "systemInfo": "Cartões de informações do sistema"
+        "systemInfo": "Cartões de informações do sistema",
+        "speedtest": "Cartão de Teste de Velocidade"
       },
       "title": "Configurações do início"
     },
@@ -135,7 +136,11 @@
         "smooth": "Suave",
         "linear": "Linear"
       },
-      "diagnostics": "Pontos: {{points}} | Agrupados: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Pontos: {{points}} | Agrupados: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Tráfego via Proxy",
+      "directTraffic": "Tráfego Direto",
+      "downloaded": "Baixado",
+      "uploaded": "Enviado"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Escolhe proxies automaticamente de acordo com o conjunto de regras.",
         "global": "Encaminha todas as requisições de rede pelo proxy selecionado.",
         "direct": "Ignora o proxy e conecta diretamente à internet."
+      }
+    },
+    "speedTest": {
+      "title": "Teste de Velocidade",
+      "actions": {
+        "start": "Iniciar Teste",
+        "testing": "Testando"
+      },
+      "metrics": {
+        "latency": "Latência",
+        "packetLoss": "Perda de Pacotes",
+        "download": "Download",
+        "upload": "Upload"
+      },
+      "errors": {
+        "busy": "Um teste de velocidade já está em execução, aguarde",
+        "noPort": "O núcleo não está em execução ou a porta do proxy não está disponível",
+        "proxySetupFailed": "Falha ao criar o cliente proxy",
+        "clientSetupFailed": "Falha ao criar o cliente HTTP",
+        "probeFailed": "Teste de velocidade falhou: todas as sondas expiraram ou falharam"
       }
     }
   }

@@ -94,7 +94,10 @@ impl UnlockCheck {
     }
 
     async fn check_with_timeout(self, client: &Client) -> UnlockItem {
-        tokio::time::timeout(Duration::from_secs(15), self.check(client))
+        // Shared budget for every checker; an individual checker's own
+        // timeout must not exceed this ceiling or it can never fire.
+        const CHECK_BUDGET: Duration = Duration::from_secs(15);
+        tokio::time::timeout(CHECK_BUDGET, self.check(client))
             .await
             .unwrap_or_else(|_| UnlockItem::checked(self.name(), "Failed", None))
     }

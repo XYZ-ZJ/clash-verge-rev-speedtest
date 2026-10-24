@@ -45,17 +45,6 @@ class InlineTrafficMonitor {
     private emit: (snapshot: ITrafficWorkerSnapshotMessage) => void,
   ) {}
 
-  start(rangeMinutes?: number) {
-    this.currentRange = rangeMinutes ?? this.currentRange
-    this.handle({
-      type: 'init',
-      config: {
-        ...this.config,
-        defaultRangeMinutes: this.currentRange,
-      },
-    })
-  }
-
   stop() {
     if (this.throttleTimer !== null) {
       clearTimeout(this.throttleTimer)
@@ -203,7 +192,25 @@ class TrafficWorkerClient {
         }
 
         this.worker.onerror = (error) => {
-          debugLog(`[TrafficWorkerClient] Worker error: ${String(error)}`)
+          debugLog(
+            `[TrafficWorkerClient] Worker runtime error, falling back to inline sampler: ${String(error)}`,
+          )
+          // A runtime failure (init message lost, exception inside the
+          // worker) leaves a dead worker while `ready` stays true, so every
+          // later appendData posts into the void and the chart freezes.
+          // Recover by terminating it and switching to the inline sampler;
+          // the next traffic tick repopulates the chart.
+          this.stop()
+          this.startInline({
+            type: 'init',
+            config: {
+              rawDataMinutes: WORKER_CONFIG.rawDataMinutes,
+              compressedDataMinutes: WORKER_CONFIG.compressedDataMinutes,
+              compressionRatio: WORKER_CONFIG.compressionRatio,
+              snapshotIntervalMs: WORKER_CONFIG.snapshotIntervalMs,
+              defaultRangeMinutes: this.currentRange,
+            },
+          })
         }
 
         this.ready = true

@@ -157,6 +157,17 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
     let key_path = app_dir.join(".encryption_key");
 
     if key_path.exists() {
+        // Older releases created this file with default (0644) permissions,
+        // which let other local users decrypt the stored WebDAV credentials.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let metadata = fs::metadata(&key_path)
+                .map_err(|e| anyhow::anyhow!("Failed to stat encryption key: {}", e))?;
+            if metadata.permissions().mode() & 0o777 != 0o600 {
+                let _ = fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600));
+            }
+        }
         fs::read(&key_path).map_err(|e| anyhow::anyhow!("Failed to read encryption key: {}", e))
     } else {
         let mut key = vec![0u8; 32];
@@ -165,6 +176,23 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
         if let Some(parent) = key_path.parent() {
             fs::create_dir_all(parent).map_err(|e| anyhow::anyhow!("Failed to create key directory: {}", e))?;
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            if let Err(e) = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&key_path)
+                .and_then(|mut file| {
+                    use std::io::Write as _;
+                    file.write_all(&key)
+                })
+            {
+                return Err(anyhow::anyhow!("Failed to save encryption key: {}", e));
+            }
+        }
+        #[cfg(not(unix))]
         fs::write(&key_path, &key).map_err(|e| anyhow::anyhow!("Failed to save encryption key: {}", e))?;
         Ok(key)
     }

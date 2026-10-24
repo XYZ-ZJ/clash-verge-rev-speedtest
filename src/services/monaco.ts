@@ -113,6 +113,13 @@ export const loadMonacoEditor = () => {
       }
     },
   )
+  // Do not cache a rejected load: one failed chunk fetch (dev hiccup, stale
+  // chunk after an update) would otherwise keep every editor permanently
+  // broken until the app restarts.
+  loadPromise = loadPromise.catch((error) => {
+    loadPromise = undefined
+    throw error
+  })
 
   return loadPromise
 }

@@ -24,11 +24,9 @@ const RulesPage = () => {
   const [showScrollTop, setShowScrollTop] = useState(false)
   const pageVisible = useVisibility()
 
-  // 在组件挂载时和页面获得焦点时刷新规则数据
+  // 在组件挂载时和页面获得焦点时刷新规则数据（页面仅在可见时挂载，
+  // pageVisible 初始即为 true；原先的无条件调用导致每次挂载/聚焦双发请求）
   useEffect(() => {
-    refreshRules()
-    refreshRuleProviders()
-
     if (pageVisible) {
       refreshRules()
       refreshRuleProviders()
@@ -36,13 +34,16 @@ const RulesPage = () => {
   }, [refreshRules, refreshRuleProviders, pageVisible])
 
   const filteredRules = useMemo(() => {
-    const rulesWithLineNo = rules.map((item, index) => ({
-      ...item,
-      // UI-only derived data; keep app context/SWR data immutable
-      lineNo: index + 1,
-    }))
-
-    return rulesWithLineNo.filter((item) => match(item.payload ?? ''))
+    // 只为命中过滤的规则分配带行号的对象；全量展开会为上千条规则
+    // 各克隆一次再被 filter 丢弃。lineNo 仍是全量列表中的原始序号。
+    type RuleWithLineNo = (typeof rules)[number] & { lineNo: number }
+    const matched: RuleWithLineNo[] = []
+    rules.forEach((item, index) => {
+      if (match(item.payload ?? '')) {
+        matched.push({ ...item, lineNo: index + 1 })
+      }
+    })
+    return matched
   }, [rules, match])
 
   const handleScroll = useCallback((e: Event) => {

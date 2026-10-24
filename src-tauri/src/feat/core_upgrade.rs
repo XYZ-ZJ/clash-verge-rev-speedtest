@@ -62,8 +62,23 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     if !force && installed == latest {
         return Ok(CoreUpgradeReport { upgraded: false });
     }
+    if !force
+        && let Some(std::cmp::Ordering::Greater) = compare_plain_versions(&installed, &latest)
+    {
+        // GitHub moving `latest` backwards must not silently downgrade an
+        // installed core (which service mode would even copy into the
+        // administrator-approved directory).
+        logging!(
+            warn,
+            Type::Core,
+            "core upgrade: latest {latest} is older than installed {installed}; skipping (force to downgrade)"
+        );
+        return Ok(CoreUpgradeReport { upgraded: false });
+    }
 
-    let package = download_package(proxy, alpha, &latest).await?;
+    let package_url_string = package_url(alpha, &latest)?;
+    let package = download_package(proxy, &package_url_string).await?;
+    verify_package_digest(proxy, &package_url_string, &package).await?;
     let staged = stage_core(&target, &package, &latest)?;
 
     // A hard link keeps the previous core reachable without touching the inode the running
@@ -278,14 +293,107 @@ fn is_usable_version(version: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
-async fn download_package(proxy: ProxyType, alpha: bool, version: &str) -> Result<Vec<u8>> {
-    let url = package_url(alpha, version)?;
+async fn download_package(proxy: ProxyType, url: &str) -> Result<Vec<u8>> {
     logging!(info, Type::Core, "core upgrade: downloading {url}");
 
     NetworkManager::new()
-        .get_bytes(&url, proxy, Some(PACKAGE_TIMEOUT_SECS), MAX_PACKAGE_BYTES)
+        .get_bytes(url, proxy, Some(PACKAGE_TIMEOUT_SECS), MAX_PACKAGE_BYTES)
         .await
         .with_context(|| format!("failed to download {url}"))
+}
+
+/// Compares plain `vX.Y.Z` core versions numerically so a moved-back `latest`
+/// cannot silently downgrade an install. `None` when either side is not a
+/// plain dotted number (alpha builds with hash suffixes keep the existing
+/// equality/force semantics).
+fn compare_plain_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+    let parse = |v: &str| -> Option<Vec<u64>> {
+        let mut parts = Vec::new();
+        for part in v.trim().trim_start_matches('v').split('.') {
+            parts.push(part.parse::<u64>().ok()?);
+        }
+        Some(parts)
+    };
+    let (left, right) = (parse(a)?, parse(b)?);
+    let width = left.len().max(right.len());
+    (0..width)
+        .map(|i| left.get(i).copied().unwrap_or(0).cmp(&right.get(i).copied().unwrap_or(0)))
+        .find(std::cmp::Ordering::is_ne)
+        .or(Some(std::cmp::Ordering::Equal))
+}
+
+/// Verifies the downloaded package against the SHA-256 digest GitHub's API
+/// publishes for the release asset. MetaCubeX does not sign core builds;
+/// this binds the bytes to GitHub's own release metadata instead of trusting
+/// the download response alone. An asset without a digest (older releases)
+/// only downgrades to the staged-version probe; a present mismatch always
+/// fails the upgrade.
+async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]) -> Result<()> {
+    use sha2::{Digest as _, Sha256};
+
+    const DOWNLOAD_PREFIX: &str = "https://github.com/MetaCubeX/mihomo/releases/download/";
+    let Some(rest) = package_url.strip_prefix(DOWNLOAD_PREFIX) else {
+        anyhow::bail!("unexpected core package URL: {package_url}");
+    };
+    let Some((tag, asset)) = rest.split_once('/') else {
+        anyhow::bail!("unexpected core package URL: {package_url}");
+    };
+    let api_url = format!("https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/{tag}");
+
+    let response = NetworkManager::new()
+        .get(
+            &api_url,
+            proxy,
+            Some(VERSION_TIMEOUT_SECS),
+            Some("clash-verge".into()),
+            false,
+        )
+        .await
+        .with_context(|| format!("failed to query release metadata for {tag}"))?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "release metadata for {tag} returned status {}",
+        response.status()
+    );
+
+    let payload: serde_json::Value = serde_json::from_str(response.text())
+        .with_context(|| format!("release metadata for {tag} is not valid JSON"))?;
+    let published = payload
+        .get("assets")
+        .and_then(|assets| assets.as_array())
+        .and_then(|assets| {
+            assets
+                .iter()
+                .find(|entry| entry.get("name").and_then(|v| v.as_str()) == Some(asset))
+        })
+        .and_then(|entry| entry.get("digest"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+
+    let Some(published) = published else {
+        logging!(
+            warn,
+            Type::Core,
+            "core upgrade: GitHub lists no digest for {asset}, keeping the staged-version check only"
+        );
+        return Ok(());
+    };
+    let Some(expected) = published.strip_prefix("sha256:") else {
+        logging!(
+            warn,
+            Type::Core,
+            "core upgrade: unsupported digest format {published} for {asset}"
+        );
+        return Ok(());
+    };
+
+    let computed = format!("{:x}", Sha256::digest(bytes));
+    anyhow::ensure!(
+        computed == expected,
+        "core package digest mismatch for {asset}: expected {expected}, computed {computed}"
+    );
+    logging!(info, Type::Core, "core upgrade: package digest verified for {asset}");
+    Ok(())
 }
 
 /// A staged core that is removed unless publishing renamed it away.
@@ -376,19 +484,33 @@ fn create_staging_file(directory: &Path, core_name: &OsStr) -> Result<(PathBuf, 
     )
 }
 
+/// Real core binaries stay far below this; a decompression bomb must not
+/// write without bound.
+const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
+
+fn copy_bounded(reader: &mut impl std::io::Read, out: &mut File) -> Result<()> {
+    // `take(MAX + 1)` makes an over-large body surface as an error instead of
+    // a silently truncated write.
+    let mut limited = reader.take(MAX_UNPACKED_BYTES + 1);
+    let copied = std::io::copy(&mut limited, out)?;
+    anyhow::ensure!(
+        copied <= MAX_UNPACKED_BYTES,
+        "extracted core exceeds {MAX_UNPACKED_BYTES} bytes"
+    );
+    Ok(())
+}
+
 #[cfg(windows)]
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(package)).context("invalid core archive")?;
     let mut entry = archive.by_index(0).context("the core archive is empty")?;
-    std::io::copy(&mut entry, out).context("failed to extract the core")?;
-    Ok(())
+    copy_bounded(&mut entry, out).context("failed to extract the core")
 }
 
 #[cfg(not(windows))]
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
     let mut decoder = flate2::read::GzDecoder::new(package);
-    std::io::copy(&mut decoder, out).context("failed to decompress the core")?;
-    Ok(())
+    copy_bounded(&mut decoder, out).context("failed to decompress the core")
 }
 
 impl StagedCore {

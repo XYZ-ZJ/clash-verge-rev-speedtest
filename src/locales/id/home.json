@@ -20,7 +20,8 @@
         "tests": "Website Tests Card",
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
-        "systemInfo": "System Info Cards"
+        "systemInfo": "System Info Cards",
+        "speedtest": "Kartu Uji Kecepatan"
       },
       "title": "Home Settings"
     },
@@ -135,7 +136,11 @@
         "smooth": "Halus",
         "linear": "Linier"
       },
-      "diagnostics": "Titik: {{points}} | Terkompresi: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Titik: {{points}} | Terkompresi: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Lalu Lintas Proxy",
+      "directTraffic": "Lalu Lintas Langsung",
+      "downloaded": "Terunduh",
+      "uploaded": "Terunggah"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "Uji Kecepatan",
+      "actions": {
+        "start": "Mulai Uji",
+        "testing": "Menguji"
+      },
+      "metrics": {
+        "latency": "Latensi",
+        "packetLoss": "Kehilangan Paket",
+        "download": "Unduhan",
+        "upload": "Unggahan"
+      },
+      "errors": {
+        "busy": "Uji kecepatan sedang berjalan, mohon tunggu",
+        "noPort": "Inti tidak berjalan atau port proxy tidak tersedia",
+        "proxySetupFailed": "Gagal membuat klien proxy",
+        "clientSetupFailed": "Gagal membuat klien HTTP",
+        "probeFailed": "Uji kecepatan gagal: semua probe habis waktu atau gagal"
       }
     }
   }

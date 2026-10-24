@@ -89,8 +89,14 @@ const createSharedSubscriptionEntry = (
     if (entry.closed || entry.connecting || entry.ws) return
 
     entry.connecting = true
+    // Keep the socket reachable from the catch path: if `onConnected` throws
+    // (e.g. an initial invoke failing right after a core restart) the socket
+    // is neither registered in `entry.ws` nor closed, so every reconnect tick
+    // used to leak one open connection until the fault cleared.
+    let connected: MihomoWebSocket | null = null
     try {
       const ws = await connect()
+      connected = ws
       if (entry.closed) {
         await ws.close()
         return
@@ -112,8 +118,12 @@ const createSharedSubscriptionEntry = (
       })
 
       entry.ws = ws
+      connected = null
       clearReconnectTimer()
     } catch (ignoreError) {
+      if (connected && !entry.ws) {
+        await connected.close().catch(() => {})
+      }
       if (!entry.closed && !entry.ws) {
         clearReconnectTimer()
         entry.reconnectTimer = setTimeout(entry.connectWs, RECONNECT_DELAY_MS)
@@ -324,7 +334,9 @@ export const useMihomoWsSubscription = <T>(
         entry.activeOwner = null
         const nextOwner = pickActiveOwner(entry)
         if (entry.ws && nextOwner?.onConnected) {
-          void nextOwner.onConnected(entry.ws)
+          // Hand the live socket to the next owner without an unhandled
+          // rejection when its onConnected invoke fails.
+          void Promise.resolve(nextOwner.onConnected(entry.ws)).catch(() => {})
         }
       }
 

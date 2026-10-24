@@ -441,7 +441,20 @@ impl CoreManager {
     /// Reload the Core from `path`, and replace the Core if it will not take it.
     #[tracing::instrument(skip_all, level = "info", fields(outcome = tracing::field::Empty))]
     async fn reload_or_restart(&self, path: &str) -> Result<()> {
-        let Err(err) = self.reload_config(path).await else {
+        // Hold the lifecycle lock across the reload so a concurrent stop_core
+        // cannot interleave with it. The restart below re-acquires the same
+        // lock itself, so only the reload is serialized here; the mode recheck
+        // before restarting closes the remaining "reload failed -> user stopped
+        // the core -> auto-restart resurrects it" window.
+        let reload_result = {
+            let _lifecycle = self.lifecycle_lock.lock().await;
+            if matches!(*self.get_running_mode(), RunningMode::NotRunning) {
+                return Err(anyhow!("core stopped while applying sidecar configuration"));
+            }
+            self.reload_config(path).await
+        };
+
+        let Err(err) = reload_result else {
             tracing::Span::current().record("outcome", "reloaded");
             return Ok(());
         };
@@ -451,6 +464,16 @@ impl CoreManager {
             Type::Core,
             "Failed to apply configuration by mihomo api, restart core to apply it, error msg: {err}"
         );
+        // A stop may have landed between the failed reload and here; never
+        // restart a core the user asked to stop.
+        if matches!(*self.get_running_mode(), RunningMode::NotRunning) {
+            logging!(
+                info,
+                Type::Core,
+                "core stopped while applying configuration; not restarting it"
+            );
+            return Err(anyhow!("core stopped while applying sidecar configuration"));
+        }
         match self.restart_core_during_config_update().await {
             Ok(_) => {
                 tracing::Span::current().record("outcome", "restarted");

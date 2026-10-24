@@ -22,7 +22,7 @@ import { readText } from '@tauri-apps/plugin-clipboard-manager'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useLockFn } from 'ahooks'
 import { throttle } from 'lodash-es'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router'
 import { closeAllConnections } from 'tauri-plugin-mihomo-api'
@@ -78,6 +78,66 @@ const debugProfileSwitch = (action: string, profile: string, extra?: any) => {
   const timestamp = new Date().toISOString().substring(11, 23)
   debugLog(`[Profile-Debug][${timestamp}] ${action}: ${profile}`, extra || '')
 }
+
+/**
+ * Memoized bridge so per-card callbacks keep a stable identity: the page used
+ * to build fresh inline closures per card on every render, defeating
+ * ProfileItem's own memo whenever any page state (batch ticks, switch flags)
+ * changed. The page passes uid-keyed stable callbacks instead.
+ */
+const ProfileItemCard = memo(
+  ({
+    item,
+    index,
+    selected,
+    activating,
+    timerUpdateRevision,
+    completedUpdateRevision,
+    batchMode,
+    isSelected,
+    mutateProfiles,
+    onSelect,
+    onEdit,
+    onSave,
+    onDelete,
+    onToggleSelection,
+  }: {
+    item: IProfileItem
+    index: number
+    selected: boolean
+    activating: boolean
+    timerUpdateRevision: number
+    completedUpdateRevision: number
+    batchMode: boolean
+    isSelected: boolean
+    mutateProfiles: () => Promise<void>
+    onSelect: (uid: string, force: boolean) => void
+    onEdit: (item: IProfileItem) => void
+    onSave: (uid: string, prev: unknown, curr: unknown) => Promise<void>
+    onDelete: (uid: string) => void
+    onToggleSelection: (uid: string) => void
+  }) => (
+    <ProfileItem
+      id={item.uid!}
+      index={index}
+      selected={selected}
+      activating={activating}
+      itemData={item}
+      timerUpdateRevision={timerUpdateRevision}
+      completedUpdateRevision={completedUpdateRevision}
+      mutateProfiles={mutateProfiles}
+      onSelect={(force) => onSelect(item.uid!, force)}
+      onEdit={() => onEdit(item)}
+      onSave={async (prev, curr) => {
+        await onSave(item.uid!, prev, curr)
+      }}
+      onDelete={() => onDelete(item.uid!)}
+      batchMode={batchMode}
+      isSelected={isSelected}
+      onSelectionChange={() => onToggleSelection(item.uid!)}
+    />
+  ),
+)
 
 const ProfilePage = () => {
   const { t } = useTranslation()
@@ -599,7 +659,7 @@ const ProfilePage = () => {
     }
   }
 
-  const toggleProfileSelection = (uid: string) => {
+  const toggleProfileSelection = useCallback((uid: string) => {
     setSelectedProfiles((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(uid)) {
@@ -609,7 +669,43 @@ const ProfilePage = () => {
       }
       return newSet
     })
-  }
+  }, [])
+
+  // Stable per-uid bridges for ProfileItemCard. `onSelect` and `onEnhance`
+  // capture render state, so they go through latest-refs to keep the bridge
+  // identities (and therefore the card memo) stable across renders.
+  const onSelectLatest = useRef(onSelect)
+  onSelectLatest.current = onSelect
+  const onEnhanceLatest = useRef(onEnhance)
+  onEnhanceLatest.current = onEnhance
+
+  const handleSelectByUid = useCallback((uid: string, force: boolean) => {
+    void onSelectLatest.current(uid, force)
+  }, [])
+
+  const handleEditItem = useCallback((item: IProfileItem) => {
+    viewerRef.current?.edit(item)
+  }, [])
+
+  const handleSaveByUid = useCallback(
+    async (uid: string, prev: unknown, curr: unknown) => {
+      if (prev !== curr && profiles.current === uid) {
+        await onEnhanceLatest.current(false)
+      }
+    },
+    [profiles.current],
+  )
+
+  const handleDeleteByUid = useCallback(
+    (uid: string) => {
+      if (batchMode) {
+        toggleProfileSelection(uid)
+      } else {
+        void onDelete(uid)
+      }
+    },
+    [batchMode, toggleProfileSelection, onDelete],
+  )
 
   const selectAllProfiles = () => {
     setSelectedProfiles(new Set(profileItems.map((item) => item.uid!)))
@@ -902,38 +998,27 @@ const ProfilePage = () => {
             }}
           >
             {profileItems.map((item, index) => (
-              <ProfileItem
+              <ProfileItemCard
                 key={item.uid}
-                id={item.uid!}
+                item={item}
                 index={index}
                 selected={(switchTarget ?? profiles.current) === item.uid}
                 activating={
                   activatings.includes(item.uid!) ||
                   visibleSwitchingProfile === item.uid
                 }
-                itemData={item}
                 timerUpdateRevision={timerRevisions.get(item.uid!) ?? 0}
                 completedUpdateRevision={
                   completedUpdateRevisions.get(item.uid!) ?? 0
                 }
                 mutateProfiles={mutateProfiles}
-                onSelect={(f) => onSelect(item.uid!, f)}
-                onEdit={() => viewerRef.current?.edit(item)}
-                onSave={async (prev, curr) => {
-                  if (prev !== curr && profiles.current === item.uid) {
-                    await onEnhance(false)
-                  }
-                }}
-                onDelete={() => {
-                  if (batchMode) {
-                    toggleProfileSelection(item.uid!)
-                  } else {
-                    onDelete(item.uid!)
-                  }
-                }}
+                onSelect={handleSelectByUid}
+                onEdit={handleEditItem}
+                onSave={handleSaveByUid}
+                onDelete={handleDeleteByUid}
+                onToggleSelection={toggleProfileSelection}
                 batchMode={batchMode}
                 isSelected={selectedProfiles.has(item.uid!)}
-                onSelectionChange={() => toggleProfileSelection(item.uid!)}
               />
             ))}
           </Box>

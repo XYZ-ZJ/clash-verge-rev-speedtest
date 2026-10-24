@@ -20,7 +20,8 @@
         "tests": "Website Tests Card",
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
-        "systemInfo": "System Info Cards"
+        "systemInfo": "System Info Cards",
+        "speedtest": "بطاقة اختبار السرعة"
       },
       "title": "Home Settings"
     },
@@ -135,7 +136,11 @@
         "smooth": "ناعم",
         "linear": "خطي"
       },
-      "diagnostics": "النقاط: {{points}} | مضغوط: {{compressed}} | الإطارات/ث: {{fps}}"
+      "diagnostics": "النقاط: {{points}} | مضغوط: {{compressed}} | الإطارات/ث: {{fps}}",
+      "proxyTraffic": "حركة الوكيل",
+      "directTraffic": "حركة مباشرة",
+      "downloaded": "تم التنزيل",
+      "uploaded": "تم الرفع"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "اختبار السرعة",
+      "actions": {
+        "start": "بدء الاختبار",
+        "testing": "جارٍ الاختبار"
+      },
+      "metrics": {
+        "latency": "زمن الاستجابة",
+        "packetLoss": "فقدان الحزم",
+        "download": "التنزيل",
+        "upload": "الرفع"
+      },
+      "errors": {
+        "busy": "اختبار السرعة قيد التشغيل بالفعل، يرجى الانتظار",
+        "noPort": "النواة لا تعمل أو منفذ الوكيل غير متاح",
+        "proxySetupFailed": "فشل إنشاء عميل الوكيل",
+        "clientSetupFailed": "فشل إنشاء عميل HTTP",
+        "probeFailed": "فشل اختبار السرعة: انتهت مهلة جميع الفحوص أو فشلت"
       }
     }
   }

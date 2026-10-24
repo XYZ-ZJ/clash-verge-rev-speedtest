@@ -20,7 +20,8 @@
         "tests": "Web Sitesi Testleri Kartı",
         "ip": "IP Bilgi Kartı",
         "clashInfo": "Clash Bilgi Kartları",
-        "systemInfo": "Sistem Bilgi Kartları"
+        "systemInfo": "Sistem Bilgi Kartları",
+        "speedtest": "Hız Testi Kartı"
       },
       "title": "Ana Sayfa Ayarları"
     },
@@ -135,7 +136,11 @@
         "smooth": "Yumuşak",
         "linear": "Doğrusal"
       },
-      "diagnostics": "Nokta: {{points}} | Sıkıştırılmış: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Nokta: {{points}} | Sıkıştırılmış: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Vekil Trafiği",
+      "directTraffic": "Doğrudan Trafik",
+      "downloaded": "İndirilen",
+      "uploaded": "Yüklenen"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Vekilleri kural kümesine göre otomatik olarak seçer.",
         "global": "Tüm ağ isteklerini seçili vekil üzerinden iletir.",
         "direct": "Vekili atlar ve internete doğrudan bağlanır."
+      }
+    },
+    "speedTest": {
+      "title": "Hız Testi",
+      "actions": {
+        "start": "Testi Başlat",
+        "testing": "Test ediliyor"
+      },
+      "metrics": {
+        "latency": "Gecikme",
+        "packetLoss": "Paket Kaybı",
+        "download": "İndirme",
+        "upload": "Yükleme"
+      },
+      "errors": {
+        "busy": "Bir hız testi zaten çalışıyor, lütfen bekleyin",
+        "noPort": "Çekirdek çalışmıyor veya vekil bağlantı noktası kullanılamıyor",
+        "proxySetupFailed": "Vekil istemcisi oluşturulamadı",
+        "clientSetupFailed": "HTTP istemcisi oluşturulamadı",
+        "probeFailed": "Hız testi başarısız: tüm yoklamalar zaman aşımına uğradı veya başarısız oldu"
       }
     }
   }

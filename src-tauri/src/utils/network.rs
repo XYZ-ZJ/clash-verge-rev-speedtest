@@ -1,5 +1,5 @@
 use crate::config::MixedPort;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use reqwest::{
     Client, Proxy, StatusCode,
@@ -208,14 +208,34 @@ impl NetworkManager {
 
         let status = response.status();
         let headers = response.headers().to_owned();
-        let body = match response.text().await {
-            Ok(text) => text.into(),
-            Err(e) => {
-                return Err(Self::context_reqwest_error(e, "Failed to read response body"));
-            }
-        };
+        let body: String = Self::read_body_limited(response).await?.into();
 
         Ok(HttpResponse::new(status, headers, body))
+    }
+
+    /// Upper bound for text bodies (subscriptions, version checks). A hostile
+    /// or hijacked subscription server must not be able to OOM the app with an
+    /// endless body; `get_bytes` already enforces the same idea for binaries.
+    const MAX_TEXT_BODY_BYTES: usize = 64 * 1024 * 1024;
+
+    async fn read_body_limited(
+        mut response: reqwest::Response,
+    ) -> Result<std::string::String> {
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| Self::context_reqwest_error(e, "Failed to read response body"))?
+        {
+            if bytes.len() + chunk.len() > Self::MAX_TEXT_BODY_BYTES {
+                return Err(anyhow!(
+                    "response body exceeded the {} byte limit",
+                    Self::MAX_TEXT_BODY_BYTES
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(std::string::String::from_utf8_lossy(&bytes).into_owned())
     }
 
     async fn create_request_with_tls_mode(

@@ -245,6 +245,7 @@ pub async fn validate_dns_config() -> CmdResult<ValidationOutcome> {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_clash_logs() -> CmdResult<Vec<std::string::String>> {
-    let logs = CoreManager::global().get_clash_logs().await.unwrap_or_default();
+    // Surface service/core failures instead of silently showing an empty log page.
+    let logs = CoreManager::global().get_clash_logs().await.stringify_err()?;
     Ok(logs)
 }

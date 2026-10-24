@@ -199,7 +199,9 @@ impl IProfiles {
                 .ok_or_else(|| anyhow::anyhow!("file field is required when file_data is provided"))?;
             let path = dirs::app_profiles_dir()?.join(file.as_str());
 
-            fs::write(&path, file_data.as_bytes())
+            // Atomic temp+rename: a crash mid-write must not truncate an
+            // existing profile beyond recovery.
+            help::save_yaml_str(&path, file_data.as_str())
                 .await
                 .with_context(|| format!("failed to write to file \"{file}\""))?;
         }
@@ -305,7 +307,9 @@ impl IProfiles {
 
                         let path = dirs::app_profiles_dir()?.join(file.as_str());
 
-                        fs::write(&path, file_data.as_bytes())
+                        // Atomic temp+rename; a partial write here used to
+                        // destroy the previous subscription content.
+                        help::save_yaml_str(&path, file_data.as_str())
                             .await
                             .with_context(|| format!("failed to write to file \"{file}\""))?;
                     }
@@ -425,6 +429,21 @@ pub(crate) async fn profiles_append_item_with_filedata_safe(item: &PrfItem, file
 pub(crate) async fn profiles_append_item_safe(item: &mut PrfItem) -> Result<()> {
     let profiles = Config::profiles().await;
     profiles_append_item_to_safe(&profiles, item).await
+}
+
+/// Appends every item inside a single draft commit: either all companions
+/// land or none do, so a failed import cannot leave orphaned entries that a
+/// later unrelated `profiles_save_file_safe` would persist.
+pub(crate) async fn profiles_append_items_safe(items: Vec<&mut PrfItem>) -> Result<()> {
+    Config::profiles()
+        .await
+        .with_data_modify(|mut profiles| async move {
+            for item in items {
+                profiles.append_item(item).await?;
+            }
+            Ok((profiles, ()))
+        })
+        .await
 }
 
 pub(super) async fn profiles_append_item_to_safe(profiles: &Draft<IProfiles>, item: &mut PrfItem) -> Result<()> {

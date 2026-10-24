@@ -20,7 +20,8 @@
         "tests": "Website-Tests-Karte",
         "ip": "IP-Informationen-Karte",
         "clashInfo": "Clash-Informationen-Karten",
-        "systemInfo": "Systeminformationen-Karten"
+        "systemInfo": "Systeminformationen-Karten",
+        "speedtest": "Speedtest-Karte"
       },
       "title": "Startseite-Einstellungen"
     },
@@ -135,7 +136,11 @@
         "smooth": "Weich",
         "linear": "Linear"
       },
-      "diagnostics": "Punkte: {{points}} | Komprimiert: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Punkte: {{points}} | Komprimiert: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Proxy-Verkehr",
+      "directTraffic": "Direkter Verkehr",
+      "downloaded": "Heruntergeladen",
+      "uploaded": "Hochgeladen"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Wählt Proxys automatisch anhand der Regeln aus.",
         "global": "Leitet alle Netzwerkanfragen über den ausgewählten Proxy.",
         "direct": "Umgeht den Proxy und verbindet sich direkt mit dem Internet."
+      }
+    },
+    "speedTest": {
+      "title": "Speedtest",
+      "actions": {
+        "start": "Test starten",
+        "testing": "Test läuft"
+      },
+      "metrics": {
+        "latency": "Latenz",
+        "packetLoss": "Paketverlust",
+        "download": "Download",
+        "upload": "Upload"
+      },
+      "errors": {
+        "busy": "Ein Speedtest läuft bereits, bitte warten",
+        "noPort": "Core läuft nicht oder der Proxy-Port ist nicht verfügbar",
+        "proxySetupFailed": "Proxy-Client konnte nicht erstellt werden",
+        "clientSetupFailed": "HTTP-Client konnte nicht erstellt werden",
+        "probeFailed": "Speedtest fehlgeschlagen: alle Tests zeitüberschritten oder fehlgeschlagen"
       }
     }
   }

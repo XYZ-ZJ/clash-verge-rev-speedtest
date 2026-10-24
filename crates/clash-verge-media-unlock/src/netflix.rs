@@ -9,7 +9,9 @@ use super::UnlockItem;
 
 pub(crate) const NETFLIX_NAME: &str = "Netflix";
 
-const TIMEOUT: Duration = Duration::from_secs(30);
+// lib.rs wraps every checker in a 15s budget (`CHECK_BUDGET`); a per-request
+// timeout above that ceiling is dead configuration, so stay just under it.
+const TIMEOUT: Duration = Duration::from_secs(14);
 
 #[derive(Deserialize)]
 struct FastResponse {

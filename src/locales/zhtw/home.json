@@ -90,9 +90,12 @@
       }
     },
     "currentProxy": {
-      "title": "目前節點",
+      "title": "當前節點",
       "actions": {
         "refreshDelay": "延遲測試"
+      },
+      "menu": {
+        "truncated": "還有 {{count}} 個節點，請前往代理頁查看全部"
       },
       "labels": {
         "globalMode": "全域模式",
@@ -168,6 +171,13 @@
         "packetLoss": "丟包率",
         "download": "下載速度",
         "upload": "上傳速度"
+      },
+      "errors": {
+        "busy": "測速正在進行中，請稍候",
+        "noPort": "內核未執行或未取得代理連接埠",
+        "proxySetupFailed": "建立代理失敗",
+        "clientSetupFailed": "建立 HTTP 客戶端失敗",
+        "probeFailed": "測速失敗：所有網路探測均逾時或連線失敗"
       }
     }
   }

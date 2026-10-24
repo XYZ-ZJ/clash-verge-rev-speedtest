@@ -20,7 +20,8 @@
         "tests": "Website Tests Card",
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
-        "systemInfo": "System Info Cards"
+        "systemInfo": "System Info Cards",
+        "speedtest": "Тизлек тесты картасы"
       },
       "title": "Home Settings"
     },
@@ -135,7 +136,11 @@
         "smooth": "Шома",
         "linear": "Сызыклы"
       },
-      "diagnostics": "Нокталар: {{points}} | Кысылган: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "Нокталар: {{points}} | Кысылган: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "Прокси трафигы",
+      "directTraffic": "Туры трафик",
+      "downloaded": "Йөкләнгән",
+      "uploaded": "Җибәрелгән"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "Тизлек тесты",
+      "actions": {
+        "start": "Тестны башлау",
+        "testing": "Тестлана"
+      },
+      "metrics": {
+        "latency": "Кичектерү",
+        "packetLoss": "Пакет югалту",
+        "download": "Йөкләү",
+        "upload": "Җибәрү"
+      },
+      "errors": {
+        "busy": "Тизлек тесты инде бара, зинһар көтегез",
+        "noPort": "Үзәк эшләми яки прокси порты юк",
+        "proxySetupFailed": "Прокси клиентны булдырып булмады",
+        "clientSetupFailed": "HTTP клиентны булдырып булмады",
+        "probeFailed": "Тизлек тесты уңышсыз: барлык тикшерүләр дә вакыт узды яки уңышсыз булды"
       }
     }
   }

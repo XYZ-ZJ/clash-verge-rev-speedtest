@@ -39,6 +39,8 @@ async fn record_switched_node(group_name: &str, proxy_name: &str) {
 }
 
 pub async fn switch_proxy_node(group_name: &str, proxy_name: &str) {
+    // 单次带短退避的重试：仅针对可能因内核刚重启/连接抖动导致的瞬时失败。
+    // 确定性失败（节点不在分组内等）重试必然再失败，只会多打一条日志。
     match handle::Handle::mihomo()
         .select_node_for_group(group_name, proxy_name)
         .await
@@ -54,12 +56,13 @@ pub async fn switch_proxy_node(group_name: &str, proxy_name: &str) {
         }
     }
 
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     match handle::Handle::mihomo()
         .select_node_for_group(group_name, proxy_name)
         .await
     {
         Ok(_) => {
-            logging!(info, Type::Tray, "代理切换回退成功: {} -> {}", group_name, proxy_name);
+            logging!(info, Type::Tray, "代理切换重试成功: {} -> {}", group_name, proxy_name);
             record_switched_node(group_name, proxy_name).await;
             let _ = tray::Tray::global().update_menu().await;
         }

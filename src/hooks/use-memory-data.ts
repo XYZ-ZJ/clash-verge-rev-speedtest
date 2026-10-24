@@ -1,5 +1,7 @@
 import { MihomoWebSocket } from 'tauri-plugin-mihomo-api'
 
+import { WS_ERROR_PREFIX } from '@/services/ws-protocol'
+
 import { useMihomoWsSubscription } from './use-mihomo-ws-subscription'
 
 export interface IMemoryUsageItem {
@@ -32,7 +34,7 @@ const shouldSkipDuplicateMemory = (memory: IMemoryUsageItem) => {
 export const useMemoryData = (options?: { enabled?: boolean }) => {
   const enabled = options?.enabled ?? true
 
-  const { response, refresh } = useMihomoWsSubscription<IMemoryUsageItem>({
+  const { response } = useMihomoWsSubscription<IMemoryUsageItem>({
     storageKey: 'mihomo_memory_date',
     buildSubscriptKey: (date) => (enabled ? `getClashMemory-${date}` : null),
     fallbackData: FALLBACK_MEMORY_USAGE,
@@ -40,7 +42,7 @@ export const useMemoryData = (options?: { enabled?: boolean }) => {
     throttleMs: 500,
     setupHandlers: ({ next, scheduleReconnect }) => ({
       handleMessage: (data) => {
-        if (data.startsWith('Websocket error')) {
+        if (data.startsWith(WS_ERROR_PREFIX)) {
           next(data, FALLBACK_MEMORY_USAGE)
           void scheduleReconnect()
           return
@@ -59,5 +61,5 @@ export const useMemoryData = (options?: { enabled?: boolean }) => {
     }),
   })
 
-  return { response, refreshGetClashMemory: refresh }
+  return { response }
 }

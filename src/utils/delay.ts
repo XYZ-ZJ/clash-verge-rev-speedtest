@@ -25,6 +25,21 @@ export const classifyDelay = (
   return 'measured'
 }
 
+/**
+ * Single source of truth for how a measured latency is graded. Every visible
+ * latency indicator (signal icon, chips, colors) must map through this so a
+ * given delay cannot read as "good" in one place and "middling" in another.
+ */
+export const delayLevel = (
+  delay: number,
+  timeout: number = DEFAULT_DELAY_TIMEOUT,
+): 'good' | 'mid' | 'bad' => {
+  if (classifyDelay(delay, timeout) !== 'measured') return 'bad'
+  if (delay < 200) return 'good'
+  if (delay < 400) return 'mid'
+  return 'bad'
+}
+
 /** Rank separately so sentinel magnitudes cannot outrank real measurements. */
 const rankOf = (state: DelayState): number => {
   switch (state) {

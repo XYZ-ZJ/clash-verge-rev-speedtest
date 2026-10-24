@@ -27,6 +27,21 @@ pub struct LocalBackupFile {
     pub content_length: u64,
 }
 
+/// Backup filenames arrive from the frontend. Only accept a plain
+/// single-segment name so a crafted value can neither traverse out of the
+/// local backup directory nor out of the WebDAV server's backup folder.
+fn validate_backup_name(filename: &str) -> Result<()> {
+    if filename.is_empty()
+        || filename == "."
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains("..")
+    {
+        return Err(anyhow!("invalid backup filename: {filename:?}"));
+    }
+    Ok(())
+}
+
 /// Reloads restored configs into memory while preserving WebDAV credentials.
 async fn finalize_restored_verge_config(
     webdav_url: Option<String>,
@@ -123,6 +138,7 @@ pub async fn list_wevdav_backup() -> Result<Vec<ListFile>> {
 }
 
 pub async fn delete_webdav_backup(filename: String) -> Result<()> {
+    validate_backup_name(filename.as_str())?;
     let name = filename.to_string();
     backup::WebDavClient::global().delete(filename).await.map_err(|err| {
         logging!(
@@ -136,6 +152,7 @@ pub async fn delete_webdav_backup(filename: String) -> Result<()> {
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename))]
 pub async fn restore_webdav_backup(filename: String) -> Result<()> {
+    validate_backup_name(filename.as_str())?;
     let verge = Config::verge().await;
     let verge_data = verge.latest_arc();
     let webdav_url = verge_data.webdav_url.clone();
@@ -160,9 +177,14 @@ pub async fn restore_webdav_backup(filename: String) -> Result<()> {
 
     let value = backup_storage_path.clone();
     let file = AsyncHandler::spawn_blocking(move || std::fs::File::open(&value)).await??;
-    let mut zip = zip::ZipArchive::new(file)?;
     let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
-    zip.extract(app_home_dir()?)?;
+    // Extract on the blocking pool; see restore_local_backup.
+    let home = app_home_dir()?;
+    AsyncHandler::spawn_blocking(move || {
+        let mut zip = zip::ZipArchive::new(file)?;
+        zip.extract(home)
+    })
+    .await??;
     let res = finalize_restored_verge_config(webdav_url, webdav_username, webdav_password).await;
     let _ = backup_storage_path.remove_if_exists().await;
     res
@@ -314,6 +336,7 @@ pub async fn list_local_backup() -> Result<Vec<LocalBackupFile>> {
 }
 
 pub async fn delete_local_backup(filename: String) -> Result<()> {
+    validate_backup_name(filename.as_str())?;
     let backup_dir = local_backup_dir()?;
     let target_path = backup_dir.join(filename.as_str());
     if !target_path.exists() {
@@ -326,6 +349,7 @@ pub async fn delete_local_backup(filename: String) -> Result<()> {
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename))]
 pub async fn restore_local_backup(filename: String) -> Result<()> {
+    validate_backup_name(filename.as_str())?;
     let backup_dir = local_backup_dir()?;
     let target_path = backup_dir.join(filename.as_str());
     if !target_path.exists() {
@@ -343,15 +367,22 @@ pub async fn restore_local_backup(filename: String) -> Result<()> {
     };
 
     let file = AsyncHandler::spawn_blocking(move || std::fs::File::open(&target_path)).await??;
-    let mut zip = zip::ZipArchive::new(file)?;
     let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
-    zip.extract(app_home_dir()?)?;
+    // Extract on the blocking pool: archives reach tens of MB and must not
+    // stall the async workers.
+    let home = app_home_dir()?;
+    AsyncHandler::spawn_blocking(move || {
+        let mut zip = zip::ZipArchive::new(file)?;
+        zip.extract(home)
+    })
+    .await??;
     finalize_restored_verge_config(webdav_url, webdav_username, webdav_password).await?;
     Ok(())
 }
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename, destination = %destination))]
 pub async fn export_local_backup(filename: String, destination: String) -> Result<()> {
+    validate_backup_name(filename.as_str())?;
     let backup_dir = local_backup_dir()?;
     let source_path = backup_dir.join(filename.as_str());
     if !source_path.exists() {

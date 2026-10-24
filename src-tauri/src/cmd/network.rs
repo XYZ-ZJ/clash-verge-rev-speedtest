@@ -100,14 +100,14 @@ pub struct AutoProxy {
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct SpeedTestProgress {
-    pub stage: std::string::String,
+    pub stage: String,
     pub latency: Option<u32>,
     pub loss_rate: Option<f64>,
     pub download_speed: Option<f64>,
     pub upload_speed: Option<f64>,
-    pub location: Option<std::string::String>,
-    pub timestamp: Option<std::string::String>,
-    pub error: Option<std::string::String>,
+    pub location: Option<String>,
+    pub timestamp: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -116,8 +116,8 @@ pub struct SpeedTestResult {
     pub loss_rate: f64,
     pub download_speed: f64,
     pub upload_speed: f64,
-    pub location: std::string::String,
-    pub timestamp: std::string::String,
+    pub location: String,
+    pub timestamp: String,
 }
 
 static SPEEDTEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -134,7 +134,10 @@ pub async fn test_network_speed(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Err(super::CommandFailure::plain("测速正在进行中，请稍候"));
+        return Err(super::CommandFailure::coded(
+            "speedtest.busy",
+            "a speed test is already running",
+        ));
     }
 
     let _guard = scopeguard::guard((), |_| {
@@ -143,20 +146,25 @@ pub async fn test_network_speed(
 
     let port = crate::config::MixedPort::effective().await;
     if port == 0 {
-        return Err(super::CommandFailure::plain("内核未运行或未获取到代理端口"));
+        return Err(super::CommandFailure::coded(
+            "speedtest.noPort",
+            "core is not running or the proxy port is unavailable",
+        ));
     }
 
     let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))
-        .map_err(|e| super::CommandFailure::plain(format!("创建代理失败: {e}")))?;
+        .map_err(|e| {
+            super::CommandFailure::coded("speedtest.proxySetupFailed", format!("failed to create proxy: {e}"))
+        })?;
 
     let client = reqwest::Client::builder()
         .use_rustls_tls()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
         .tcp_keepalive(Duration::from_secs(30))
         .proxy(proxy)
         .build()
-        .map_err(|e| super::CommandFailure::plain(format!("创建HTTP客户端失败: {e}")))?;
+        .map_err(|e| {
+            super::CommandFailure::coded("speedtest.clientSetupFailed", format!("failed to build http client: {e}"))
+        })?;
 
     let _ = on_progress.send(SpeedTestProgress {
         stage: "start".to_string(),
@@ -173,7 +181,7 @@ pub async fn test_network_speed(
     let probe_count = 8;
     let mut delays = Vec::with_capacity(probe_count);
     let mut failed_probes = 0;
-    let mut location: Option<std::string::String> = None;
+    let mut location: Option<String> = None;
 
     for _ in 0..probe_count {
         let t0 = Instant::now();
@@ -219,7 +227,7 @@ pub async fn test_network_speed(
     }
 
     if delays.is_empty() {
-        let err_msg = "测速失败：所有网络探测均超时或连接失败";
+        let err_msg = "all network probes timed out or failed";
         let _ = on_progress.send(SpeedTestProgress {
             stage: "error".to_string(),
             latency: None,
@@ -230,10 +238,20 @@ pub async fn test_network_speed(
             timestamp: None,
             error: Some(err_msg.to_string()),
         });
-        return Err(super::CommandFailure::plain(err_msg));
+        return Err(super::CommandFailure::coded(
+            "speedtest.probeFailed",
+            err_msg,
+        ));
     }
 
-    let avg_latency = delays.iter().sum::<u32>() / (delays.len() as u32);
+    // The first probe pays for DNS + TCP + TLS through the proxy tunnel; drop the
+    // slowest sample so one handshake cannot skew the average.
+    let avg_latency = if delays.len() >= 3 {
+        let max = *delays.iter().max().unwrap();
+        (delays.iter().sum::<u32>() - max) / ((delays.len() - 1) as u32)
+    } else {
+        delays.iter().sum::<u32>() / (delays.len() as u32)
+    };
     let loss_rate = (failed_probes as f64 / probe_count as f64) * 100.0;
     let rounded_loss_rate = (loss_rate * 10.0).round() / 10.0;
 
@@ -253,6 +271,10 @@ pub async fn test_network_speed(
     let max_dl_duration = Duration::from_secs(8);
     let mut total_dl_bytes = 0u64;
     let mut last_progress = Instant::now();
+    // Sliding window of recent samples for the early-exit stability check.
+    let mut window: std::collections::VecDeque<(f64, u64)> =
+        std::collections::VecDeque::with_capacity(8);
+    let mut stable_ticks = 0u32;
 
     if let Ok(Ok(mut resp)) = tokio::time::timeout(
         Duration::from_secs(10),
@@ -261,12 +283,13 @@ pub async fn test_network_speed(
     .await
     {
         if resp.status().is_success() {
-            while let Ok(Some(chunk)) = resp.chunk().await {
+            while let Ok(Ok(Some(chunk))) = tokio::time::timeout(Duration::from_secs(2), resp.chunk()).await {
                 total_dl_bytes += chunk.len() as u64;
                 let elapsed = dl_start.elapsed();
+                let elapsed_secs = elapsed.as_secs_f64();
 
                 if last_progress.elapsed() >= Duration::from_millis(200) {
-                    let secs = elapsed.as_secs_f64();
+                    let secs = elapsed_secs;
                     if secs > 0.05 {
                         let mb = (total_dl_bytes as f64) / (1024.0 * 1024.0);
                         let spd = (mb / secs * 10.0).round() / 10.0;
@@ -281,6 +304,29 @@ pub async fn test_network_speed(
                             error: None,
                         });
                     }
+
+                    window.push_back((secs, total_dl_bytes));
+                    while window.len() > 6 {
+                        window.pop_front();
+                    }
+                    // After the ramp-up, stop early once the recent rate stays
+                    // within 10% of the overall rate for about a second; this
+                    // avoids pulling the remaining ~20MB on metered links.
+                    if elapsed_secs >= 4.0 && window.len() >= 6 {
+                        let (old_t, old_b) = *window.front().expect("window is non-empty");
+                        let overall = total_dl_bytes as f64 / elapsed_secs;
+                        let recent =
+                            (total_dl_bytes - old_b) as f64 / (elapsed_secs - old_t);
+                        if overall > 0.0 && (recent / overall - 1.0).abs() <= 0.10 {
+                            stable_ticks += 1;
+                        } else {
+                            stable_ticks = 0;
+                        }
+                        if stable_ticks >= 5 {
+                            break;
+                        }
+                    }
+
                     last_progress = Instant::now();
                 }
 
@@ -328,7 +374,9 @@ pub async fn test_network_speed(
     match ul_result {
         Ok(Ok(resp)) if resp.status().is_success() => {
             let ul_secs = ul_start.elapsed().as_secs_f64();
-            if ul_secs > 0.05 {
+            // Fast links finish 5MB in under 50ms; keep a low floor so they
+            // still report a speed instead of a silent 0.
+            if ul_secs > 0.005 {
                 let mb = (payload_size as f64) / (1024.0 * 1024.0);
                 final_ul_speed = (mb / ul_secs * 10.0).round() / 10.0;
             }
@@ -349,7 +397,7 @@ pub async fn test_network_speed(
             {
                 if resp.status().is_success() {
                     let small_secs = small_start.elapsed().as_secs_f64();
-                    if small_secs > 0.05 {
+                    if small_secs > 0.005 {
                         let mb = (small_payload_size as f64) / (1024.0 * 1024.0);
                         final_ul_speed = (mb / small_secs * 10.0).round() / 10.0;
                     }

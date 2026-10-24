@@ -193,6 +193,15 @@ const HomeSettingsDialog = ({
           <FormControlLabel
             control={
               <Checkbox
+                checked={cards.speedtest || false}
+                onChange={() => handleToggle('speedtest')}
+              />
+            }
+            label={t('home.page.settings.cards.speedtest')}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
                 checked={cards.test || false}
                 onChange={() => handleToggle('test')}
               />
@@ -246,9 +255,11 @@ const HomePage = () => {
   // 设置弹窗的状态
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // 卡片显示状态
-  const homeCards =
-    (verge?.home_cards as HomeCardsSettings | undefined) ?? DEFAULT_HOME_CARDS
+  // 卡片显示状态（与默认值合并，旧配置缺少新卡片键时按默认显示）
+  const homeCards: HomeCardsSettings = {
+    ...DEFAULT_HOME_CARDS,
+    ...((verge?.home_cards as Partial<HomeCardsSettings> | undefined) ?? {}),
+  }
 
   // 文档链接函数
   const toGithubDoc = useLockFn(() =>

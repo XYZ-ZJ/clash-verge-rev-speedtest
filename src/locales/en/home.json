@@ -94,6 +94,9 @@
       "actions": {
         "refreshDelay": "Delay check"
       },
+      "menu": {
+        "truncated": "+{{count}} more nodes — open the Proxies page to browse all"
+      },
       "labels": {
         "globalMode": "Global Mode",
         "directMode": "Direct Mode",
@@ -168,6 +171,13 @@
         "packetLoss": "Packet Loss",
         "download": "Download",
         "upload": "Upload"
+      },
+      "errors": {
+        "busy": "A speed test is already running, please wait",
+        "noPort": "Core is not running or the proxy port is unavailable",
+        "proxySetupFailed": "Failed to create the proxy client",
+        "clientSetupFailed": "Failed to create the HTTP client",
+        "probeFailed": "Speed test failed: all probes timed out or failed"
       }
     }
   }

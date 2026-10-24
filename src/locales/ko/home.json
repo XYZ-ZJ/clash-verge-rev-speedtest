@@ -20,7 +20,8 @@
         "tests": "웹사이트 테스트 카드",
         "ip": "IP 정보 카드",
         "clashInfo": "Clash 정보 카드",
-        "systemInfo": "시스템 정보 카드"
+        "systemInfo": "시스템 정보 카드",
+        "speedtest": "속도 테스트 카드"
       },
       "title": "홈 설정"
     },
@@ -135,7 +136,11 @@
         "smooth": "부드럽게",
         "linear": "선형"
       },
-      "diagnostics": "데이터 점: {{points}} | 압축됨: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "데이터 점: {{points}} | 압축됨: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "프록시 트래픽",
+      "directTraffic": "직접 트래픽",
+      "downloaded": "다운로드됨",
+      "uploaded": "업로드됨"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "규칙 세트에 따라 자동으로 프록시를 선택합니다.",
         "global": "모든 네트워크 요청을 선택한 프록시를 통해 전달합니다.",
         "direct": "프록시를 우회하여 직접 인터넷에 연결합니다."
+      }
+    },
+    "speedTest": {
+      "title": "속도 테스트",
+      "actions": {
+        "start": "테스트 시작",
+        "testing": "테스트 중"
+      },
+      "metrics": {
+        "latency": "지연 시간",
+        "packetLoss": "패킷 손실",
+        "download": "다운로드",
+        "upload": "업로드"
+      },
+      "errors": {
+        "busy": "속도 테스트가 이미 실행 중입니다. 잠시만 기다려 주세요",
+        "noPort": "코어가 실행 중이 아니거나 프록시 포트를 사용할 수 없습니다",
+        "proxySetupFailed": "프록시 클라이언트 생성 실패",
+        "clientSetupFailed": "HTTP 클라이언트 생성 실패",
+        "probeFailed": "속도 테스트 실패: 모든 프로브가 시간 초과되거나 실패했습니다"
       }
     }
   }

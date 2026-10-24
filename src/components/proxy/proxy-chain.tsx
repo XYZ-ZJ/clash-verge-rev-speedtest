@@ -46,6 +46,8 @@ import { useRecordSelection } from '@/hooks/use-record-selection'
 import { useAppRefreshers, useProxiesData } from '@/providers/app-data-context'
 import { updateProxyChainConfigInRuntime } from '@/services/cmds'
 import { mutate } from '@/services/mutate'
+import { showNotice } from '@/services/notice-service'
+import { delayLevel } from '@/utils/delay'
 import {
   selectGlobalChainNodes,
   selectRuleChainMembers,
@@ -230,11 +232,13 @@ const ChainCard = ({
           }
           size="small"
           color={
-            proxy.delay > 0 && proxy.delay < 200
-              ? 'success'
-              : proxy.delay > 0 && proxy.delay < 800
-                ? 'warning'
-                : 'error'
+            proxy.delay > 0
+              ? delayLevel(proxy.delay) === 'good'
+                ? 'success'
+                : delayLevel(proxy.delay) === 'mid'
+                  ? 'warning'
+                  : 'error'
+              : 'error'
           }
           sx={{ mr: 1, fontSize: '0.7rem', minWidth: 50 }}
         />
@@ -443,18 +447,29 @@ export const ProxyChain = ({
     [currentProxyChain, onUpdateChain, markUnsavedChanges],
   )
 
+  // Shared teardown: remove the chain from the runtime config, drop the three
+  // persisted keys and clear the UI list. Previously duplicated between the
+  // disconnect branch of handleConnect and the delete button, which drifted
+  // apart whenever a key was added.
+  const teardownChain = useCallback(async (): Promise<boolean> => {
+    const result = await mutate(() => updateProxyChainConfigInRuntime(null), {
+      id: 'update-proxy-chain-runtime',
+      errorNotice: false,
+    })
+    if (!result.ok) return false
+
+    localStorage.removeItem('proxy-chain-group')
+    localStorage.removeItem('proxy-chain-exit-node')
+    localStorage.removeItem('proxy-chain-items')
+    onUpdateChain([])
+    return true
+  }, [onUpdateChain])
+
   const handleConnect = useCallback(async () => {
     if (isConnected) {
       setIsConnecting(true)
       try {
-        const result = await mutate(
-          () => updateProxyChainConfigInRuntime(null),
-          {
-            id: 'update-proxy-chain-runtime',
-            errorNotice: false,
-          },
-        )
-        if (!result.ok) return
+        if (!(await teardownChain())) return
 
         const targetGroup =
           mode === 'global'
@@ -487,20 +502,14 @@ export const ProxyChain = ({
           }
         }
 
-        localStorage.removeItem('proxy-chain-group')
-        localStorage.removeItem('proxy-chain-exit-node')
-        localStorage.removeItem('proxy-chain-items')
-
         await mutate(() => closeAllConnections(), {
           id: 'close-all-connections',
           errorNotice: false,
         })
         await refreshProxy()
-
-        onUpdateChain([])
       } catch (error) {
         console.error('Failed to disconnect from proxy chain:', error)
-        alert(t('proxies.page.chain.disconnectFailed'))
+        showNotice.error(t('proxies.page.chain.disconnectFailed'))
       } finally {
         setIsConnecting(false)
       }
@@ -508,7 +517,7 @@ export const ProxyChain = ({
     }
 
     if (mode === 'global' && proxyView?.global === null) {
-      alert(t('proxies.page.chain.connectFailed'))
+      showNotice.error(t('proxies.page.chain.connectFailed'))
       return
     }
 
@@ -516,7 +525,7 @@ export const ProxyChain = ({
       currentProxyChain.length < 2 ||
       currentProxyChain.some(({ recordId }) => !recordId)
     ) {
-      alert(t('proxies.page.chain.minimumNodes'))
+      showNotice.error(t('proxies.page.chain.minimumNodes'))
       return
     }
 
@@ -564,7 +573,7 @@ export const ProxyChain = ({
       debugLog('Successfully connected to proxy chain')
     } catch (error) {
       console.error('Failed to connect to proxy chain:', error)
-      alert(t('proxies.page.chain.connectFailed'))
+      showNotice.error(t('proxies.page.chain.connectFailed'))
     } finally {
       setIsConnecting(false)
     }
@@ -578,6 +587,7 @@ export const ProxyChain = ({
     selectedGroup,
     onUpdateChain,
     recordSelection,
+    teardownChain,
   ])
 
   // 处理链式代理配置数据
@@ -629,15 +639,7 @@ export const ProxyChain = ({
             <IconButton
               size="small"
               onClick={() => {
-                void mutate(() => updateProxyChainConfigInRuntime(null), {
-                  id: 'update-proxy-chain-runtime',
-                  onFulfilled: () => {
-                    localStorage.removeItem('proxy-chain-group')
-                    localStorage.removeItem('proxy-chain-exit-node')
-                    localStorage.removeItem('proxy-chain-items')
-                    onUpdateChain([])
-                  },
-                }).catch(() => {})
+                void teardownChain()
               }}
               sx={{
                 color: theme.palette.error.main,

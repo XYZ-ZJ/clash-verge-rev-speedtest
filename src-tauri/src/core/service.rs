@@ -701,7 +701,9 @@ fn uninstall_service() -> Result<()> {
 
     // clash_verge_i18n::sync_locale(Config::verge().await.latest_arc().language.as_deref());
 
-    let prompt = clash_verge_i18n::t!("service.adminUninstallPrompt");
+    let prompt = escape_osascript_double_quoted_string(&clash_verge_i18n::t!(
+        "service.adminUninstallPrompt"
+    ));
     let uninstall_quoted = shell_single_quote(&uninstall_shell);
     let shell = format!("cd /; {uninstall_quoted}");
     let shell = escape_osascript_double_quoted_string(&shell);
@@ -1034,12 +1036,19 @@ pub(crate) async fn get_clash_log_snapshot_by_service() -> Result<String> {
 }
 
 fn decode_hex(encoded: &str) -> Result<Vec<u8>> {
-    if !encoded.len().is_multiple_of(2) {
+    // Validate on bytes first: slicing `&str` by offsets that are not UTF-8
+    // char boundaries would panic, and a misbehaving service can send any
+    // string (e.g. a lone multi-byte emoji), which must fail cleanly instead.
+    let bytes = encoded.as_bytes();
+    if bytes.len() % 2 != 0 {
         bail!("hex payload has an odd length");
     }
-    (0..encoded.len())
-        .step_by(2)
-        .map(|offset| u8::from_str_radix(&encoded[offset..offset + 2], 16).context("hex payload is malformed"))
+    if !bytes.iter().all(u8::is_ascii_hexdigit) {
+        bail!("hex payload is malformed");
+    }
+    bytes
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).expect("validated as ascii hex"), 16).context("hex payload is malformed"))
         .collect()
 }
 

@@ -73,6 +73,9 @@ struct ProxyLatencyItem {
 pub struct Tray {
     limiter: SystemLimiter,
     proxy_hover_limiter: SystemLimiter,
+    /// Menu clicks get their own budget: sharing `limiter` with the tray-icon
+    /// click dropped the second of two quick menu actions.
+    menu_limiter: SystemLimiter,
     menu_update: tokio::sync::Mutex<()>,
     latency_items: parking_lot::Mutex<HashMap<std::string::String, LatencyMenuItem>>,
     #[cfg(target_os = "macos")]
@@ -149,6 +152,7 @@ impl Default for Tray {
         Self {
             limiter: Limiter::new(Duration::from_millis(TRAY_CLICK_DEBOUNCE_MS), SystemClock),
             proxy_hover_limiter: Limiter::new(Duration::from_secs(1), SystemClock),
+            menu_limiter: Limiter::new(Duration::from_millis(50), SystemClock),
             menu_update: tokio::sync::Mutex::new(()),
             latency_items: parking_lot::Mutex::new(HashMap::new()),
             #[cfg(target_os = "macos")]
@@ -529,6 +533,14 @@ impl Tray {
         let allow = self.limiter.check();
         if !allow {
             logging!(debug, Type::Tray, "tray click rate limited");
+        }
+        allow
+    }
+
+    fn should_handle_menu_event(&self) -> bool {
+        let allow = self.menu_limiter.check();
+        if !allow {
+            logging!(debug, Type::Tray, "menu event rate limited");
         }
         allow
     }
@@ -1129,7 +1141,7 @@ fn on_tray_icon_event(_tray_icon: &TrayIcon, tray_event: TrayIconEvent) {
 }
 
 fn on_menu_event(_: &AppHandle, event: MenuEvent) {
-    if !Tray::global().should_handle_tray_click() {
+    if !Tray::global().should_handle_menu_event() {
         return;
     }
     if event.id.as_ref().is_empty() {

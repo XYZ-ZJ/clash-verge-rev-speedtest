@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { MihomoWebSocket } from 'tauri-plugin-mihomo-api'
 
+import { WS_ERROR_PREFIX } from '@/services/ws-protocol'
+
 const MAX_CLOSED_CONNS_NUM = 500
 const CONNECTION_UPDATE_THROTTLE_MS = 500
 const CONNECTION_RECONNECT_DELAY_MS = 1_000
@@ -24,33 +26,15 @@ interface ConnectionMonitorData {
   closedConnections: IConnectionsItem[]
 }
 
-interface ConnectionSummaryPayload {
-  count?: number
-}
-
-interface ConnectionSummaryData {
-  activeConnectionCount: number
-}
-
-const initConnSummaryData: ConnectionSummaryData = {
-  activeConnectionCount: 0,
-}
-
 let connectionData: ConnectionMonitorData = initConnData
-let connectionSummary: ConnectionSummaryData = initConnSummaryData
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let pendingMessageData: string | null = null
 let lastFlushAt = 0
 
 const connectionListeners = new Set<ConnectionListener>()
-const summaryListeners = new Set<ConnectionListener>()
 
 const notifyConnectionListeners = () => {
   connectionListeners.forEach((listener) => listener())
-}
-
-const notifySummaryListeners = () => {
-  summaryListeners.forEach((listener) => listener())
 }
 
 const sameMetadata = (left: ConnectionMetadata, right: ConnectionMetadata) =>
@@ -158,11 +142,30 @@ const mergeConnectionSnapshot = (
   }
 
   const activeConnections: IConnectionsItem[] = []
+  let anyConnectionChanged = false
   for (let i = 0; i < nextConnections.length; i++) {
     const connection = nextConnections[i]
     const previousConnection = previousActiveById.get(connection.id)
     if (previousConnection) previousActiveById.delete(connection.id)
-    activeConnections.push(normalizeConnection(connection, previousConnection))
+    const normalized = normalizeConnection(connection, previousConnection)
+    if (normalized !== previousConnection) anyConnectionChanged = true
+    activeConnections.push(normalized)
+  }
+
+  const totalsChanged =
+    previous.uploadTotal !== (payload.uploadTotal ?? 0) ||
+    previous.downloadTotal !== (payload.downloadTotal ?? 0)
+
+  // Nothing observable moved: keep the previous snapshot object so
+  // useSyncExternalStore subscribers skip the re-render entirely instead of
+  // re-rendering every 500ms while traffic is idle.
+  if (
+    previousActiveById.size === 0 &&
+    !anyConnectionChanged &&
+    !totalsChanged &&
+    activeConnections.length === previousActive.length
+  ) {
+    return previous
   }
 
   if (previousActiveById.size === 0) {
@@ -204,12 +207,6 @@ const mergeConnectionSnapshot = (
     closedConnections,
   }
 }
-
-const mergeConnectionSummary = (
-  payload: ConnectionSummaryPayload,
-): ConnectionSummaryData => ({
-  activeConnectionCount: payload.count ?? 0,
-})
 
 const flushPendingMessage = () => {
   flushTimer = null
@@ -323,7 +320,7 @@ const createSocketSupervisor = (options: {
       connected.addListener((message) => {
         if (socket !== connected) return
         if (message.type !== 'Text') return
-        if (message.data.startsWith('Websocket error')) {
+        if (message.data.startsWith(WS_ERROR_PREFIX)) {
           void reconnect()
           return
         }
@@ -351,22 +348,6 @@ const createSocketSupervisor = (options: {
   }
 }
 
-const handleSummaryText = (messageData: string) => {
-  let payload: ConnectionSummaryPayload
-  try {
-    payload = JSON.parse(messageData) as ConnectionSummaryPayload
-  } catch (err) {
-    console.error(
-      '[Connections] Failed to parse connections count payload',
-      err,
-    )
-    return
-  }
-
-  connectionSummary = mergeConnectionSummary(payload)
-  notifySummaryListeners()
-}
-
 const connectionSupervisor = createSocketSupervisor({
   listeners: connectionListeners,
   connectSocket: () => MihomoWebSocket.connect_connections(),
@@ -375,15 +356,7 @@ const connectionSupervisor = createSocketSupervisor({
   onIdle: clearPendingMessage,
 })
 
-const summarySupervisor = createSocketSupervisor({
-  listeners: summaryListeners,
-  connectSocket: () => MihomoWebSocket.connect_connections_count(),
-  onText: handleSummaryText,
-  closeLogLabel: 'connections count',
-})
-
 const getConnectionSnapshot = () => connectionData
-const getConnectionSummarySnapshot = () => connectionSummary
 
 const subscribeConnectionData = (listener: ConnectionListener) => {
   connectionListeners.add(listener)
@@ -391,15 +364,6 @@ const subscribeConnectionData = (listener: ConnectionListener) => {
   return () => {
     connectionListeners.delete(listener)
     connectionSupervisor.stopIfIdle()
-  }
-}
-
-const subscribeConnectionSummary = (listener: ConnectionListener) => {
-  summaryListeners.add(listener)
-  summarySupervisor.start()
-  return () => {
-    summaryListeners.delete(listener)
-    summarySupervisor.stopIfIdle()
   }
 }
 
@@ -432,24 +396,5 @@ export const useConnectionData = (options?: { enabled?: boolean }) => {
   return {
     response,
     clearClosedConnections,
-  }
-}
-
-export const useConnectionSummaryData = (options?: { enabled?: boolean }) => {
-  const enabled = options?.enabled ?? true
-  const subscribe = useCallback(
-    (listener: ConnectionListener) =>
-      enabled ? subscribeConnectionSummary(listener) : () => {},
-    [enabled],
-  )
-  const data = useSyncExternalStore(
-    subscribe,
-    getConnectionSummarySnapshot,
-    getConnectionSummarySnapshot,
-  )
-  const response = useMemo(() => ({ data }), [data])
-
-  return {
-    response,
   }
 }

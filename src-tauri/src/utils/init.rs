@@ -79,8 +79,12 @@ pub async fn delete_log() -> Result<()> {
     logging!(debug, Type::Setup, "try to delete log files, day: {}", day);
 
     let parse_time_str = |s: &str| {
-        let sa: Vec<&str> = s.split('-').collect();
-        if sa.len() != 4 {
+        // Rotated log files are named `%Y-%m-%d_%H-%M-%S` (see
+        // crates/clash-verge-logging). Retention only needs the date half,
+        // so drop the time part before splitting into 3 date segments.
+        let date_part = s.split_once('_').map(|(date, _)| date).unwrap_or(s);
+        let sa: Vec<&str> = date_part.split('-').collect();
+        if sa.len() != 3 {
             return Err(anyhow::anyhow!("invalid time str"));
         }
 
@@ -124,7 +128,10 @@ pub async fn delete_log() -> Result<()> {
             .await
             .with_context(|| format!("failed to read next entry in log directory {}", log_dir.display()))?
         {
-            std::mem::drop(process_file(entry).await);
+            // Skip unparsable names visibly instead of silently dropping the error.
+            if let Err(err) = process_file(entry).await {
+                logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");
+            }
         }
     }
 
@@ -138,7 +145,9 @@ pub async fn delete_log() -> Result<()> {
                 service_log_dir.display()
             )
         })? {
-            std::mem::drop(process_file(entry).await);
+            if let Err(err) = process_file(entry).await {
+                logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");
+            }
         }
     }
 

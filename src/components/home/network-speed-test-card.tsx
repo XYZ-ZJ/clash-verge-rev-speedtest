@@ -13,7 +13,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { Channel } from '@tauri-apps/api/core'
-import { useCallback, useState } from 'react'
+import { cloneElement, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EnhancedCard } from '@/components/home/enhanced-card'
@@ -35,24 +35,86 @@ interface SpeedCardData {
   timestamp: string | null
 }
 
+const EMPTY_RESULT: SpeedCardData = {
+  latency: null,
+  lossRate: null,
+  downloadSpeed: null,
+  uploadSpeed: null,
+  location: null,
+  timestamp: null,
+}
+
 const loadSavedResult = (): SpeedCardData => {
   try {
     const raw = localStorage.getItem(SPEED_TEST_STORAGE_KEY)
     if (raw) {
-      return JSON.parse(raw) as SpeedCardData
+      const parsed = JSON.parse(raw) as SpeedCardData
+      return { ...EMPTY_RESULT, ...parsed }
     }
   } catch (e) {
     console.warn('Failed to parse speed test cache', e)
   }
-  return {
-    latency: null,
-    lossRate: null,
-    downloadSpeed: null,
-    uploadSpeed: null,
-    location: null,
-    timestamp: null,
-  }
+  return EMPTY_RESULT
 }
+
+/** Backend failures carry a stable `speedtest.*` code; prefer the translated
+ * message and fall back to the raw detail when the code is unknown. */
+const resolveErrorMessage = (error: unknown, t: (key: string) => string) => {
+  if (typeof error === 'string') return error
+  const err = error as { code?: string; detail?: string; message?: string }
+  if (err?.code?.startsWith('speedtest.')) {
+    const rawSubKey = err.code.slice('speedtest.'.length)
+    const camelSubKey = rawSubKey.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+    const key = `home.components.speedTest.errors.${camelSubKey}`
+    const translated = t(key)
+    if (translated !== key) return translated
+  }
+  return err?.detail || err?.message || String(error)
+}
+
+interface MetricTileProps {
+  label: string
+  value: string
+  icon: React.ReactElement
+  iconColor: string
+  bg: string
+}
+
+const MetricTile = ({ label, value, icon, iconColor, bg }: MetricTileProps) => (
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      p: 1.5,
+      borderRadius: 2,
+      backgroundColor: bg,
+    }}
+  >
+    {cloneElement(icon, {
+      sx: { fontSize: 32, color: iconColor, mr: 1.5, flexShrink: 0 },
+    })}
+    <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ fontSize: '0.8125rem', lineHeight: 1.2, mb: 0.5 }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        variant="h6"
+        sx={{
+          fontWeight: 'bold',
+          fontSize: '1.125rem',
+          lineHeight: 1.2,
+          color: 'text.primary',
+        }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  </Box>
+)
 
 export const NetworkSpeedTestCard = () => {
   const { t } = useTranslation()
@@ -65,6 +127,8 @@ export const NetworkSpeedTestCard = () => {
   const handleStartTest = useCallback(async () => {
     if (isRunning) return
     setIsRunning(true)
+    // Clear the previous run so a failed test never mixes old and new numbers.
+    setTestData(EMPTY_RESULT)
 
     const channel = new Channel<SpeedTestProgress>()
     channel.onmessage = (progress) => {
@@ -72,7 +136,12 @@ export const NetworkSpeedTestCard = () => {
         latency: progress.latency ?? prev.latency,
         lossRate: progress.loss_rate ?? prev.lossRate,
         downloadSpeed: progress.download_speed ?? prev.downloadSpeed,
-        uploadSpeed: progress.upload_speed ?? prev.uploadSpeed,
+        // `upload_start` reports a 0 placeholder; keep the previous value so
+        // the tile does not flash 0.0 before the real upload finishes.
+        uploadSpeed:
+          progress.stage === 'upload_start'
+            ? prev.uploadSpeed
+            : (progress.upload_speed ?? prev.uploadSpeed),
         location: progress.location ?? prev.location,
         timestamp: progress.timestamp ?? prev.timestamp,
       }))
@@ -91,17 +160,42 @@ export const NetworkSpeedTestCard = () => {
       setTestData(finalData)
       localStorage.setItem(SPEED_TEST_STORAGE_KEY, JSON.stringify(finalData))
     } catch (error: any) {
-      const msg =
-        typeof error === 'string' ? error : error?.detail || error?.message || String(error)
-      showNotice.error(msg)
+      showNotice.error(resolveErrorMessage(error, t))
     } finally {
       setIsRunning(false)
     }
-  }, [isRunning])
+  }, [isRunning, t])
 
   const itemBg = isDark
     ? alpha(theme.palette.common.white, 0.05)
     : alpha(theme.palette.common.black, 0.03)
+
+  const tiles = [
+    {
+      key: 'latency',
+      icon: <SignalCellularAltRound />,
+      iconColor: '#1e88e5',
+      value: `${testData.latency ?? '-'} ms`,
+    },
+    {
+      key: 'packetLoss',
+      icon: <SignalCellularAltRound />,
+      iconColor: '#ffa726',
+      value: `${testData.lossRate !== null ? testData.lossRate.toFixed(1) : '-'} %`,
+    },
+    {
+      key: 'download',
+      icon: <CloudDownloadRounded />,
+      iconColor: '#4caf50',
+      value: `${testData.downloadSpeed !== null ? testData.downloadSpeed.toFixed(1) : '-'} MB/s`,
+    },
+    {
+      key: 'upload',
+      icon: <CloudUploadRounded />,
+      iconColor: '#ff9800',
+      value: `${testData.uploadSpeed !== null ? testData.uploadSpeed.toFixed(1) : '-'} MB/s`,
+    },
+  ]
 
   return (
     <EnhancedCard
@@ -140,171 +234,16 @@ export const NetworkSpeedTestCard = () => {
           flex: 1,
         }}
       >
-        {/* 延迟 */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 1.5,
-            borderRadius: 2,
-            backgroundColor: itemBg,
-          }}
-        >
-          <SignalCellularAltRounded
-            sx={{
-              fontSize: 32,
-              color: '#1e88e5',
-              mr: 1.5,
-              flexShrink: 0,
-            }}
+        {tiles.map((tile) => (
+          <MetricTile
+            key={tile.key}
+            label={t(`home.components.speedTest.metrics.${tile.key}`)}
+            value={tile.value}
+            icon={tile.icon}
+            iconColor={tile.iconColor}
+            bg={itemBg}
           />
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ fontSize: '0.8125rem', lineHeight: 1.2, mb: 0.5 }}
-            >
-              {t('home.components.speedTest.metrics.latency', '延迟')}
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                lineHeight: 1.2,
-                color: 'text.primary',
-              }}
-            >
-              {testData.latency !== null ? `${testData.latency} ms` : '- ms'}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* 丢包率 */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 1.5,
-            borderRadius: 2,
-            backgroundColor: itemBg,
-          }}
-        >
-          <SignalCellularAltRounded
-            sx={{
-              fontSize: 32,
-              color: '#ffa726',
-              mr: 1.5,
-              flexShrink: 0,
-            }}
-          />
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ fontSize: '0.8125rem', lineHeight: 1.2, mb: 0.5 }}
-            >
-              {t('home.components.speedTest.metrics.packetLoss', '丢包率')}
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                lineHeight: 1.2,
-                color: 'text.primary',
-              }}
-            >
-              {testData.lossRate !== null
-                ? `${testData.lossRate.toFixed(1)} %`
-                : '- %'}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* 下载速度 */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 1.5,
-            borderRadius: 2,
-            backgroundColor: itemBg,
-          }}
-        >
-          <CloudDownloadRounded
-            sx={{
-              fontSize: 32,
-              color: '#4caf50',
-              mr: 1.5,
-              flexShrink: 0,
-            }}
-          />
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ fontSize: '0.8125rem', lineHeight: 1.2, mb: 0.5 }}
-            >
-              {t('home.components.speedTest.metrics.download', '下载速度')}
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                lineHeight: 1.2,
-                color: 'text.primary',
-              }}
-            >
-              {testData.downloadSpeed !== null
-                ? `${testData.downloadSpeed.toFixed(1)} MB/s`
-                : '- MB/s'}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* 上传速度 */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: 1.5,
-            borderRadius: 2,
-            backgroundColor: itemBg,
-          }}
-        >
-          <CloudUploadRounded
-            sx={{
-              fontSize: 32,
-              color: '#ff9800',
-              mr: 1.5,
-              flexShrink: 0,
-            }}
-          />
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ fontSize: '0.8125rem', lineHeight: 1.2, mb: 0.5 }}
-            >
-              {t('home.components.speedTest.metrics.upload', '上传速度')}
-            </Typography>
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                lineHeight: 1.2,
-                color: 'text.primary',
-              }}
-            >
-              {testData.uploadSpeed !== null
-                ? `${testData.uploadSpeed.toFixed(1)} MB/s`
-                : '- MB/s'}
-            </Typography>
-          </Box>
-        </Box>
+        ))}
       </Box>
 
       {/* Footer: 测速节点所在地地区 & 测速时间 */}

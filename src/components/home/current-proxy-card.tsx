@@ -5,7 +5,6 @@ import {
   ChevronRight,
   NetworkCheckRounded,
   WifiOff as SignalError,
-  SignalWifi3Bar as SignalGood,
   SignalWifi2Bar as SignalMedium,
   SignalWifi0Bar as SignalNone,
   SignalWifi4Bar as SignalStrong,
@@ -61,7 +60,7 @@ import {
   type ResolvedProxyMember,
 } from '@/types/proxy-view'
 import { debugLog } from '@/utils/debug'
-import { compareByDelay, DEFAULT_DELAY_TIMEOUT } from '@/utils/delay'
+import { compareByDelay, DEFAULT_DELAY_TIMEOUT, delayLevel } from '@/utils/delay'
 
 const STORAGE_KEY_GROUP = 'clash-verge-selected-proxy-group'
 const STORAGE_KEY_SORT_TYPE = 'clash-verge-proxy-sort-type'
@@ -70,6 +69,9 @@ const AUTO_CHECK_DEFAULT_INTERVAL_MINUTES = 5
 const AUTO_CHECK_INITIAL_DELAY_MS = 100
 const PROXY_MENU_MAX_HEIGHT = 500
 const PROXY_MENU_VIEWPORT_MARGIN = 8
+/// Upper bound on nodes rendered inside the home proxy dropdown; the proxies
+/// page (virtualized) remains the place to browse very large groups.
+const HOME_PROXY_MENU_MAX_ITEMS = 300
 
 const proxyMenuModifiers: PopperProps['modifiers'] = [
   {
@@ -168,23 +170,19 @@ function getSignalIcon(
       text: translate('home.components.currentProxy.status.timeout'),
       color: 'error.main',
     }
-  if (delay >= 500)
+  // Graded through the shared delayLevel so every latency indicator in the
+  // app (signal icon here, chips on the proxies page) agrees on one scale.
+  if (delayLevel(delay) === 'bad')
     return {
       icon: <SignalWeak />,
       text: translate('home.components.currentProxy.status.latencyHigh'),
       color: 'error.main',
     }
-  if (delay >= 300)
+  if (delayLevel(delay) === 'mid')
     return {
       icon: <SignalMedium />,
       text: translate('home.components.currentProxy.status.latencyMedium'),
       color: 'warning.main',
-    }
-  if (delay >= 200)
-    return {
-      icon: <SignalGood />,
-      text: translate('home.components.currentProxy.status.latencyGood'),
-      color: 'info.main',
     }
   return {
     icon: <SignalStrong />,
@@ -439,6 +437,7 @@ const PersistentProxySelect = ({
   onChange,
   ...props
 }: PersistentProxySelectProps) => {
+  const { t } = useTranslation()
   const fixedProxyInUsed = selectedName === fixed
 
   return (
@@ -472,66 +471,94 @@ const PersistentProxySelect = ({
           )}
         </Box>
       }
-      renderOptions={() =>
-        options.map((option) => {
-          const selected = option.value === value
-          const isFixed = option.name === fixed
-          const delay = option.disabled
-            ? -1
-            : delayManager.getDelayFix(option.member, groupName)
+      renderOptions={() => {
+        // Bound the rendered entries: a large subscription puts thousands of
+        // nodes in one group and opening the dropdown used to build the whole
+        // list at once. The proxies page stays fully virtualized for complete
+        // browsing; here we render a generous window plus a hint.
+        const visibleOptions = options.slice(0, HOME_PROXY_MENU_MAX_ITEMS)
+        const hiddenCount = options.length - visibleOptions.length
 
-          return (
-            <MenuItem
-              key={option.value}
-              role="option"
-              aria-selected={selected}
-              selected={selected}
-              disabled={option.disabled}
-              onClick={() => {
-                if (!option.disabled) onChange(option.value)
-              }}
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                width: '100%',
-                pr: 1,
-              }}
-            >
-              {isFixed && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    fontSize: '12px',
-                    top: '-5px',
-                    right: '5px',
-                    ...(!fixedProxyInUsed && {
-                      filter: 'grayscale(1)',
-                    }),
+        return (
+          <>
+            {visibleOptions.map((option) => {
+              const selected = option.value === value
+              const isFixed = option.name === fixed
+              const delay = option.disabled
+                ? -1
+                : delayManager.getDelayFix(option.member, groupName)
+
+              return (
+                <MenuItem
+                  key={option.value}
+                  role="option"
+                  aria-selected={selected}
+                  selected={selected}
+                  disabled={option.disabled}
+                  onClick={() => {
+                    if (!option.disabled) onChange(option.value)
+                  }}
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                    pr: 1,
                   }}
                 >
-                  📌
-                </span>
-              )}
-              <Typography noWrap sx={{ flex: 1, mr: 1 }}>
-                {option.name}
-              </Typography>
-              {!option.disabled && (
-                <Chip
-                  size="small"
-                  label={delayManager.formatDelay(delay)}
-                  color={convertDelayColor(delay)}
-                  sx={{
-                    minWidth: '60px',
-                    height: '22px',
-                    flexShrink: 0,
-                  }}
-                />
-              )}
-            </MenuItem>
-          )
-        })
-      }
+                  {isFixed && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        fontSize: '12px',
+                        top: '-5px',
+                        right: '5px',
+                        ...(!fixedProxyInUsed && {
+                          filter: 'grayscale(1)',
+                        }),
+                      }}
+                    >
+                      📌
+                    </span>
+                  )}
+                  <Typography noWrap sx={{ flex: 1, mr: 1 }}>
+                    {option.name}
+                  </Typography>
+                  {!option.disabled && (
+                    <Chip
+                      size="small"
+                      label={delayManager.formatDelay(delay)}
+                      color={convertDelayColor(delay)}
+                      sx={{
+                        minWidth: '60px',
+                        height: '22px',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </MenuItem>
+              )
+            })}
+            {hiddenCount > 0 && (
+              <MenuItem
+                key="__truncated__"
+                disabled
+                sx={{ justifyContent: 'center' }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: '0.75rem' }}
+                >
+                  {t('home.components.currentProxy.menu.truncated', {
+                    count: hiddenCount,
+                  })}
+                </Typography>
+              </MenuItem>
+            )}
+          </>
+        )
+      }}
     />
   )
 }

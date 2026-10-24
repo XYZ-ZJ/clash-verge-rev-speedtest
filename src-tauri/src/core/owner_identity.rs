@@ -124,6 +124,18 @@ mod windows_owner {
     ];
 
     pub(super) fn current_sid() -> Result<String> {
+        // The SID is stable for the lifetime of the process; cache it so the
+        // 5s owner monitor and every Service IPC stop re-querying the token.
+        static CACHED_SID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        if let Some(sid) = CACHED_SID.get() {
+            return Ok(sid.clone());
+        }
+        let sid = current_sid_uncached()?;
+        let _ = CACHED_SID.set(sid.clone());
+        Ok(sid)
+    }
+
+    fn current_sid_uncached() -> Result<String> {
         let mut token = std::ptr::null_mut();
         if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
             return Err(std::io::Error::last_os_error()).context("failed to open process token");
@@ -146,6 +158,22 @@ mod windows_owner {
     }
 
     pub(super) fn load_or_create_token(app_data_root: &Path, sid: &str) -> Result<String> {
+        // The token file content is stable while this process runs. Caching it
+        // per root avoids re-opening the file and rewriting its DACL on every
+        // Service IPC round-trip; a different root (tests) still recomputes.
+        static CACHED_TOKEN: std::sync::OnceLock<(std::path::PathBuf, String)> =
+            std::sync::OnceLock::new();
+        if let Some((root, token)) = CACHED_TOKEN.get() {
+            if root == app_data_root {
+                return Ok(token.clone());
+            }
+        }
+        let token = load_or_create_token_uncached(app_data_root, sid)?;
+        let _ = CACHED_TOKEN.set((app_data_root.to_path_buf(), token.clone()));
+        Ok(token)
+    }
+
+    fn load_or_create_token_uncached(app_data_root: &Path, sid: &str) -> Result<String> {
         let token_path = app_data_root.join(OWNER_TOKEN_FILE_NAME);
         let descriptor = LocalSecurityDescriptor::from_sid(sid)?;
         let attributes = SECURITY_ATTRIBUTES {

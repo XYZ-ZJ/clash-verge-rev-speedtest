@@ -37,8 +37,14 @@ pub(crate) async fn collect_runtime_bundle(config_file: &Path, core_path: &Path)
         serde_yaml_ng::from_str(&yaml).with_context(|| format!("failed to parse runtime config {config_file:?}"))?;
     let config_root = config_file
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("runtime config has no parent directory"))?;
-    let parts = collect_runtime_parts(config, config_root)?;
+        .ok_or_else(|| anyhow::anyhow!("runtime config has no parent directory"))?
+        .to_path_buf();
+    // collect_runtime_parts canonicalizes provider paths and probes geo assets
+    // with synchronous filesystem calls; keep that off the async workers.
+    let parts = crate::process::AsyncHandler::spawn_blocking(move || {
+        collect_runtime_parts(config, &config_root)
+    })
+    .await??;
     Ok(RuntimeBundle {
         yaml: serde_yaml_ng::to_string(&parts.config).context("failed to serialize service runtime config")?,
         assets: parts.assets,

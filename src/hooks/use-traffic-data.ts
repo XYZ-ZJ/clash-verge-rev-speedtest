@@ -1,5 +1,7 @@
 import { MihomoWebSocket, Traffic } from 'tauri-plugin-mihomo-api'
 
+import { WS_ERROR_PREFIX } from '@/services/ws-protocol'
+
 import { useMihomoWsSubscription } from './use-mihomo-ws-subscription'
 import { useTrafficMonitorEnhanced } from './use-traffic-monitor'
 
@@ -31,7 +33,7 @@ export const useTrafficData = (options?: { enabled?: boolean }) => {
   const {
     graphData: { appendData },
   } = useTrafficMonitorEnhanced({ subscribe: false, enabled })
-  const { response, refresh } = useMihomoWsSubscription<ITrafficItem>({
+  const { response } = useMihomoWsSubscription<ITrafficItem>({
     storageKey: 'mihomo_traffic_date',
     buildSubscriptKey: (date) => (enabled ? `getClashTraffic-${date}` : null),
     fallbackData: FALLBACK_TRAFFIC,
@@ -39,7 +41,7 @@ export const useTrafficData = (options?: { enabled?: boolean }) => {
     throttleMs: 200,
     setupHandlers: ({ next, scheduleReconnect }) => ({
       handleMessage: (data) => {
-        if (data.startsWith('Websocket error')) {
+        if (data.startsWith(WS_ERROR_PREFIX)) {
           next(data, FALLBACK_TRAFFIC)
           void scheduleReconnect()
           return
@@ -59,5 +61,5 @@ export const useTrafficData = (options?: { enabled?: boolean }) => {
     }),
   })
 
-  return { response, refreshGetClashTraffic: refresh }
+  return { response }
 }

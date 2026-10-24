@@ -185,6 +185,62 @@ impl PrfItem {
         }
     }
 
+    /// Creates the missing merge/script/rules/proxies/groups companion items
+    /// and appends them in one draft commit (`profiles_append_items_safe`);
+    /// on failure nothing is persisted, so a retried import cannot accumulate
+    /// orphan entries.
+    async fn ensure_companions(
+        merge: &mut Option<String>,
+        script: &mut Option<String>,
+        rules: &mut Option<String>,
+        proxies: &mut Option<String>,
+        groups: &mut Option<String>,
+    ) -> Result<()> {
+        #[derive(Clone, Copy)]
+        enum Kind {
+            Merge,
+            Script,
+            Rules,
+            Proxies,
+            Groups,
+        }
+
+        let mut companions: Vec<(Kind, Self)> = Vec::new();
+        if merge.is_none() {
+            companions.push((Kind::Merge, Self::from_merge(None)));
+        }
+        if script.is_none() {
+            companions.push((Kind::Script, Self::from_script(None)));
+        }
+        if rules.is_none() {
+            companions.push((Kind::Rules, Self::from_rules()));
+        }
+        if proxies.is_none() {
+            companions.push((Kind::Proxies, Self::from_proxies()));
+        }
+        if groups.is_none() {
+            companions.push((Kind::Groups, Self::from_groups()));
+        }
+        if companions.is_empty() {
+            return Ok(());
+        }
+
+        let refs: Vec<&mut Self> = companions.iter_mut().map(|(_, item)| item).collect();
+        profiles::profiles_append_items_safe(refs).await?;
+
+        for (kind, item) in companions {
+            let uid = item.uid;
+            match kind {
+                Kind::Merge => *merge = uid,
+                Kind::Script => *script = uid,
+                Kind::Rules => *rules = uid,
+                Kind::Proxies => *proxies = uid,
+                Kind::Groups => *groups = uid,
+            }
+        }
+        Ok(())
+    }
+
     async fn from_local(
         name: String,
         desc: String,
@@ -201,31 +257,9 @@ impl PrfItem {
         let mut proxies = opt_ref.and_then(|o| o.proxies.clone());
         let mut groups = opt_ref.and_then(|o| o.groups.clone());
 
-        if merge.is_none() {
-            let merge_item = &mut Self::from_merge(None);
-            profiles::profiles_append_item_safe(merge_item).await?;
-            merge = merge_item.uid.clone();
-        }
-        if script.is_none() {
-            let script_item = &mut Self::from_script(None);
-            profiles::profiles_append_item_safe(script_item).await?;
-            script = script_item.uid.clone();
-        }
-        if rules.is_none() {
-            let rules_item = &mut Self::from_rules();
-            profiles::profiles_append_item_safe(rules_item).await?;
-            rules = rules_item.uid.clone();
-        }
-        if proxies.is_none() {
-            let proxies_item = &mut Self::from_proxies();
-            profiles::profiles_append_item_safe(proxies_item).await?;
-            proxies = proxies_item.uid.clone();
-        }
-        if groups.is_none() {
-            let groups_item = &mut Self::from_groups();
-            profiles::profiles_append_item_safe(groups_item).await?;
-            groups = groups_item.uid.clone();
-        }
+        Self::ensure_companions(&mut merge, &mut script, &mut rules, &mut proxies, &mut groups)
+            .await?;
+
         Ok(Self {
             uid: Some(uid),
             itype: Some("local".into()),
@@ -380,31 +414,8 @@ impl PrfItem {
             bail!("profile does not contain `proxies` or `proxy-providers`");
         }
 
-        if merge.is_none() {
-            let merge_item = &mut Self::from_merge(None);
-            profiles::profiles_append_item_safe(merge_item).await?;
-            merge = merge_item.uid.clone();
-        }
-        if script.is_none() {
-            let script_item = &mut Self::from_script(None);
-            profiles::profiles_append_item_safe(script_item).await?;
-            script = script_item.uid.clone();
-        }
-        if rules.is_none() {
-            let rules_item = &mut Self::from_rules();
-            profiles::profiles_append_item_safe(rules_item).await?;
-            rules = rules_item.uid.clone();
-        }
-        if proxies.is_none() {
-            let proxies_item = &mut Self::from_proxies();
-            profiles::profiles_append_item_safe(proxies_item).await?;
-            proxies = proxies_item.uid.clone();
-        }
-        if groups.is_none() {
-            let groups_item = &mut Self::from_groups();
-            profiles::profiles_append_item_safe(groups_item).await?;
-            groups = groups_item.uid.clone();
-        }
+        Self::ensure_companions(&mut merge, &mut script, &mut rules, &mut proxies, &mut groups)
+            .await?;
 
         Ok(Self {
             uid: Some(uid),

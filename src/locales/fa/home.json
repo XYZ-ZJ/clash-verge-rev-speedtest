@@ -20,7 +20,8 @@
         "tests": "Website Tests Card",
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
-        "systemInfo": "System Info Cards"
+        "systemInfo": "System Info Cards",
+        "speedtest": "کارت تست سرعت"
       },
       "title": "Home Settings"
     },
@@ -135,7 +136,11 @@
         "smooth": "نرم",
         "linear": "خطی"
       },
-      "diagnostics": "نقاط: {{points}} | فشرده: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "نقاط: {{points}} | فشرده: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "ترافیک پراکسی",
+      "directTraffic": "ترافیک مستقیم",
+      "downloaded": "دانلود شده",
+      "uploaded": "آپلود شده"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "تست سرعت",
+      "actions": {
+        "start": "شروع تست",
+        "testing": "در حال تست"
+      },
+      "metrics": {
+        "latency": "تأخیر",
+        "packetLoss": "اتلاف بسته",
+        "download": "دانلود",
+        "upload": "آپلود"
+      },
+      "errors": {
+        "busy": "یک تست سرعت در حال اجراست، لطفاً صبر کنید",
+        "noPort": "هسته در حال اجرا نیست یا پورت پراکسی در دسترس نیست",
+        "proxySetupFailed": "ایجاد کلاینت پراکسی ناموفق بود",
+        "clientSetupFailed": "ایجاد کلاینت HTTP ناموفق بود",
+        "probeFailed": "تست سرعت ناموفق بود: همه بررسی‌ها تایم‌اوت یا ناموفق بودند"
       }
     }
   }

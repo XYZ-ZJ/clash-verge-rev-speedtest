@@ -437,6 +437,70 @@ const ProfileItemBase = (props: ProfileItemProps) => {
     delete: 'shared.actions.delete',
   } as const
 
+  // 共享的删除处理与核心菜单项：url/file 两种上下文菜单仅首尾条目不同，
+  // 其余条目此前逐字重复两份，新增一种编辑入口必须两处同改。
+  const handleDeleteClick = () => {
+    setAnchorEl(null)
+    if (batchMode) {
+      onSelectionChange?.()
+    } else {
+      setConfirmOpen(true)
+    }
+  }
+
+  const coreMenuItems: ContextMenuItem[] = [
+    {
+      label: menuLabels.select,
+      handler: onForceSelect,
+      disabled: false,
+    },
+    {
+      label: menuLabels.editInfo,
+      handler: onEditInfo,
+      disabled: false,
+    },
+    {
+      label: menuLabels.editFile,
+      handler: onEditFile,
+      disabled: false,
+    },
+    {
+      label: menuLabels.editRules,
+      handler: onEditRules,
+      disabled: !option?.rules,
+    },
+    {
+      label: menuLabels.editProxies,
+      handler: onEditProxies,
+      disabled: !option?.proxies,
+    },
+    {
+      label: menuLabels.editGroups,
+      handler: onEditGroups,
+      disabled: !option?.groups,
+    },
+    {
+      label: menuLabels.extendConfig,
+      handler: onEditMerge,
+      disabled: !option?.merge,
+    },
+    {
+      label: menuLabels.extendScript,
+      handler: onEditScript,
+      disabled: !option?.script,
+    },
+    {
+      label: menuLabels.openFile,
+      handler: onOpenFile,
+      disabled: false,
+    },
+  ]
+  const deleteMenuItem: ContextMenuItem = {
+    label: menuLabels.delete,
+    handler: handleDeleteClick,
+    disabled: false,
+  }
+
   const urlModeMenu: ContextMenuItem[] = [
     ...(hasHome
       ? [
@@ -447,56 +511,13 @@ const ProfileItemBase = (props: ProfileItemProps) => {
           } satisfies ContextMenuItem,
         ]
       : []),
-    {
-      label: menuLabels.select,
-      handler: onForceSelect,
-      disabled: false,
-    },
+    coreMenuItems[0], // select
     {
       label: menuLabels.shareQrCode,
       handler: onShareQrCode,
       disabled: false,
     },
-    {
-      label: menuLabels.editInfo,
-      handler: onEditInfo,
-      disabled: false,
-    },
-    {
-      label: menuLabels.editFile,
-      handler: onEditFile,
-      disabled: false,
-    },
-    {
-      label: menuLabels.editRules,
-      handler: onEditRules,
-      disabled: !option?.rules,
-    },
-    {
-      label: menuLabels.editProxies,
-      handler: onEditProxies,
-      disabled: !option?.proxies,
-    },
-    {
-      label: menuLabels.editGroups,
-      handler: onEditGroups,
-      disabled: !option?.groups,
-    },
-    {
-      label: menuLabels.extendConfig,
-      handler: onEditMerge,
-      disabled: !option?.merge,
-    },
-    {
-      label: menuLabels.extendScript,
-      handler: onEditScript,
-      disabled: !option?.script,
-    },
-    {
-      label: menuLabels.openFile,
-      handler: onOpenFile,
-      disabled: false,
-    },
+    ...coreMenuItems.slice(1), // editInfo..openFile
     {
       label: menuLabels.update,
       handler: () => onUpdate(0),
@@ -507,82 +528,9 @@ const ProfileItemBase = (props: ProfileItemProps) => {
       handler: () => onUpdate(2),
       disabled: false,
     },
-    {
-      label: menuLabels.delete,
-      handler: () => {
-        setAnchorEl(null)
-        if (batchMode) {
-          if (onSelectionChange) {
-            onSelectionChange()
-          }
-        } else {
-          setConfirmOpen(true)
-        }
-      },
-      disabled: false,
-    },
+    deleteMenuItem,
   ]
-  const fileModeMenu: ContextMenuItem[] = [
-    {
-      label: menuLabels.select,
-      handler: onForceSelect,
-      disabled: false,
-    },
-    {
-      label: menuLabels.editInfo,
-      handler: onEditInfo,
-      disabled: false,
-    },
-    {
-      label: menuLabels.editFile,
-      handler: onEditFile,
-      disabled: false,
-    },
-    {
-      label: menuLabels.editRules,
-      handler: onEditRules,
-      disabled: !option?.rules,
-    },
-    {
-      label: menuLabels.editProxies,
-      handler: onEditProxies,
-      disabled: !option?.proxies,
-    },
-    {
-      label: menuLabels.editGroups,
-      handler: onEditGroups,
-      disabled: !option?.groups,
-    },
-    {
-      label: menuLabels.extendConfig,
-      handler: onEditMerge,
-      disabled: !option?.merge,
-    },
-    {
-      label: menuLabels.extendScript,
-      handler: onEditScript,
-      disabled: !option?.script,
-    },
-    {
-      label: menuLabels.openFile,
-      handler: onOpenFile,
-      disabled: false,
-    },
-    {
-      label: menuLabels.delete,
-      handler: () => {
-        setAnchorEl(null)
-        if (batchMode) {
-          if (onSelectionChange) {
-            onSelectionChange()
-          }
-        } else {
-          setConfirmOpen(true)
-        }
-      },
-      disabled: false,
-    },
-  ]
+  const fileModeMenu: ContextMenuItem[] = [...coreMenuItems, deleteMenuItem]
 
   const boxStyle = {
     height: 26,
@@ -591,52 +539,32 @@ const ProfileItemBase = (props: ProfileItemProps) => {
     justifyContent: 'space-between',
   }
 
-  const handleSaveProfileDocument = useLockFn(async () => {
-    const currentValue = profileDocument.value
-    const result = await mutate(() => saveProfileFile(uid!, currentValue), {
-      id: `save-profile-file:${uid}`,
-      errorNotice: false,
-    })
-    if (!(result.ok && result.value === true)) {
-      await profileDocument.reload()
-      return
-    }
-    onSave?.(profileDocument.savedValue, currentValue)
-    profileDocument.markSaved(currentValue)
-  })
-
-  const handleSaveMergeDocument = useLockFn(async () => {
-    const mergeUid = option?.merge ?? ''
-    const currentValue = mergeDocument.value
-    const result = await mutate(() => saveProfileFile(mergeUid, currentValue), {
-      id: `save-profile-file:${mergeUid}`,
-      errorNotice: false,
-    })
-    if (!(result.ok && result.value === true)) {
-      await mergeDocument.reload()
-      return
-    }
-    onSave?.(mergeDocument.savedValue, currentValue)
-    mergeDocument.markSaved(currentValue)
-  })
-
-  const handleSaveScriptDocument = useLockFn(async () => {
-    const scriptUid = option?.script ?? ''
-    const currentValue = scriptDocument.value
-    const result = await mutate(
-      () => saveProfileFile(scriptUid, currentValue),
-      {
-        id: `save-profile-file:${scriptUid}`,
+  // 三个编辑器（主文件/Merge/Script）的保存流程完全相同，仅 uid 与文档
+  // 不同；原先三份 useLockFn 逐字重复，改错误处理必须三处同改。
+  const saveDocument = useLockFn(
+    async (
+      docUid: string,
+      doc: typeof profileDocument,
+    ) => {
+      const currentValue = doc.value
+      const result = await mutate(() => saveProfileFile(docUid, currentValue), {
+        id: `save-profile-file:${docUid}`,
         errorNotice: false,
-      },
-    )
-    if (!(result.ok && result.value === true)) {
-      await scriptDocument.reload()
-      return
-    }
-    onSave?.(scriptDocument.savedValue, currentValue)
-    scriptDocument.markSaved(currentValue)
-  })
+      })
+      if (!(result.ok && result.value === true)) {
+        await doc.reload()
+        return
+      }
+      onSave?.(doc.savedValue, currentValue)
+      doc.markSaved(currentValue)
+    },
+  )
+
+  const handleSaveProfileDocument = () => saveDocument(uid!, profileDocument)
+  const handleSaveMergeDocument = () =>
+    saveDocument(option?.merge ?? '', mergeDocument)
+  const handleSaveScriptDocument = () =>
+    saveDocument(option?.script ?? '', scriptDocument)
 
   return (
     <Box ref={setElement} sx={{ position: 'relative', borderRadius: '8px' }}>

@@ -20,7 +20,8 @@
         "tests": "ウェブサイトテストカード",
         "ip": "IP情報カード",
         "clashInfo": "Clash情報カード",
-        "systemInfo": "システム情報カード"
+        "systemInfo": "システム情報カード",
+        "speedtest": "スピードテストカード"
       },
       "title": "ホーム設定"
     },
@@ -135,7 +136,11 @@
         "smooth": "スムーズ",
         "linear": "リニア"
       },
-      "diagnostics": "データ点: {{points}} | 圧縮後: {{compressed}} | FPS: {{fps}}"
+      "diagnostics": "データ点: {{points}} | 圧縮後: {{compressed}} | FPS: {{fps}}",
+      "proxyTraffic": "プロキシ経由トラフィック",
+      "directTraffic": "直接トラフィック",
+      "downloaded": "ダウンロード量",
+      "uploaded": "アップロード量"
     },
     "clashMode": {
       "errors": {
@@ -150,6 +155,26 @@
         "rule": "Automatically choose proxies according to the rule set.",
         "global": "Forward all network requests through the selected proxy.",
         "direct": "Bypass the proxy and connect to the internet directly."
+      }
+    },
+    "speedTest": {
+      "title": "スピードテスト",
+      "actions": {
+        "start": "テスト開始",
+        "testing": "テスト中"
+      },
+      "metrics": {
+        "latency": "レイテンシ",
+        "packetLoss": "パケットロス",
+        "download": "ダウンロード",
+        "upload": "アップロード"
+      },
+      "errors": {
+        "busy": "スピードテスト実行中です。しばらくお待ちください",
+        "noPort": "コアが実行されていないか、プロキシポートを取得できません",
+        "proxySetupFailed": "プロキシクライアントの作成に失敗しました",
+        "clientSetupFailed": "HTTPクライアントの作成に失敗しました",
+        "probeFailed": "スピードテスト失敗：すべてのプローブがタイムアウトまたは失敗しました"
       }
     }
   }

@@ -232,6 +232,11 @@ const MIRRORS: [&str; 2] = ["https://update.hwdns.net/", "https://gh-proxy.org/"
 /// A source delivering less than this per window is dropped for the next one.
 const MIN_PROGRESS: u64 = 1024 * 1024;
 const PROGRESS_WINDOW: Duration = Duration::from_secs(30);
+/// Hard ceiling for one download attempt. Signature verification only happens
+/// after the full body arrives, so a hostile mirror streaming data forever
+/// (or trickling at the retry floor) must not grow memory without bound.
+/// 512MB comfortably exceeds any NSIS installer / appimage we ship.
+const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 /// The manifest's URL, then the other mirror, then GitHub itself.
 fn download_sources(url: &tauri::Url) -> Vec<tauri::Url> {
@@ -304,6 +309,7 @@ async fn download_from(
             () = tokio::time::sleep(PROGRESS_WINDOW) => {
                 let total = received.load(Ordering::Relaxed);
                 anyhow::ensure!(total - seen >= floor, "only {} bytes in {PROGRESS_WINDOW:?}", total - seen);
+                anyhow::ensure!(total <= MAX_DOWNLOAD_BYTES, "download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
                 seen = total;
             }
         }
@@ -391,8 +397,31 @@ impl SilentUpdater {
             }
         };
 
-        let Some(bytes) = Self::verified_cache(app_handle, &update) else {
-            return false;
+        // The user confirmed the cached version, but the server may now offer
+        // a newer one. Installing it directly instead of silently dropping
+        // the confirmed request.
+        let bytes = match Self::verified_cache(app_handle, &update) {
+            Some(bytes) => bytes,
+            None => {
+                logging!(
+                    info,
+                    Type::System,
+                    "Cached update unusable for v{}, downloading from server",
+                    update.version
+                );
+                match download(&update, |_| {}).await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        logging!(
+                            warn,
+                            Type::System,
+                            "Startup update download failed: {e:#}, will retry next launch"
+                        );
+                        Self::close_update_splash(app_handle);
+                        return false;
+                    }
+                }
+            }
         };
 
         let version = update.version.clone();
@@ -446,7 +475,16 @@ impl SilentUpdater {
         };
 
         logging!(info, Type::System, "Installing update v{version}...");
-        Self::install(update, bytes).await?;
+        // Same #2558 hazard as the startup path: NSIS can take over without
+        // returning. Bound the wait so this dialog IPC cannot hang forever;
+        // 600s comfortably covers a slow passive install.
+        let install = tokio::time::timeout(
+            std::time::Duration::from_secs(600),
+            Self::install(update, bytes),
+        );
+        install
+            .await
+            .map_err(|_| anyhow::anyhow!("install timed out (600s)"))??;
         Self::delete_cache();
         Ok(true)
     }

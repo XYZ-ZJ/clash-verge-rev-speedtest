@@ -860,11 +860,30 @@ async fn apply_dns_settings(config: Mapping, enable_dns_settings: bool) -> (Mapp
     if enable_dns_settings && let Ok(app_dir) = dirs::app_home_dir() {
         let dns_path = app_dir.join(constants::files::DNS_CONFIG);
 
-        if dns_path.exists()
-            && let Ok(dns_yaml) = fs::read_to_string(&dns_path).await
-            && let Ok(dns_config) = serde_yaml_ng::from_str::<Mapping>(&dns_yaml)
-        {
-            return merge_dns_config(config, dns_config);
+        if dns_path.exists() {
+            // 读取或解析失败必须可见：静默跳过会让 DNS 页显示已启用、
+            // 实际未生效，且没有任何提示。
+            match fs::read_to_string(&dns_path).await {
+                Err(err) => {
+                    logging!(
+                        error,
+                        Type::Core,
+                        "dns override: failed to read {}: {err:#}",
+                        dns_path.display()
+                    );
+                }
+                Ok(dns_yaml) => match serde_yaml_ng::from_str::<Mapping>(&dns_yaml) {
+                    Err(err) => {
+                        logging!(
+                            error,
+                            Type::Core,
+                            "dns override: {} is not valid YAML: {err:#}",
+                            dns_path.display()
+                        );
+                    }
+                    Ok(dns_config) => return merge_dns_config(config, dns_config),
+                },
+            }
         }
     }
 
