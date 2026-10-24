@@ -259,7 +259,7 @@ const HomePage = () => {
   const homeCards: HomeCardsSettings = {
     ...DEFAULT_HOME_CARDS,
     ...((verge?.home_cards as Partial<HomeCardsSettings> | undefined) ?? {}),
-  }
+  } as HomeCardsSettings
 
   // 文档链接函数
   const toGithubDoc = useLockFn(() =>

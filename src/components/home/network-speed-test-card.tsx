@@ -75,7 +75,7 @@ const resolveErrorMessage = (error: unknown, t: (key: string) => string) => {
 interface MetricTileProps {
   label: string
   value: string
-  icon: React.ReactElement
+  icon: React.ReactElement<any>
   iconColor: string
   bg: string
 }
@@ -173,13 +173,13 @@ export const NetworkSpeedTestCard = () => {
   const tiles = [
     {
       key: 'latency',
-      icon: <SignalCellularAltRound />,
+      icon: <SignalCellularAltRounded />,
       iconColor: '#1e88e5',
       value: `${testData.latency ?? '-'} ms`,
     },
     {
       key: 'packetLoss',
-      icon: <SignalCellularAltRound />,
+      icon: <SignalCellularAltRounded />,
       iconColor: '#ffa726',
       value: `${testData.lossRate !== null ? testData.lossRate.toFixed(1) : '-'} %`,
     },
@@ -237,7 +237,7 @@ export const NetworkSpeedTestCard = () => {
         {tiles.map((tile) => (
           <MetricTile
             key={tile.key}
-            label={t(`home.components.speedTest.metrics.${tile.key}`)}
+            label={tile.label}
             value={tile.value}
             icon={tile.icon}
             iconColor={tile.iconColor}

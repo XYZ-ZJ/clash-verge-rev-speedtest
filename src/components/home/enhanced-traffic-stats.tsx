@@ -101,7 +101,7 @@ const SpeedRow = ({
   color,
   value,
 }: {
-  icon: React.ReactElement
+  icon: React.ReactElement<any>
   color: string
   value: string
 }) => (
