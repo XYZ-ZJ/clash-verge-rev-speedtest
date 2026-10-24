@@ -173,24 +173,28 @@ export const NetworkSpeedTestCard = () => {
   const tiles = [
     {
       key: 'latency',
+      label: t('home.components.speedTest.metrics.latency', '延迟'),
       icon: <SignalCellularAltRounded />,
       iconColor: '#1e88e5',
       value: `${testData.latency ?? '-'} ms`,
     },
     {
       key: 'packetLoss',
+      label: t('home.components.speedTest.metrics.packetLoss', '丢包率'),
       icon: <SignalCellularAltRounded />,
       iconColor: '#ffa726',
       value: `${testData.lossRate !== null ? testData.lossRate.toFixed(1) : '-'} %`,
     },
     {
       key: 'download',
+      label: t('home.components.speedTest.metrics.download', '下载速度'),
       icon: <CloudDownloadRounded />,
       iconColor: '#4caf50',
       value: `${testData.downloadSpeed !== null ? testData.downloadSpeed.toFixed(1) : '-'} MB/s`,
     },
     {
       key: 'upload',
+      label: t('home.components.speedTest.metrics.upload', '上传速度'),
       icon: <CloudUploadRounded />,
       iconColor: '#ff9800',
       value: `${testData.uploadSpeed !== null ? testData.uploadSpeed.toFixed(1) : '-'} MB/s`,
