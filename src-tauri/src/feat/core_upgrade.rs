@@ -318,7 +318,7 @@ fn compare_plain_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
     let width = left.len().max(right.len());
     (0..width)
         .map(|i| left.get(i).copied().unwrap_or(0).cmp(&right.get(i).copied().unwrap_or(0)))
-        .find(std::cmp::Ordering::is_ne)
+        .find(|ord| *ord != std::cmp::Ordering::Equal)
         .or(Some(std::cmp::Ordering::Equal))
 }
 
@@ -387,7 +387,12 @@ async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]
         return Ok(());
     };
 
-    let computed = format!("{:x}", Sha256::digest(bytes));
+    let digest = Sha256::digest(bytes);
+    let mut computed = std::string::String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(&mut computed, "{b:02x}");
+    }
     anyhow::ensure!(
         computed == expected,
         "core package digest mismatch for {asset}: expected {expected}, computed {computed}"
@@ -491,7 +496,7 @@ const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 fn copy_bounded(reader: &mut impl std::io::Read, out: &mut File) -> Result<()> {
     // `take(MAX + 1)` makes an over-large body surface as an error instead of
     // a silently truncated write.
-    let mut limited = reader.take(MAX_UNPACKED_BYTES + 1);
+    let mut limited = reader.by_ref().take(MAX_UNPACKED_BYTES + 1);
     let copied = std::io::copy(&mut limited, out)?;
     anyhow::ensure!(
         copied <= MAX_UNPACKED_BYTES,

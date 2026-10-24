@@ -48,7 +48,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
         // 读取/解析失败必须可见：静默返回 None 会让 enhance 用空默认值继续，
         // 用户的 rules/proxies/groups 增量无声丢失（merge 路径在 read_mapping
         // 内已有日志，其余类型在这里补齐）。
-        let log_skip = |itype: &str, err: String| {
+        let log_skip = |itype: &str, err: &dyn std::fmt::Display| {
             logging!(
                 error,
                 Type::Config,
@@ -64,7 +64,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     match fs::read_to_string(&path).await {
                         Ok(content) => content.into(),
                         Err(err) => {
-                            log_skip(itype, format!("{err:#}"));
+                            log_skip(itype, &err);
                             return None;
                         }
                     },
@@ -76,7 +76,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     match help::read_mapping(&path).await {
                         Ok(mapping) => mapping,
                         Err(err) => {
-                            log_skip(itype, format!("{err:#}"));
+                            log_skip(itype, &err);
                             return None;
                         }
                     },
@@ -86,7 +86,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                 let seq_map = match help::read_yaml::<SeqMap>(&path).await {
                     Ok(seq_map) => seq_map,
                     Err(err) => {
-                        log_skip(itype, format!("{err:#}"));
+                        log_skip(itype, &err);
                         return None;
                     }
                 };
@@ -99,7 +99,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                 let seq_map = match help::read_yaml::<SeqMap>(&path).await {
                     Ok(seq_map) => seq_map,
                     Err(err) => {
-                        log_skip(itype, format!("{err:#}"));
+                        log_skip(itype, &err);
                         return None;
                     }
                 };
@@ -112,7 +112,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                 let seq_map = match help::read_yaml::<SeqMap>(&path).await {
                     Ok(seq_map) => seq_map,
                     Err(err) => {
-                        log_skip(itype, format!("{err:#}"));
+                        log_skip(itype, &err);
                         return None;
                     }
                 };
