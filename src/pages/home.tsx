@@ -274,7 +274,7 @@ const HomePage = () => {
   }, [])
 
   const renderCard = useCallback(
-    (cardKey: string, component: React.ReactNode, size: number = 6) => {
+    (cardKey: string, component: React.ReactNode, size: any = 6) => {
       if (!homeCards[cardKey]) return null
 
       return (
@@ -310,7 +310,7 @@ const HomePage = () => {
         >
           <EnhancedTrafficStats />
         </EnhancedCard>,
-        12,
+        { xs: 6, sm: 6, md: 12 },
       ),
       renderCard(
         'speedtest',

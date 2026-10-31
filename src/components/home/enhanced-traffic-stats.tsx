@@ -106,11 +106,16 @@ const SpeedRow = ({
   value: string
 }) => (
   <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-    {cloneElement(icon, { sx: { fontSize: 22, color, mr: 0.5, flexShrink: 0 } })}
+    {cloneElement(icon, { sx: { fontSize: 18, color, mr: 0.5, flexShrink: 0 } })}
     <Typography
-      variant="body1"
+      variant="body2"
       noWrap
-      sx={{ fontWeight: 700, fontSize: '1.0625rem', color: 'text.primary' }}
+      sx={{
+        fontWeight: 700,
+        fontSize: '0.9375rem',
+        color: 'text.primary',
+        lineHeight: 1.2,
+      }}
     >
       {value}
     </Typography>
@@ -118,9 +123,14 @@ const SpeedRow = ({
 )
 
 const TotalLabel = ({ label, value }: { label: string; value: string }) => (
-  <Typography variant="caption" color="text.secondary" noWrap>
+  <Typography
+    variant="caption"
+    color="text.secondary"
+    noWrap
+    sx={{ fontSize: '0.75rem', lineHeight: 1.2, display: 'block' }}
+  >
     {label}{' '}
-    <Box component="span" sx={{ color: 'text.primary', fontWeight: 500 }}>
+    <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>
       {value}
     </Box>
   </Typography>
@@ -144,30 +154,27 @@ const TrafficCard = ({
   const color = theme.palette[paletteKey].main
 
   return (
-    <Paper
-      elevation={0}
+    <Box
       sx={{
-        p: 2,
+        p: 1.25,
         borderRadius: 2,
-        height: '100%',
-        bgcolor: isDark ? alpha(color, 0.08) : alpha(color, 0.04),
-        border: `1px solid ${alpha(color, isDark ? 0.25 : 0.18)}`,
+        bgcolor: isDark ? alpha(color, 0.12) : alpha(color, 0.06),
+        border: `1px solid ${alpha(color, isDark ? 0.35 : 0.22)}`,
         transition: 'all 0.2s ease-in-out',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
       }}
     >
       {/* 卡片头部 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
         <Box
           sx={{
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             borderRadius: '50%',
             bgcolor: `${paletteKey}.main`,
             mr: 1,
-            boxShadow: `0 0 6px ${color}`,
+            boxShadow: `0 0 4px ${color}`,
             flexShrink: 0,
           }}
         />
@@ -175,7 +182,8 @@ const TrafficCard = ({
           variant="subtitle2"
           sx={{
             fontWeight: 700,
-            fontSize: '0.9375rem',
+            fontSize: '0.875rem',
+            lineHeight: 1.2,
             color: `${paletteKey}.main`,
           }}
         >
@@ -189,7 +197,7 @@ const TrafficCard = ({
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
           gap: 1,
-          mb: 1.5,
+          mb: 0.75,
         }}
       >
         <SpeedRow
@@ -210,14 +218,14 @@ const TrafficCard = ({
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
           gap: 1,
-          pt: 1,
-          borderTop: `1px dashed ${alpha(color, 0.2)}`,
+          pt: 0.75,
+          borderTop: `1px dashed ${alpha(color, 0.25)}`,
         }}
       >
         <TotalLabel label={downloadedLabel} value={stats.downloadTotal} />
         <TotalLabel label={uploadedLabel} value={stats.uploadTotal} />
       </Box>
-    </Paper>
+    </Box>
   )
 }
 
@@ -517,7 +525,7 @@ export const EnhancedTrafficStats = () => {
         console.error('[EnhancedTrafficStats] 组件错误:', error, errorInfo)
       }}
     >
-      <Grid container spacing={1.5} sx={{ width: '100%' }}>
+      <Grid container spacing={1.5}>
         {trafficGraph && (
           <Grid size={12}>
             {trafficGraphComponent}
