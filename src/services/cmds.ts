@@ -95,18 +95,8 @@ export async function deleteProfile(index: string) {
 }
 
 export async function patchProfile(index: string, profile: ProfilePatch) {
-  const {
-    type,
-    name,
-    desc,
-    file,
-    url,
-    selected,
-    latency_test_urls,
-    extra,
-    updated,
-    option,
-  } = profile
+  const { type, name, desc, file, url, selected, extra, updated, option } =
+    profile
   return commands.patchProfile(index, {
     type,
     name,
@@ -114,7 +104,6 @@ export async function patchProfile(index: string, profile: ProfilePatch) {
     file,
     url,
     selected,
-    latency_test_urls,
     extra,
     updated,
     option,
