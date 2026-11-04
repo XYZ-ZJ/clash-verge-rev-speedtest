@@ -407,8 +407,8 @@ export const EnhancedTrafficStats = () => {
     const conns = connectionData?.activeConnections || []
     conns.forEach((conn) => {
       const isProxy = isThroughProxyNode(conn, currentMode)
-      const dSpeed = conn.downloadSpeed || 0
-      const uSpeed = conn.uploadSpeed || 0
+      const dSpeed = conn.curDownload || 0
+      const uSpeed = conn.curUpload || 0
       if (isProxy) {
         measuredProxyDown += dSpeed
         measuredProxyUp += uSpeed
