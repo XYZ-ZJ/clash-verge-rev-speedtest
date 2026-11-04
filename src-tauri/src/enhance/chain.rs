@@ -91,7 +91,6 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                 };
                 Some(ChainItem { uid: uid.clone(), data })
             }
-            }
             _ => None,
         }
     }
