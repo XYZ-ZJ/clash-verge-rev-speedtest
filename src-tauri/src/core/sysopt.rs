@@ -7,8 +7,15 @@ use crate::{
 use anyhow::Result;
 use clash_verge_logging::{Type, logging};
 use parking_lot::RwLock;
+use scopeguard::defer;
 use smartstring::alias::String;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use sysproxy::{Autoproxy, GuardMonitor, GuardType, Sysproxy};
 use tokio::sync::Mutex as TokioMutex;
 
