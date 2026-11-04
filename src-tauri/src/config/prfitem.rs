@@ -211,12 +211,25 @@ impl PrfItem {
         if groups.is_none() {
             *groups = Some(Self::append_companion_item(&mut Self::from_groups()).await?);
         }
-        merge: &mut Option<String>,
-        script: &mut Option<String>,
-        rules: &mut Option<String>,
-        proxies: &mut Option<String>,
-        groups: &mut Option<String>,
-    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn from_local(
+        name: String,
+        desc: String,
+        file_data: Option<String>,
+        option: Option<&PrfOption>,
+    ) -> Result<Self> {
+        let uid = help::get_uid("L").into();
+        let file = format!("{uid}.yaml").into();
+        let opt_ref = option.as_ref();
+        let update_interval = opt_ref.and_then(|o| o.update_interval);
+        let mut merge = opt_ref.and_then(|o| o.merge.clone());
+        let mut script = opt_ref.and_then(|o| o.script.clone());
+        let mut rules = opt_ref.and_then(|o| o.rules.clone());
+        let mut proxies = opt_ref.and_then(|o| o.proxies.clone());
+        let mut groups = opt_ref.and_then(|o| o.groups.clone());
+
         Self::ensure_companion_items(&mut merge, &mut script, &mut rules, &mut proxies, &mut groups).await?;
         Ok(Self {
             uid: Some(uid),
