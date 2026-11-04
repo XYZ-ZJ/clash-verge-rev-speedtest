@@ -234,22 +234,19 @@ async fn current_os_proxy_state(sys: Sysproxy, auto: Autoproxy) -> OsProxyState 
 }
 
 pub(crate) struct Sysopt {
-    update_lock: TokioMutex<()>,
+    // Owns the proxy target pair; every reader and writer goes through this lock.
+    proxy_state_lock: TokioMutex<(Sysproxy, Autoproxy)>,
     guard_operation_lock: TokioMutex<()>,
-    /// Serializes resets: a concurrent caller waits for the in-flight reset to
-    /// finish instead of being told `Ok(())` while the OS write may still fail.
-    reset_sysproxy_lock: TokioMutex<()>,
-    inner_proxy: Arc<RwLock<(Sysproxy, Autoproxy)>>,
+    reset_sysproxy: AtomicBool,
     guard: Arc<RwLock<GuardMonitor>>,
 }
 
 impl Default for Sysopt {
     fn default() -> Self {
         Self {
-            update_lock: TokioMutex::new(()),
+            proxy_state_lock: TokioMutex::new((Sysproxy::default(), Autoproxy::default())),
             guard_operation_lock: TokioMutex::new(()),
-            reset_sysproxy_lock: TokioMutex::new(()),
-            inner_proxy: Arc::new(RwLock::new((Sysproxy::default(), Autoproxy::default()))),
+            reset_sysproxy: AtomicBool::new(false),
             guard: Arc::new(RwLock::new(GuardMonitor::new(GuardType::None, Duration::from_secs(30)))),
         }
     }
@@ -264,9 +261,9 @@ static DEFAULT_BYPASS: &str = "localhost,127.0.0.1,192.168.0.0/16,10.0.0.0/8,172
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 static BYPASS_SEPARATOR: &str = ",";
 #[cfg(target_os = "macos")]
-static DEFAULT_BYPASS: &str = crate::core::proxy_control::MACOS_DEFAULT_BYPASS;
+static DEFAULT_BYPASS: &str = crate::constants::sysproxy::MACOS_DEFAULT_BYPASS;
 
-fn format_bypass(use_default: bool, custom_bypass: &str) -> String {
+pub(super) fn format_bypass(use_default: bool, custom_bypass: &str) -> String {
     if custom_bypass.is_empty() {
         DEFAULT_BYPASS.into()
     } else if use_default {
@@ -368,6 +365,7 @@ impl Sysopt {
                 );
                 break;
             }
+
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         // `start()` false may also mean a guard was already running.
@@ -416,18 +414,21 @@ impl Sysopt {
     /// configuration instead of a partially-applied one (e.g. SOCKS already
     /// disabled but HTTP still enabled mid-transition).
     pub(crate) async fn wait_idle(&self) {
-        let _ = self.update_lock.lock().await;
+        let _ = self.proxy_state_lock.lock().await;
     }
 
     /// init the sysproxy
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "the proxy state lock must stay held until the OS write finishes; wait_idle relies on it"
+    )]
     pub(super) async fn update_sysproxy(&self) -> Result<()> {
-        let _lock = self.update_lock.lock().await;
+        let mut proxy_state = self.proxy_state_lock.lock().await;
         let verge = Config::verge().await.latest_arc();
         // Configured, not live: this runs while the Core is being started or restarted, and
         // asking a Core that is not up yet would only fall back here anyway.
         let port = MixedPort::desired().await;
         let pac_port = server::embedded_server_port()?;
-        // 先 await, 避免持有锁导致的 Send 问题
         let bypass = get_bypass().await;
 
         let (sys_enable, pac_enable, proxy_host, proxy_guard) = (
@@ -438,7 +439,7 @@ impl Sysopt {
         );
 
         let (sys, auto, guard_type) = {
-            let (sys, auto) = &mut *self.inner_proxy.write();
+            let (sys, auto) = &mut *proxy_state;
             sys.host = proxy_host.into();
             sys.port = port;
             sys.bypass = bypass.into();
@@ -535,20 +536,28 @@ impl Sysopt {
     }
 
     /// reset the sysproxy
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "the proxy state lock must stay held until the disable finishes; wait_idle relies on it"
+    )]
     pub(super) async fn reset_sysproxy(&self) -> Result<()> {
-        // Serialize concurrent resets instead of short-circuiting them: the
-        // second caller used to receive Ok(()) while the first reset could
-        // still fail (e.g. macOS networksetup needs admin), leaving callers
-        // that already treated "cleared" as fact. Re-running after the first
-        // finishes is idempotent and observes the true final OS state.
-        let _reset_serialized = self.reset_sysproxy_lock.lock().await;
-        let _lock = self.update_lock.lock().await;
+        if self
+            .reset_sysproxy
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Ok(());
+        }
+        defer! {
+            self.reset_sysproxy.store(false, Ordering::SeqCst);
+        }
+        let mut proxy_state = self.proxy_state_lock.lock().await;
         let _guard_operation = self.guard_operation_lock.lock().await;
         let drained = self.stop_proxy_guard_locked().await;
 
         // 直接关闭所有代理
         let (sys, auto) = {
-            let (sys, auto) = &mut *self.inner_proxy.write();
+            let (sys, auto) = &mut *proxy_state;
             sys.enable = false;
             auto.enable = false;
             (sys.clone(), auto.clone())

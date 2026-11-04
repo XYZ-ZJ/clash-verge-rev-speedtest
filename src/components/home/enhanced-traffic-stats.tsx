@@ -1,9 +1,12 @@
 import {
   ArrowDownwardRounded,
   ArrowUpwardRounded,
+  ErrorOutlineRounded,
 } from '@mui/icons-material'
 import {
+  Alert,
   Box,
+  Button,
   Grid,
   Paper,
   Typography,
@@ -11,9 +14,9 @@ import {
   useTheme,
 } from '@mui/material'
 import { cloneElement, useEffect, useMemo, useRef } from 'react'
+import { ErrorBoundary, FallbackProps } from 'react-error-boundary'
 import { useTranslation } from 'react-i18next'
 
-import { TrafficErrorBoundary } from '@/components/shared/traffic-error-boundary'
 import { useClashMode } from '@/hooks/use-clash'
 import { useConnectionData } from '@/hooks/use-connection-data'
 import { useTrafficData } from '@/hooks/use-traffic-data'
@@ -229,6 +232,50 @@ const TrafficCard = ({
   )
 }
 
+const fallbackSx = {
+  p: 2,
+  minHeight: 200,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '1px dashed',
+  borderColor: 'error.main',
+  borderRadius: 2,
+  bgcolor: 'error.light',
+}
+
+const reloadPage = () => window.location.reload()
+
+const TrafficFallback = ({ error, resetErrorBoundary }: FallbackProps) => {
+  const { t } = useTranslation()
+
+  return (
+    <Box sx={fallbackSx}>
+      <ErrorOutlineRounded color="error" sx={{ fontSize: 48, mb: 2 }} />
+      <Typography variant="h6" gutterBottom>
+        {t('shared.feedback.errors.trafficStats')}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        {t('shared.feedback.errors.trafficStatsDescription')}
+      </Typography>
+      <Alert severity="error" sx={{ mb: 2, maxWidth: 400 }}>
+        {error instanceof Error
+          ? error.message
+          : t('shared.feedback.errors.unknown')}
+      </Alert>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button variant="contained" size="small" onClick={resetErrorBoundary}>
+          {t('shared.actions.retry')}
+        </Button>
+        <Button variant="outlined" size="small" onClick={reloadPage}>
+          {t('shared.actions.refreshPage')}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
 export const EnhancedTrafficStats = () => {
   const { t } = useTranslation()
   const theme = useTheme()
@@ -337,7 +384,7 @@ export const EnhancedTrafficStats = () => {
       tracker.seen.set(conn.id, { down: curDown, up: curUp })
     })
 
-    // 防止长时间运行占用过多内存，修剪非活跃连接缓存
+    // 定期清理已关闭且不在活跃列表中的连接缓存，避免无限膨胀
     if (tracker.seen.size > 2000) {
       const activeIds = new Set(allConns.map((c) => c.id))
       for (const id of tracker.seen.keys()) {
@@ -348,9 +395,8 @@ export const EnhancedTrafficStats = () => {
     }
   }, [connectionData, traffic, currentMode])
 
-  // 计算代理与直连的实时速率和累计值
+  // 使用useMemo计算解析后的分类流量数据
   const trafficStats = useMemo(() => {
-    const activeConns = connectionData?.activeConnections || []
     let measuredProxyDown = 0
     let measuredProxyUp = 0
     let measuredDirectDown = 0
@@ -358,18 +404,19 @@ export const EnhancedTrafficStats = () => {
     let proxyActiveCount = 0
     let directActiveCount = 0
 
-    activeConns.forEach((conn) => {
+    const conns = connectionData?.activeConnections || []
+    conns.forEach((conn) => {
       const isProxy = isThroughProxyNode(conn, currentMode)
-      const d = conn.curDownload || 0
-      const u = conn.curUpload || 0
+      const dSpeed = conn.downloadSpeed || 0
+      const uSpeed = conn.uploadSpeed || 0
       if (isProxy) {
-        measuredProxyDown += d
-        measuredProxyUp += u
-        proxyActiveCount += 1
+        measuredProxyDown += dSpeed
+        measuredProxyUp += uSpeed
+        proxyActiveCount++
       } else {
-        measuredDirectDown += d
-        measuredDirectUp += u
-        directActiveCount += 1
+        measuredDirectDown += dSpeed
+        measuredDirectUp += uSpeed
+        directActiveCount++
       }
     })
 
@@ -381,10 +428,11 @@ export const EnhancedTrafficStats = () => {
     let proxyUpSpeed = 0
     let directUpSpeed = 0
 
+    // 直连模式：全部归属直连流量
     if (currentMode && currentMode.toLowerCase() === 'direct') {
       proxyDownSpeed = 0
-      proxyUpSpeed = 0
       directDownSpeed = globalDown
+      proxyUpSpeed = 0
       directUpSpeed = globalUp
     } else {
       // 实时下载速率：按实测速率比例分配，未测得明确代理流速时默认全部归直连
@@ -520,10 +568,11 @@ export const EnhancedTrafficStats = () => {
   }, [trafficGraph, pageVisible, theme.palette.divider])
 
   return (
-    <TrafficErrorBoundary
-      onError={(error, errorInfo) => {
-        console.error('[EnhancedTrafficStats] 组件错误:', error, errorInfo)
-      }}
+    <ErrorBoundary
+      FallbackComponent={TrafficFallback}
+      onError={(error, errorInfo) =>
+        console.error('[EnhancedTrafficStats]', error, errorInfo)
+      }
     >
       <Grid container spacing={1.5}>
         {trafficGraph && (
@@ -554,6 +603,6 @@ export const EnhancedTrafficStats = () => {
           />
         </Grid>
       </Grid>
-    </TrafficErrorBoundary>
+    </ErrorBoundary>
   )
 }

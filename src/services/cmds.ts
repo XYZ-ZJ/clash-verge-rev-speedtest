@@ -21,7 +21,7 @@ import type {
 
 export type {
   RunningMode,
-  RunStateView as RunState,
+  RunStateView_Serialize as RunState,
   FailedOperation,
   PendingFailure,
   SidecarFailureSnapshot,

@@ -23,12 +23,6 @@ pub enum ChainType {
     Groups(SeqMap),
 }
 
-#[derive(Debug, Clone)]
-pub enum ChainSupport {
-    ClashMeta,
-    ClashMetaAlpha,
-}
-
 // Helper trait to allow async conversion
 pub trait AsyncChainItemFrom {
     async fn from_async(item: &PrfItem) -> Option<ChainItem>;
@@ -82,7 +76,7 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                     },
                 ),
             }),
-            "rules" => {
+            "rules" | "proxies" | "groups" => {
                 let seq_map = match help::read_yaml::<SeqMap>(&path).await {
                     Ok(seq_map) => seq_map,
                     Err(err) => {
@@ -90,80 +84,15 @@ impl AsyncChainItemFrom for Option<ChainItem> {
                         return None;
                     }
                 };
-                Some(ChainItem {
-                    uid: uid.clone(),
-                    data: ChainType::Rules(seq_map),
-                })
+                let data = match itype {
+                    "rules" => ChainType::Rules(seq_map),
+                    "proxies" => ChainType::Proxies(seq_map),
+                    _ => ChainType::Groups(seq_map),
+                };
+                Some(ChainItem { uid: uid.clone(), data })
             }
-            "proxies" => {
-                let seq_map = match help::read_yaml::<SeqMap>(&path).await {
-                    Ok(seq_map) => seq_map,
-                    Err(err) => {
-                        log_skip(itype, &err);
-                        return None;
-                    }
-                };
-                Some(ChainItem {
-                    uid: uid.clone(),
-                    data: ChainType::Proxies(seq_map),
-                })
-            }
-            "groups" => {
-                let seq_map = match help::read_yaml::<SeqMap>(&path).await {
-                    Ok(seq_map) => seq_map,
-                    Err(err) => {
-                        log_skip(itype, &err);
-                        return None;
-                    }
-                };
-                Some(ChainItem {
-                    uid: uid.clone(),
-                    data: ChainType::Groups(seq_map),
-                })
             }
             _ => None,
-        }
-    }
-}
-impl ChainItem {
-    /// 内建支持一些脚本
-    pub fn builtin() -> Vec<(ChainSupport, Self)> {
-        // meta 的一些处理
-        let meta_guard = Self::to_script("verge_meta_guard", include_str!("./builtin/meta_guard.js"));
-
-        // meta 1.13.2 alpn string 转 数组
-        let hy_alpn = Self::to_script("verge_hy_alpn", include_str!("./builtin/meta_hy_alpn.js"));
-
-        // meta 的一些处理
-        let meta_guard_alpha = Self::to_script("verge_meta_guard", include_str!("./builtin/meta_guard.js"));
-
-        // meta 1.13.2 alpn string 转 数组
-        let hy_alpn_alpha = Self::to_script("verge_hy_alpn", include_str!("./builtin/meta_hy_alpn.js"));
-
-        vec![
-            (ChainSupport::ClashMeta, hy_alpn),
-            (ChainSupport::ClashMeta, meta_guard),
-            (ChainSupport::ClashMetaAlpha, hy_alpn_alpha),
-            (ChainSupport::ClashMetaAlpha, meta_guard_alpha),
-        ]
-    }
-
-    pub fn to_script<U: Into<String>, D: Into<String>>(uid: U, data: D) -> Self {
-        Self {
-            uid: uid.into(),
-            data: ChainType::Script(data.into()),
-        }
-    }
-}
-
-impl ChainSupport {
-    pub fn is_support(&self, core: Option<&String>) -> bool {
-        match core {
-            Some(core) => matches!(
-                (self, core.as_str()),
-                (Self::ClashMeta, "verge-mihomo") | (Self::ClashMetaAlpha, "verge-mihomo-alpha")
-            ),
-            None => true,
         }
     }
 }

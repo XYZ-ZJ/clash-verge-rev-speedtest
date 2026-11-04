@@ -24,8 +24,7 @@ const RulesPage = () => {
   const [showScrollTop, setShowScrollTop] = useState(false)
   const pageVisible = useVisibility()
 
-  // 在组件挂载时和页面获得焦点时刷新规则数据（页面仅在可见时挂载，
-  // pageVisible 初始即为 true；原先的无条件调用导致每次挂载/聚焦双发请求）
+  // 页面可见时刷新规则数据：挂载时可见或从隐藏恢复可见各触发一次
   useEffect(() => {
     if (pageVisible) {
       refreshRules()
