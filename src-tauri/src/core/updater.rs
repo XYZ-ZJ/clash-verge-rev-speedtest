@@ -368,7 +368,6 @@ impl SilentUpdater {
         let Some(bytes) = Self::verified_cache(&update) else {
             return false;
         };
-        };
 
         let version = update.version.clone();
         logging!(info, Type::System, "Installing cached update v{version} at startup...");
