@@ -51,7 +51,7 @@
 
 | 系统架构 | 安装包格式 | 说明 |
 | :--- | :--- | :--- |
-| **Windows x64** | `Clash.Verge_2.5.9_x64-setup.exe` | 推荐，64位 Windows 独立安装包（包含完整测速功能与全量加固修复） |
+| **Windows x64** | `Clash.Verge_2.6.0_x64-setup.exe` | 推荐，64位 Windows 独立安装包（包含完整测速功能与全量加固修复） |
 
 ---
 
