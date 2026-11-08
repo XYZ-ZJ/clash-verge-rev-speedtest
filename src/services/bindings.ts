@@ -188,6 +188,7 @@ export const commands = {
     __TAURI_INVOKE<UnlockItem_Serialize>('check_media_unlock_item', { name }),
   testNetworkSpeed: (onProgress: Channel<SpeedTestProgress>) =>
     __TAURI_INVOKE<SpeedTestResult>('test_network_speed', { onProgress }),
+  testDnsLeak: () => __TAURI_INVOKE<string>('test_dns_leak'),
 }
 
 /* Types */

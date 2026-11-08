@@ -432,3 +432,49 @@ pub async fn test_network_speed(
     Ok(result)
 }
 
+
+
+#[tauri::command]
+#[specta::specta]
+pub async fn test_dns_leak() -> CmdResult<std::string::String> {
+    use std::time::Duration;
+
+    let port = crate::config::MixedPort::effective().await;
+    let mut builder = reqwest::Client::builder()
+        .use_rustls_tls()
+        .timeout(Duration::from_secs(8));
+
+    if port > 0 {
+        if let Ok(proxy) = reqwest::Proxy::all(format!("http://127.0.0.1:{port}")) {
+            builder = builder.proxy(proxy);
+        }
+    }
+
+    let client = builder.build().map_err(|e| {
+        super::CommandFailure::coded("dnsleak.clientSetupFailed", format!("failed to build client: {e}"))
+    })?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let test_id = format!("{:x}{:x}", now, std::process::id());
+
+    // 1. 触发请求：由于客户端配置了 HTTP 代理，reqwest 向 127.0.0.1:{port} 发送 CONNECT {test_id}.bash.ws:443
+    // 客户端本地绝对不会调用操作系统的 getaddrinfo，从而完全杜绝物理网卡和路由器 DNS 的介入！
+    let _ = client.get(format!("https://{test_id}.bash.ws")).send().await;
+
+    // 2. 获取检测结果
+    let res = client
+        .get(format!("https://bash.ws/dnsleak/test/{test_id}?json"))
+        .send()
+        .await
+        .map_err(|e| super::CommandFailure::coded("dnsleak.fetchFailed", format!("failed to fetch test result: {e}")))?;
+
+    let text = res
+        .text()
+        .await
+        .map_err(|e| super::CommandFailure::coded("dnsleak.decodeFailed", format!("failed to read response: {e}")))?;
+
+    Ok(text)
+}

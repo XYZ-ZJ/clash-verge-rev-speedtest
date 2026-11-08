@@ -166,7 +166,8 @@ const DEFAULT_DNS_CONFIG = {
     'www.msftconnecttest.com',
   ],
   'default-nameserver': [
-    'system',
+    '223.5.5.5',
+    '1.1.1.1',
     '223.6.6.6',
     '8.8.8.8',
     '2400:3200::1',
@@ -838,7 +839,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
               spellCheck="false"
               value={values.defaultNameserver}
               onChange={handleChange('defaultNameserver')}
-              placeholder="system,223.6.6.6, 8.8.8.8, 2400:3200::1, 2001:4860:4860::8888"
+              placeholder="223.5.5.5, 223.6.6.6, 8.8.8.8, 2400:3200::1, 2001:4860:4860::8888"
             />
           </Item>
 

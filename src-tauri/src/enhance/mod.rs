@@ -531,6 +531,29 @@ fn ensure_lan_bind_address(mut config: Mapping) -> Mapping {
     config
 }
 
+fn sanitize_dns_servers(mut config: Mapping) -> Mapping {
+    if let Some(Value::Mapping(dns)) = config.get_mut("dns") {
+        for key in ["default-nameserver", "direct-nameserver"] {
+            if let Some(Value::Sequence(seq)) = dns.get_mut(key) {
+                seq.retain(|item| {
+                    if let Value::String(s) = item {
+                        s.trim().to_lowercase() != "system"
+                    } else {
+                        true
+                    }
+                });
+                if key == "default-nameserver" && seq.is_empty() {
+                    seq.push(Value::String("223.5.5.5".into()));
+                    seq.push(Value::String("1.1.1.1".into()));
+                }
+            }
+        }
+    }
+    config
+}
+
+
+
 /// Merges the app's clash config over the profile; switches are parameters to keep it pure.
 fn merge_default_config(
     mut config: Mapping,
@@ -904,6 +927,7 @@ pub async fn enhance(
     notify_discarded_keys(authoritative.overridden(&authoritative, &authoritative.current(&config)));
     let config = authoritative.enforce(config);
     let config = ensure_lan_bind_address(config);
+    let config = sanitize_dns_servers(config);
 
     let config = cleanup_proxy_groups(config);
     let config = use_sort(config);

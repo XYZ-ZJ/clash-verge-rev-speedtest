@@ -1,3 +1,4 @@
+import { commands } from '@/services/bindings'
 import { getName, getVersion } from '@tauri-apps/api/app'
 import { fetch } from '@tauri-apps/plugin-http'
 import { asyncRetry } from 'foxts/async-retry'
@@ -119,46 +120,124 @@ interface ServiceConfig {
   mapping: (data: any) => IpInfo
 }
 
+// 常见国家名称到二字码映射，用于部分接口只返回国家全名时的兜底
+const COUNTRY_NAME_TO_CODE: Record<string, string> = {
+  japan: 'JP',
+  'united states': 'US',
+  usa: 'US',
+  'hong kong': 'HK',
+  taiwan: 'TW',
+  singapore: 'SG',
+  'south korea': 'KR',
+  korea: 'KR',
+  'united kingdom': 'GB',
+  uk: 'GB',
+  germany: 'DE',
+  france: 'FR',
+  canada: 'CA',
+  australia: 'AU',
+  russia: 'RU',
+  netherlands: 'NL',
+  india: 'IN',
+  china: 'CN',
+}
+
+const resolveCountryCode = (code?: string, countryName?: string): string => {
+  if (code && code.length === 2) return code.toUpperCase()
+  if (countryName) {
+    const lower = countryName.toLowerCase().trim()
+    if (COUNTRY_NAME_TO_CODE[lower]) return COUNTRY_NAME_TO_CODE[lower]
+    if (countryName.length === 2) return countryName.toUpperCase()
+  }
+  return ''
+}
+
+const cleanAsn = (val: any): number => {
+  if (typeof val === 'number') return val
+  if (typeof val === 'string') {
+    const match = val.match(/\d+/)
+    return match ? parseInt(match[0], 10) : 0
+  }
+  if (val && typeof val.asn === 'number') return val.asn
+  return 0
+}
+
+const cleanAsnOrg = (asnVal: any, orgVal: any): string => {
+  if (typeof asnVal === 'string') {
+    const cleaned = asnVal.replace(/^AS\d+\s*/i, '').trim()
+    if (cleaned) return cleaned
+  }
+  if (asnVal && typeof asnVal.org === 'string') return asnVal.org
+  if (typeof orgVal === 'string') return orgVal
+  return ''
+}
+
 // 可用的IP检测服务列表及字段映射
 const IP_CHECK_SERVICES: ServiceConfig[] = [
   {
     url: 'https://api.ip.sb/geoip',
-    mapping: (data) => ({
-      ip: data.ip || '',
-      country_code: data.country_code || '',
-      country: data.country || '',
-      region: data.region || '',
-      city: data.city || '',
-      organization: data.organization || data.isp || '',
-      asn: data.asn || 0,
-      asn_organization: data.asn_organization || '',
-      longitude: data.longitude || 0,
-      latitude: data.latitude || 0,
-      timezone: data.timezone || '',
-      risk: calculateRiskInfo({
-        organization: data.organization || data.isp,
-        asnOrg: data.asn_organization,
-      }),
-    }),
+    hasSecurityInfo: true,
+    mapping: (data) => {
+      const countryCode = resolveCountryCode(data.country_code, data.country)
+      const asn = cleanAsn(data.asn)
+      const asnOrg = cleanAsnOrg(data.asn_organization, data.organization || data.isp)
+      const org = data.organization || data.isp || asnOrg || ''
+      return {
+        ip: data.ip || '',
+        country_code: countryCode,
+        country: data.country || countryCode || '',
+        region: data.region || '',
+        city: data.city || '',
+        organization: org,
+        asn,
+        asn_organization: asnOrg,
+        longitude: Number(data.longitude) || 0,
+        latitude: Number(data.latitude) || 0,
+        timezone: data.timezone || '',
+        risk: calculateRiskInfo({
+          organization: org,
+          asnOrg,
+        }),
+      }
+    },
   },
   {
-    url: 'https://ipapi.co/json',
-    mapping: (data) => ({
-      ip: data.ip || '',
-      country_code: data.country_code || '',
-      country: data.country_name || '',
-      region: data.region || '',
-      city: data.city || '',
-      organization: data.org || '',
-      asn: data.asn ? parseInt(data.asn.replace('AS', '')) : 0,
-      asn_organization: data.org || '',
-      longitude: data.longitude || 0,
-      latitude: data.latitude || 0,
-      timezone: data.timezone || '',
-      risk: calculateRiskInfo({
-        organization: data.org,
-      }),
-    }),
+    url: 'https://ipwho.is/',
+    hasSecurityInfo: true,
+    mapping: (data) => {
+      const isDatacenter = Boolean(data.security?.hosting)
+      let resolvedType: RiskInfo['type'] = 'unknown'
+      if (isDatacenter) resolvedType = 'datacenter'
+      else if (data.connection?.isp && !isDatacenter) resolvedType = 'residential'
+
+      const countryCode = resolveCountryCode(data.country_code, data.country)
+      const asn = cleanAsn(data.connection?.asn || data.asn)
+      const asnOrg = cleanAsnOrg(data.connection?.org, data.connection?.isp)
+      const org = data.connection?.org || data.connection?.isp || asnOrg || ''
+
+      return {
+        ip: data.ip || '',
+        country_code: countryCode,
+        country: data.country || countryCode || '',
+        region: data.region || '',
+        city: data.city || '',
+        organization: org,
+        asn,
+        asn_organization: asnOrg,
+        longitude: Number(data.longitude) || 0,
+        latitude: Number(data.latitude) || 0,
+        timezone: data.timezone?.id || data.timezone || '',
+        risk: calculateRiskInfo({
+          isDatacenter,
+          isVpn: Boolean(data.security?.vpn),
+          isProxy: Boolean(data.security?.proxy),
+          isTor: Boolean(data.security?.tor),
+          type: resolvedType,
+          organization: org,
+          asnOrg,
+        }),
+      }
+    },
   },
   {
     url: 'https://api.ipapi.is/',
@@ -182,18 +261,27 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
       )
         resolvedType = 'business'
 
+      const country = data.country || data.location?.country || ''
+      const countryCode = resolveCountryCode(data.country_code || data.location?.country_code, country)
+      const asn = cleanAsn(data.asn?.asn || data.asn)
+      const org =
+        (typeof data.company === 'string' ? data.company : data.company?.name) ||
+        (typeof data.asn === 'string' ? data.asn : data.asn?.org) ||
+        ''
+      const asnOrg = cleanAsnOrg(data.asn, org)
+
       return {
         ip: data.ip || '',
-        country_code: data.location?.country_code || '',
-        country: data.location?.country || '',
-        region: data.location?.state || '',
-        city: data.location?.city || '',
-        organization: data.asn?.org || data.company?.name || '',
-        asn: data.asn?.asn || 0,
-        asn_organization: data.asn?.org || '',
-        longitude: data.location?.longitude || 0,
-        latitude: data.location?.latitude || 0,
-        timezone: data.location?.timezone || '',
+        country_code: countryCode,
+        country: country || countryCode || '',
+        region: data.region || data.location?.state || '',
+        city: data.city || data.location?.city || '',
+        organization: org,
+        asn,
+        asn_organization: asnOrg,
+        longitude: Number(data.lon ?? data.longitude ?? data.location?.longitude) || 0,
+        latitude: Number(data.lat ?? data.latitude ?? data.location?.latitude) || 0,
+        timezone: data.timezone || data.location?.timezone || '',
         risk: calculateRiskInfo({
           isDatacenter,
           isMobile,
@@ -202,83 +290,86 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
           isTor: Boolean(data.is_tor),
           isAbuser: Boolean(data.is_abuser),
           type: resolvedType,
-          organization: data.company?.name || data.asn?.org,
-          asnOrg: data.asn?.org,
-        }),
-      }
-    },
-  },
-  {
-    url: 'https://ipwho.is/',
-    hasSecurityInfo: true,
-    mapping: (data) => {
-      const isDatacenter = Boolean(data.security?.hosting)
-      let resolvedType: RiskInfo['type'] = 'unknown'
-      if (isDatacenter) resolvedType = 'datacenter'
-      else if (data.connection?.isp && !isDatacenter)
-        resolvedType = 'residential'
-
-      return {
-        ip: data.ip || '',
-        country_code: data.country_code || '',
-        country: data.country || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: data.connection?.org || data.connection?.isp || '',
-        asn: data.connection?.asn || 0,
-        asn_organization: data.connection?.isp || '',
-        longitude: data.longitude || 0,
-        latitude: data.latitude || 0,
-        timezone: data.timezone?.id || '',
-        risk: calculateRiskInfo({
-          isDatacenter,
-          isVpn: Boolean(data.security?.vpn),
-          isProxy: Boolean(data.security?.proxy),
-          isTor: Boolean(data.security?.tor),
-          type: resolvedType,
-          organization: data.connection?.org || data.connection?.isp,
-          asnOrg: data.connection?.isp,
+          organization: org,
+          asnOrg,
         }),
       }
     },
   },
   {
     url: 'https://ip.api.skk.moe/cf-geoip',
-    mapping: (data) => ({
-      ip: data.ip || '',
-      country_code: data.country || '',
-      country: data.country || '',
-      region: data.region || '',
-      city: data.city || '',
-      organization: data.asOrg || '',
-      asn: data.asn || 0,
-      asn_organization: data.asOrg || '',
-      longitude: data.longitude || 0,
-      latitude: data.latitude || 0,
-      timezone: data.timezone || '',
-      risk: calculateRiskInfo({
-        organization: data.asOrg,
-      }),
-    }),
+    mapping: (data) => {
+      const countryCode = resolveCountryCode(data.country, data.country)
+      const asn = cleanAsn(data.asn)
+      const org = data.asOrg || ''
+      return {
+        ip: data.ip || '',
+        country_code: countryCode,
+        country: countryCode || '',
+        region: data.region || '',
+        city: data.city || '',
+        organization: org,
+        asn,
+        asn_organization: org,
+        longitude: Number(data.longitude) || 0,
+        latitude: Number(data.latitude) || 0,
+        timezone: data.timezone || '',
+        risk: calculateRiskInfo({
+          organization: org,
+          asnOrg: org,
+        }),
+      }
+    },
   },
   {
     url: 'https://get.geojs.io/v1/ip/geo.json',
-    mapping: (data) => ({
-      ip: data.ip || '',
-      country_code: data.country_code || '',
-      country: data.country || '',
-      region: data.region || '',
-      city: data.city || '',
-      organization: data.organization_name || '',
-      asn: data.asn || 0,
-      asn_organization: data.organization_name || '',
-      longitude: Number(data.longitude) || 0,
-      latitude: Number(data.latitude) || 0,
-      timezone: data.timezone || '',
-      risk: calculateRiskInfo({
-        organization: data.organization_name,
-      }),
-    }),
+    mapping: (data) => {
+      const countryCode = resolveCountryCode(data.country_code, data.country)
+      const asn = cleanAsn(data.asn)
+      const org = data.organization_name || data.organization || ''
+      return {
+        ip: data.ip || '',
+        country_code: countryCode,
+        country: data.country || countryCode || '',
+        region: data.region || '',
+        city: data.city || '',
+        organization: org,
+        asn,
+        asn_organization: org,
+        longitude: Number(data.longitude) || 0,
+        latitude: Number(data.latitude) || 0,
+        timezone: data.timezone || '',
+        risk: calculateRiskInfo({
+          organization: org,
+          asnOrg: org,
+        }),
+      }
+    },
+  },
+  {
+    url: 'https://ipapi.co/json',
+    mapping: (data) => {
+      const countryCode = resolveCountryCode(data.country_code, data.country_name)
+      const asn = cleanAsn(data.asn)
+      const org = data.org || ''
+      return {
+        ip: data.ip || '',
+        country_code: countryCode,
+        country: data.country_name || countryCode || '',
+        region: data.region || '',
+        city: data.city || '',
+        organization: org,
+        asn,
+        asn_organization: org,
+        longitude: Number(data.longitude) || 0,
+        latitude: Number(data.latitude) || 0,
+        timezone: data.timezone || '',
+        risk: calculateRiskInfo({
+          organization: org,
+          asnOrg: org,
+        }),
+      }
+    },
   },
 ]
 
@@ -398,75 +489,53 @@ export interface DnsLeakResult {
 
 // 获取 DNS 泄露检测结果
 export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
-  const userAgent = await getUserAgentPromise()
-  const testId = Math.random().toString(36).substring(2, 12)
-
-  // 1. 优先尝试 bash.ws 泄露检测
+  // 1. 优先通过 Rust 后端使用当前 Clash 代理端口（MixedPort）发起检测请求
+  // 该请求使用 HTTP 代理隧道（CONNECT），客户端本地完全不会进行 DNS 查询，
+  // 从而彻底杜绝本地物理网卡向路由器下发 DNS 发送查询，全部解析由 Clash 内核处理！
   try {
-    const triggerController = new AbortController()
-    const triggerTimeout = setTimeout(() => triggerController.abort(), 4000)
-    try {
-      await fetch(`https://${testId}.bash.ws`, {
-        method: 'GET',
-        signal: triggerController.signal,
-        connectTimeout: 4000,
-        headers: { 'User-Agent': userAgent },
-      })
-    } catch {
-      // 触发 DNS 请求本身无需在意 response
-    } finally {
-      clearTimeout(triggerTimeout)
-    }
+    const rawJson = await commands.testDnsLeak()
+    const data: any[] = JSON.parse(rawJson)
+    if (Array.isArray(data)) {
+      const dnsServers: DnsServerInfo[] = data
+        .filter((item) => item.type === 'dns')
+        .map((item) => ({
+          ip: item.ip,
+          country: item.country,
+          country_name: item.country_name,
+          asn: item.asn,
+          org: item.org,
+        }))
 
-    const res = await fetch(`https://bash.ws/dnsleak/test/${testId}?json`, {
-      method: 'GET',
-      connectTimeout: 5000,
-      headers: { 'User-Agent': userAgent },
-    })
+      const conclusionItem = data.find((item) => item.type === 'conclusion')
+      const ipItem = data.find((item) => item.type === 'ip')
 
-    if (res.ok) {
-      const data: any[] = await res.json()
-      if (Array.isArray(data)) {
-        const dnsServers: DnsServerInfo[] = data
-          .filter((item) => item.type === 'dns')
-          .map((item) => ({
-            ip: item.ip,
-            country: item.country,
-            country_name: item.country_name,
-            asn: item.asn,
-            org: item.org,
-          }))
+      const hasLeak =
+        conclusionItem?.ip?.toLowerCase().includes('leak') ||
+        (ipItem &&
+          dnsServers.some(
+            (s) =>
+              s.country &&
+              ipItem.country &&
+              s.country.toLowerCase() !== ipItem.country.toLowerCase() &&
+              s.country.toLowerCase() === 'cn',
+          ))
 
-        const conclusionItem = data.find((item) => item.type === 'conclusion')
-        const ipItem = data.find((item) => item.type === 'ip')
-
-        const hasLeak =
-          conclusionItem?.ip?.toLowerCase().includes('leak') ||
-          (ipItem &&
-            dnsServers.some(
-              (s) =>
-                s.country &&
-                ipItem.country &&
-                s.country.toLowerCase() !== ipItem.country.toLowerCase() &&
-                s.country.toLowerCase() === 'cn',
-            ))
-
-        return {
-          hasLeak: Boolean(hasLeak),
-          servers: dnsServers,
-          conclusion:
-            conclusionItem?.ip ||
-            (hasLeak ? 'DNS may be leaking.' : 'DNS is not leaking.'),
-          lastFetchTs: Date.now(),
-        }
+      return {
+        hasLeak: Boolean(hasLeak),
+        servers: dnsServers,
+        conclusion:
+          conclusionItem?.ip ||
+          (hasLeak ? 'DNS may be leaking.' : 'DNS is not leaking.'),
+        lastFetchTs: Date.now(),
       }
     }
   } catch (err) {
-    debugLog('bash.ws DNS 泄露测试出错，尝试备选接口', err)
+    debugLog('testDnsLeak IPC error, fallback to direct test', err)
   }
 
   // 2. 回退备选：edns.ip-api.com
   try {
+    const userAgent = await getUserAgentPromise()
     const res = await fetch('https://edns.ip-api.com/json', {
       method: 'GET',
       connectTimeout: 5000,
@@ -500,7 +569,7 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
       }
     }
   } catch (err) {
-    debugLog('edns.ip-api.com DNS 测试失败', err)
+    debugLog('edns.ip-api.com fallback error', err)
   }
 
   throw new Error('All DNS leak test services failed')
