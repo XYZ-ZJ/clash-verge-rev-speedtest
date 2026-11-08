@@ -92,6 +92,27 @@ export interface TranslationResources {
           }
           title: string
         }
+        dnsLeak: {
+          errors: {
+            load: string
+          }
+          labels: {
+            autoRefresh: string
+            conclusion: string
+            dnsServer: string
+            isp: string
+            location: string
+            noServers: string
+            serversCount: string
+          }
+          status: {
+            leaking: string
+            safe: string
+            testing: string
+            unknown: string
+          }
+          title: string
+        }
         ipInfo: {
           errors: {
             load: string
@@ -99,13 +120,23 @@ export interface TranslationResources {
             noServices: string
           }
           labels: {
+            abuseDetected: string
             asn: string
             autoRefresh: string
             ip: string
             isp: string
             location: string
             org: string
+            proxyDetected: string
+            riskLevelHigh: string
+            riskLevelLow: string
+            riskLevelMedium: string
+            riskScore: string
             timezone: string
+            typeBusiness: string
+            typeDatacenter: string
+            typeMobile: string
+            typeResidential: string
             unknown: string
           }
           title: string
@@ -202,6 +233,7 @@ export interface TranslationResources {
           cards: {
             clashInfo: string
             currentProxy: string
+            dnsleak: string
             ip: string
             network: string
             profile: string
