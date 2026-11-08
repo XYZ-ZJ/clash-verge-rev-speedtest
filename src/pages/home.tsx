@@ -51,6 +51,10 @@ const preloadIpInfoCard = () =>
   import('@/components/home/ip-info-card').then((module) => ({
     default: module.IpInfoCard,
   }))
+const preloadDnsLeakCard = () =>
+  import('@/components/home/dns-leak-card').then((module) => ({
+    default: module.DnsLeakCard,
+  }))
 const preloadClashInfoCard = () =>
   import('@/components/home/clash-info-card').then((module) => ({
     default: module.ClashInfoCard,
@@ -63,6 +67,7 @@ const preloadSystemInfoCard = () =>
 const LazySpeedTestCard = lazy(preloadSpeedTestCard)
 const LazyTestCard = lazy(preloadTestCard)
 const LazyIpInfoCard = lazy(preloadIpInfoCard)
+const LazyDnsLeakCard = lazy(preloadDnsLeakCard)
 const LazyClashInfoCard = lazy(preloadClashInfoCard)
 const LazySystemInfoCard = lazy(preloadSystemInfoCard)
 
@@ -73,6 +78,7 @@ export const preloadHomePageCards = () =>
     preloadSpeedTestCard().catch(() => {}),
     preloadTestCard().catch(() => {}),
     preloadIpInfoCard().catch(() => {}),
+    preloadDnsLeakCard().catch(() => {}),
     preloadClashInfoCard().catch(() => {}),
     preloadSystemInfoCard().catch(() => {}),
   ])
@@ -90,6 +96,7 @@ interface HomeCardsSettings {
   systeminfo: boolean
   test: boolean
   ip: boolean
+  dnsleak: boolean
   [key: string]: boolean
 }
 
@@ -105,6 +112,7 @@ const DEFAULT_HOME_CARDS: HomeCardsSettings = {
   systeminfo: true,
   test: true,
   ip: true,
+  dnsleak: true,
 }
 
 const serializeCardFlags = (cards: HomeCardsSettings) =>
@@ -220,6 +228,15 @@ const HomeSettingsDialog = ({
           <FormControlLabel
             control={
               <Checkbox
+                checked={cards.dnsleak || false}
+                onChange={() => handleToggle('dnsleak')}
+              />
+            }
+            label={t('home.page.settings.cards.dnsleak')}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
                 checked={cards.clashinfo || false}
                 onChange={() => handleToggle('clashinfo')}
               />
@@ -328,6 +345,12 @@ const HomePage = () => {
         'ip',
         <Suspense fallback={<Skeleton variant="rectangular" height={200} />}>
           <LazyIpInfoCard />
+        </Suspense>,
+      ),
+      renderCard(
+        'dnsleak',
+        <Suspense fallback={<Skeleton variant="rectangular" height={200} />}>
+          <LazyDnsLeakCard />
         </Suspense>,
       ),
       renderCard(

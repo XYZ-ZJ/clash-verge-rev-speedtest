@@ -21,7 +21,8 @@
         "ip": "IP 信息卡",
         "clashInfo": "Clash 信息卡",
         "systemInfo": "系统信息卡",
-        "speedtest": "网络测速卡"
+        "speedtest": "网络测速卡",
+        "dnsleak": "DNS 泄露检测卡"
       },
       "title": "首页设置"
     },
@@ -81,7 +82,17 @@
         "location": "位置",
         "timezone": "时区",
         "autoRefresh": "自动刷新",
-        "unknown": "未知"
+        "unknown": "未知",
+        "riskScore": "风控指数",
+        "riskLevelLow": "低风险",
+        "riskLevelMedium": "中风险",
+        "riskLevelHigh": "高风险",
+        "typeDatacenter": "数据中心",
+        "typeResidential": "住宅网络",
+        "typeMobile": "移动网络",
+        "typeBusiness": "企业网络",
+        "proxyDetected": "代理标记",
+        "abuseDetected": "滥用记录"
       },
       "errors": {
         "load": "获取 IP 信息失败",
@@ -178,6 +189,27 @@
         "proxySetupFailed": "创建代理失败",
         "clientSetupFailed": "创建 HTTP 客户端失败",
         "probeFailed": "测速失败：所有网络探测均超时或连接失败"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS 泄露检测",
+      "status": {
+        "safe": "未检测到泄露",
+        "leaking": "检测到 DNS 泄露",
+        "testing": "检测中...",
+        "unknown": "未检测"
+      },
+      "labels": {
+        "serversCount": "DNS 服务器数",
+        "dnsServer": "解析服务器",
+        "isp": "服务商",
+        "location": "位置",
+        "autoRefresh": "自动刷新",
+        "noServers": "未捕获到异常 DNS",
+        "conclusion": "结论"
+      },
+      "errors": {
+        "load": "DNS 泄露检测失败"
       }
     }
   }

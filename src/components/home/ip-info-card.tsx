@@ -1,12 +1,14 @@
 import {
   LocationOnOutlined,
   RefreshOutlined,
+  ShieldOutlined,
   VisibilityOffOutlined,
   VisibilityOutlined,
 } from '@mui/icons-material'
 import {
   Box,
   Button,
+  Chip,
   FormControlLabel,
   IconButton,
   Skeleton,
@@ -62,6 +64,38 @@ const InfoItem = memo(({ label, value }: { label: string; value?: string }) => (
     </Typography>
   </Box>
 ))
+
+const getRiskLevelText = (
+  level: 'low' | 'medium' | 'high',
+  t: (key: string) => string,
+) => {
+  switch (level) {
+    case 'low':
+      return t('home.components.ipInfo.labels.riskLevelLow')
+    case 'medium':
+      return t('home.components.ipInfo.labels.riskLevelMedium')
+    case 'high':
+      return t('home.components.ipInfo.labels.riskLevelHigh')
+  }
+}
+
+const getIpTypeText = (
+  type: 'datacenter' | 'residential' | 'mobile' | 'business' | 'unknown',
+  t: (key: string) => string,
+) => {
+  switch (type) {
+    case 'datacenter':
+      return t('home.components.ipInfo.labels.typeDatacenter')
+    case 'residential':
+      return t('home.components.ipInfo.labels.typeResidential')
+    case 'mobile':
+      return t('home.components.ipInfo.labels.typeMobile')
+    case 'business':
+      return t('home.components.ipInfo.labels.typeBusiness')
+    default:
+      return t('home.components.ipInfo.labels.unknown')
+  }
+}
 
 const getCountryFlag = (countryCode: string | undefined) => {
   if (!countryCode) return ''
@@ -366,6 +400,111 @@ export const IpInfoCard = () => {
             </Box>
           </Box>
 
+          {/* IP 风控值与属性显示 */}
+          {ipInfo?.risk && (
+            <Box
+              sx={{
+                my: 1,
+                px: 1,
+                py: 0.6,
+                borderRadius: 1.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 0.75,
+                backgroundColor: (theme) =>
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.04)'
+                    : 'rgba(0, 0, 0, 0.03)',
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                <ShieldOutlined
+                  sx={{
+                    fontSize: 16,
+                    color:
+                      ipInfo.risk.level === 'low'
+                        ? 'success.main'
+                        : ipInfo.risk.level === 'medium'
+                          ? 'warning.main'
+                          : 'error.main',
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: 500 }}
+                >
+                  {t('home.components.ipInfo.labels.riskScore')}:
+                </Typography>
+                <Chip
+                  size="small"
+                  label={`${ipInfo.risk.score} · ${getRiskLevelText(ipInfo.risk.level, t)}`}
+                  color={
+                    ipInfo.risk.level === 'low'
+                      ? 'success'
+                      : ipInfo.risk.level === 'medium'
+                        ? 'warning'
+                        : 'error'
+                  }
+                  variant="outlined"
+                  sx={{
+                    height: 20,
+                    fontSize: '0.68rem',
+                    fontWeight: 500,
+                    '& .MuiChip-label': { px: 0.7 },
+                  }}
+                />
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Chip
+                  size="small"
+                  label={getIpTypeText(ipInfo.risk.type, t)}
+                  variant="filled"
+                  sx={{
+                    height: 20,
+                    fontSize: '0.68rem',
+                    backgroundColor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
+                    '& .MuiChip-label': { px: 0.7 },
+                  }}
+                />
+                {ipInfo.risk.isProxy || ipInfo.risk.isVpn ? (
+                  <Chip
+                    size="small"
+                    label={t('home.components.ipInfo.labels.proxyDetected')}
+                    color="info"
+                    variant="outlined"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.68rem',
+                      '& .MuiChip-label': { px: 0.7 },
+                    }}
+                  />
+                ) : null}
+                {ipInfo.risk.isAbuser ? (
+                  <Chip
+                    size="small"
+                    label={t('home.components.ipInfo.labels.abuseDetected')}
+                    color="error"
+                    variant="filled"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.68rem',
+                      '& .MuiChip-label': { px: 0.7 },
+                    }}
+                  />
+                ) : null}
+              </Box>
+            </Box>
+          )}
+
           <Box
             sx={{
               mt: 'auto',
@@ -404,9 +543,15 @@ export const IpInfoCard = () => {
                 textOverflow: 'ellipsis',
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
+                maxWidth: '60%',
               }}
+              title={[ipInfo?.country_code, ipInfo?.city || ipInfo?.region]
+                .filter(Boolean)
+                .join(', ')}
             >
-              {`${ipInfo?.country_code ?? 'N/A'}, ${ipInfo?.longitude?.toFixed(2) ?? 'N/A'}, ${ipInfo?.latitude?.toFixed(2) ?? 'N/A'}`}
+              {[ipInfo?.country_code, ipInfo?.city || ipInfo?.region]
+                .filter(Boolean)
+                .join(', ') || 'N/A'}
             </Typography>
           </Box>
         </Box>

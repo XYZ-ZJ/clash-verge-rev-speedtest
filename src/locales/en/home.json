@@ -21,7 +21,8 @@
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
         "systemInfo": "System Info Cards",
-        "speedtest": "Speed Test Card"
+        "speedtest": "Speed Test Card",
+        "dnsleak": "DNS Leak Card"
       },
       "title": "Home Settings"
     },
@@ -81,7 +82,17 @@
         "location": "Location",
         "timezone": "Timezone",
         "autoRefresh": "Auto refresh",
-        "unknown": "Unknown"
+        "unknown": "Unknown",
+        "riskScore": "Risk Score",
+        "riskLevelLow": "Low Risk",
+        "riskLevelMedium": "Medium Risk",
+        "riskLevelHigh": "High Risk",
+        "typeDatacenter": "Datacenter",
+        "typeResidential": "Residential",
+        "typeMobile": "Mobile",
+        "typeBusiness": "Business",
+        "proxyDetected": "Proxy",
+        "abuseDetected": "Abuse"
       },
       "errors": {
         "load": "Failed to get IP info",
@@ -178,6 +189,27 @@
         "proxySetupFailed": "Failed to create the proxy client",
         "clientSetupFailed": "Failed to create the HTTP client",
         "probeFailed": "Speed test failed: all probes timed out or failed"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS Leak Test",
+      "status": {
+        "safe": "No Leak Detected",
+        "leaking": "DNS Leaking Detected",
+        "testing": "Testing...",
+        "unknown": "Unknown"
+      },
+      "labels": {
+        "serversCount": "DNS Servers",
+        "dnsServer": "Resolver",
+        "isp": "ISP",
+        "location": "Location",
+        "autoRefresh": "Auto refresh",
+        "noServers": "No abnormal DNS captured",
+        "conclusion": "Conclusion"
+      },
+      "errors": {
+        "load": "Failed to test DNS leak"
       }
     }
   }

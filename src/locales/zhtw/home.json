@@ -21,7 +21,8 @@
         "ip": "IP資訊卡",
         "clashInfo": "Clash 資訊卡",
         "systemInfo": "系統資訊卡",
-        "speedtest": "網路測速卡"
+        "speedtest": "網路測速卡",
+        "dnsleak": "DNS 洩漏檢測卡"
       },
       "title": "首頁設定"
     },
@@ -81,7 +82,17 @@
         "location": "位置",
         "timezone": "時區",
         "autoRefresh": "自動重整",
-        "unknown": "未知"
+        "unknown": "未知",
+        "riskScore": "風控指數",
+        "riskLevelLow": "低風險",
+        "riskLevelMedium": "中風險",
+        "riskLevelHigh": "高風險",
+        "typeDatacenter": "資料中心",
+        "typeResidential": "住宅網路",
+        "typeMobile": "行動網路",
+        "typeBusiness": "企業網路",
+        "proxyDetected": "代理標記",
+        "abuseDetected": "濫用記錄"
       },
       "errors": {
         "load": "取得 IP 資訊失敗",
@@ -178,6 +189,27 @@
         "proxySetupFailed": "建立代理失敗",
         "clientSetupFailed": "建立 HTTP 客戶端失敗",
         "probeFailed": "測速失敗：所有網路探測均逾時或連線失敗"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS 洩漏檢測",
+      "status": {
+        "safe": "未偵測到洩漏",
+        "leaking": "偵測到 DNS 洩漏",
+        "testing": "檢測中...",
+        "unknown": "未檢測"
+      },
+      "labels": {
+        "serversCount": "DNS 伺服器數",
+        "dnsServer": "解析伺服器",
+        "isp": "服務商",
+        "location": "位置",
+        "autoRefresh": "自動重整",
+        "noServers": "未擷取到異常 DNS",
+        "conclusion": "結論"
+      },
+      "errors": {
+        "load": "DNS 洩漏檢測失敗"
       }
     }
   }
