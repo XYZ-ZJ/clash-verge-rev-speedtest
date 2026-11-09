@@ -3,7 +3,7 @@
 本项目 Fork 自官方开源仓库 [clash-verge-rev/clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) (`dev` 分支)，在原版基础上针对网络测速、流量统计、IP/DNS 检测与系统路由安全性进行了增强与修复。
 
 <p align="center">
-  <img src="./docs/speedtest_preview.png" alt="界面预览" width="880" />
+  <img src="./docs/preview.jpg" alt="界面预览" width="880" />
 </p>
 
 ---
