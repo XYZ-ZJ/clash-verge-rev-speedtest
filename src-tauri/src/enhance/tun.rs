@@ -48,6 +48,9 @@ pub fn use_tun(mut config: Mapping, enable: bool) -> Mapping {
         revise!(config, "dns", dns_val);
     }
 
+    if enable && !tun_val.contains_key(&Value::from("strict-route")) {
+        revise!(tun_val, "strict-route", true);
+    }
     revise!(tun_val, "enable", enable);
     revise!(config, "tun", tun_val);
 

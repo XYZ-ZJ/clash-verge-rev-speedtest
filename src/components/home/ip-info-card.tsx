@@ -461,6 +461,7 @@ export const IpInfoCard = () => {
               </Box>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {ipInfo.risk.type && ipInfo.risk.type !== 'unknown' && (
                 <Chip
                   size="small"
                   label={getIpTypeText(ipInfo.risk.type, t)}
@@ -475,6 +476,7 @@ export const IpInfoCard = () => {
                     '& .MuiChip-label': { px: 0.7 },
                   }}
                 />
+              )}
                 {ipInfo.risk.isProxy || ipInfo.risk.isVpn ? (
                   <Chip
                     size="small"

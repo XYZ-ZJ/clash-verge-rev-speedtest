@@ -49,7 +49,7 @@ export function calculateRiskInfo(params: {
     } else if (params.isDatacenter) {
       type = 'datacenter'
     } else if (
-      /hosting|datacenter|data\s*centre|vps|cloud|server|compute|dedicated|cdn|asn|network|telecom|infrastructure/i.test(
+      /hosting|datacenter|data\s*centre|vps|cloud|server|compute|dedicated|cdn|asn|network|telecom|infrastructure|llc|corp|inc|ltd|limited|gmbh|co\.|technology|technologies|solutions|communications|node|transit|peering|digital|service/i.test(
         orgText,
       )
     ) {
@@ -506,26 +506,41 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
           org: item.org,
         }))
 
-      const conclusionItem = data.find((item) => item.type === 'conclusion')
       const ipItem = data.find((item) => item.type === 'ip')
 
-      const hasLeak =
-        conclusionItem?.ip?.toLowerCase().includes('leak') ||
-        (ipItem &&
-          dnsServers.some(
-            (s) =>
-              s.country &&
-              ipItem.country &&
-              s.country.toLowerCase() !== ipItem.country.toLowerCase() &&
-              s.country.toLowerCase() === 'cn',
-          ))
+      const isCnDns = (s: DnsServerInfo) => {
+        const country = s.country?.toLowerCase()
+        const org = (s.org || '').toLowerCase()
+        return (
+          country === 'cn' ||
+          /china|telecom|unicom|mobile|volcano|alibaba|tencent|baidu/i.test(org)
+        )
+      }
+
+      const isPrivateIp = (ip: string) => {
+        return (
+          ip.startsWith('192.168.') ||
+          ip.startsWith('10.') ||
+          ip.startsWith('127.') ||
+          /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)
+        )
+      }
+
+      const isOverseasProxy =
+        ipItem?.country && ipItem.country.toLowerCase() !== 'cn'
+
+      // 精准判定真实泄露：境外代理出现国内或局域网私有DNS
+      let hasLeak = false
+      if (isOverseasProxy) {
+        hasLeak = dnsServers.some((s) => isCnDns(s) || isPrivateIp(s.ip))
+      } else {
+        hasLeak = dnsServers.some((s) => isPrivateIp(s.ip))
+      }
 
       return {
-        hasLeak: Boolean(hasLeak),
+        hasLeak,
         servers: dnsServers,
-        conclusion:
-          conclusionItem?.ip ||
-          (hasLeak ? 'DNS may be leaking.' : 'DNS is not leaking.'),
+        conclusion: hasLeak ? 'DNS may be leaking.' : 'DNS is not leaking.',
         lastFetchTs: Date.now(),
       }
     }
