@@ -372,11 +372,11 @@ pub(super) async fn init_dns_config() -> Result<()> {
         (
             "default-nameserver".into(),
             Value::Sequence(vec![
-                Value::String("223.5.5.5".into()),
                 Value::String("1.1.1.1".into()),
-                Value::String("223.6.6.6".into()),
+                Value::String("8.8.4.4".into()),
+                Value::String("9.9.9.9".into()),
                 Value::String("8.8.8.8".into()),
-                Value::String("2400:3200::1".into()),
+                Value::String("2606:4700:4700::1111".into()),
                 Value::String("2001:4860:4860::8888".into()),
             ]),
         ),
@@ -384,8 +384,8 @@ pub(super) async fn init_dns_config() -> Result<()> {
             "nameserver".into(),
             Value::Sequence(vec![
                 Value::String("8.8.8.8".into()),
-                Value::String("https://doh.pub/dns-query".into()),
-                Value::String("https://dns.alidns.com/dns-query".into()),
+                Value::String("https://1.1.1.1/dns-query".into()),
+                Value::String("https://dns.google/dns-query".into()),
             ]),
         ),
         ("fallback".into(), Value::Sequence(vec![])),

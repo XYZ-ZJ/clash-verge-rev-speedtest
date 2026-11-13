@@ -31,6 +31,7 @@ export interface EgressReport {
     state: 'idle' | 'testing' | 'pass' | 'interactive' | 'fail'
     title: string
     description: string
+    rttMs?: number
   }
   timestamp: number
 }
@@ -46,7 +47,7 @@ const AI_RESTRICTED_COUNTRIES = new Set([
   'CN', 'RU', 'IR', 'KP', 'CU', 'SY', 'BY', 'VE',
 ])
 
-const safeFetch = async (url: string, timeoutMs = 3500): Promise<string | null> => {
+const safeFetch = async (url: string, timeoutMs = 4000): Promise<string | null> => {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -77,6 +78,71 @@ const getUtcOffsetHours = (tz?: string): number => {
   }
 }
 
+// 真实探测 Cloudflare 边缘放行状态与人机验证
+export const detectCloudflareStatus = async (): Promise<{
+  state: 'pass' | 'interactive' | 'fail'
+  title: string
+  description: string
+  rttMs: number
+}> => {
+  const start = performance.now()
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 4500)
+    const [resMeta, resTrace] = await Promise.all([
+      fetch('https://speed.cloudflare.com/meta', {
+        signal: controller.signal,
+        connectTimeout: 4500,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      }).catch(() => null),
+      fetch('https://1.1.1.1/cdn-cgi/trace', {
+        signal: controller.signal,
+        connectTimeout: 4500,
+      }).catch(() => null),
+    ])
+    clearTimeout(timeout)
+    const rttMs = Math.round(performance.now() - start)
+
+    if (resMeta && resMeta.ok) {
+      return {
+        state: 'pass',
+        title: '直接通过',
+        description: `大多数用 Cloudflare 防护的网站会直接放行你，不弹验证。实测节点通信延迟 ${rttMs}ms，信誉良好。`,
+        rttMs,
+      }
+    } else if (resTrace && resTrace.ok) {
+      return {
+        state: 'pass',
+        title: '直接通过',
+        description: `大多数用 Cloudflare 防护的网站会直接放行你，不弹验证。Cloudflare 边缘放行通畅 (${rttMs}ms)。`,
+        rttMs,
+      }
+    } else if (resMeta?.status === 403 || resTrace?.status === 403) {
+      return {
+        state: 'interactive',
+        title: '需人机验证',
+        description: '该出口 IP 可能会触发 Cloudflare Turnstile 质询，需手动完成人机验证。',
+        rttMs,
+      }
+    } else {
+      return {
+        state: 'fail',
+        title: '可能被拒绝',
+        description: '无法直连 Cloudflare 鉴权节点或被风控阻断，访问部分 Cloudflare 站点可能受阻。',
+        rttMs,
+      }
+    }
+  } catch {
+    const rttMs = Math.round(performance.now() - start)
+    return {
+      state: 'fail',
+      title: '可能被拒绝',
+      description: '探测 Cloudflare 鉴权服务超时，该出口可能受到网络限制。',
+      rttMs,
+    }
+  }
+}
+
 // WebRTC STUN 探测公网映射 IP
 export const detectWebRtcIp = async (): Promise<string | null> => {
   if (typeof window === 'undefined' || !window.RTCPeerConnection) return null
@@ -101,7 +167,6 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
       pc.onicecandidate = (e) => {
         if (e.candidate) {
           const cand = e.candidate.candidate
-          // 匹配 candidate:xxx 1 udp xxx <IP> <PORT> typ srflx
           const match = cand.match(
             /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{1,4}){7})/i
           )
@@ -124,14 +189,19 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
 }
 
 export const runFullEgressDetection = async (): Promise<EgressReport> => {
-  // 1. 并发探测国内直连与海外代理出口
-  const [v4DirectText, biliDirectText, ipSbText, cfTraceText, webrtcIp] = await Promise.all([
-    safeFetch('http://ip.3322.net'),
-    safeFetch('https://api.bilibili.com/x/web-interface/zone'),
-    safeFetch('https://api.ip.sb/geoip'),
-    safeFetch('https://1.1.1.1/cdn-cgi/trace'),
-    detectWebRtcIp(),
-  ])
+  const minWait = new Promise((resolve) => setTimeout(resolve, 600))
+
+  // 1. 并发探测国内直连与海外代理出口及 Cloudflare 状态
+  const [v4DirectText, biliDirectText, ipSbText, cfTraceText, webrtcIp, cfStatus] =
+    await Promise.all([
+      safeFetch('http://ip.3322.net'),
+      safeFetch('https://api.bilibili.com/x/web-interface/zone'),
+      safeFetch('https://api.ip.sb/geoip'),
+      safeFetch('https://1.1.1.1/cdn-cgi/trace'),
+      detectWebRtcIp(),
+      detectCloudflareStatus(),
+      minWait,
+    ])
 
   // 解析国内直连 IPv4 / IPv6
   let directV4 = v4DirectText ? v4DirectText.trim() : ''
@@ -234,7 +304,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // 3. 构建检测结论（严格规则：问题项标红，正常项标绿，时区比对）
+  // 3. 构建检测结论（严格规则：问题项标红，正常项标绿，时区比对，剔除NAT）
   const findings: FindingItem[] = []
 
   // (1) 分流结论
@@ -263,7 +333,8 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   // (2) AI 看到的地区
   const aiExit = proxyExit || directExit
   if (aiExit) {
-    const isAiOk = AI_SUPPORTED_COUNTRIES.has(aiExit.countryCode) ||
+    const isAiOk =
+      AI_SUPPORTED_COUNTRIES.has(aiExit.countryCode) ||
       (!AI_RESTRICTED_COUNTRIES.has(aiExit.countryCode) && aiExit.isProxy)
 
     findings.push({
@@ -274,14 +345,17 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
       badgeColor: isAiOk ? 'success' : 'error',
       text: isAiOk
         ? `${aiExit.id} ${aiExit.country}，在 ChatGPT 和 Claude 的服务范围内`
-        : `${aiExit.id} ${aiExit.country}，该地区可能不在 ChatGPT/Claude 官方支持列表`,
+        : `${aiExit.id} ${aiExit.country}，该地区可能受到 ChatGPT/Claude 限制访问`,
     })
   }
 
   // (3) WebRTC 检测
   if (webrtcIp) {
-    const webrtcIsDirect = directExit && (webrtcIp === directExit.ip || webrtcIp === directV4 || webrtcIp === directV6)
-    const webrtcMatchesProxy = proxyExit && webrtcIp === proxyExit.ip
+    const webrtcIsDirect =
+      directExit &&
+      (webrtcIp === directExit.ip ||
+        webrtcIp === directV4 ||
+        webrtcIp === directV6)
 
     if (webrtcIsDirect) {
       findings.push({
@@ -367,7 +441,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
       ok: true, // 一致标绿！
       badge: `${formatOffset(sysOffset)}`,
       badgeColor: 'success',
-      text: `和出口一致 (${proxyCountry || '当前出口'}, ${formatOffset(sysOffset)})`,
+      text: `和出口一致（${proxyCountry || '当前出口'}）`,
     })
   } else {
     findings.push({
@@ -386,11 +460,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     title: isSplit ? '分流生效：不同网站走不同出口' : '单出口：所有网站走同一出口',
     exits,
     findings,
-    cfStatus: {
-      state: 'pass',
-      title: '直接通过',
-      description: '大多数用 Cloudflare 防护的网站会直接放行你，不弹验证。和上面按 IP 的推测一致：这个 IP 的信誉不错。',
-    },
+    cfStatus,
     timestamp: Date.now(),
   }
 }

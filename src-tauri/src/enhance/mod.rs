@@ -543,7 +543,7 @@ fn sanitize_dns_servers(mut config: Mapping) -> Mapping {
                     }
                 });
                 if key == "default-nameserver" && seq.is_empty() {
-                    seq.push(Value::String("223.5.5.5".into()));
+                    seq.push(Value::String("8.8.8.8".into()));
                     seq.push(Value::String("1.1.1.1".into()));
                 }
             }

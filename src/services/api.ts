@@ -526,16 +526,11 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
         )
       }
 
-      const isOverseasProxy =
-        ipItem?.country && ipItem.country.toLowerCase() !== 'cn'
-
-      // 精准判定真实泄露：境外代理出现国内或局域网私有DNS
-      let hasLeak = false
-      if (isOverseasProxy) {
-        hasLeak = dnsServers.some((s) => isCnDns(s) || isPrivateIp(s.ip))
-      } else {
-        hasLeak = dnsServers.some((s) => isPrivateIp(s.ip))
-      }
+      const conclusionItem = data.find((item) => item.type === 'conclusion')
+      // 只要检测出国内服务器（中国电信/移动/联通/阿里/腾讯等）、局域网私有 IP，或服务端判定泄露，严密判定为泄露！
+      const hasLeak =
+        dnsServers.some((s) => isCnDns(s) || isPrivateIp(s.ip)) ||
+        Boolean(conclusionItem && /leak/i.test(conclusionItem.ip))
 
       return {
         hasLeak,
