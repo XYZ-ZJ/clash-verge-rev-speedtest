@@ -122,12 +122,135 @@ pub struct SpeedTestResult {
 
 static SPEEDTEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+fn parse_server_timing_dur(header_val: &str) -> Option<f64> {
+    for part in header_val.split(',') {
+        let part = part.trim();
+        if let Some(idx) = part.find("dur=") {
+            let val_str = &part[idx + 4..];
+            let end_idx = val_str.find(';').unwrap_or(val_str.len());
+            if let Ok(dur) = val_str[..end_idx].trim().parse::<f64>() {
+                return Some(dur);
+            }
+        }
+    }
+    None
+}
+
+fn calculate_median(samples: &[u32]) -> Option<u32> {
+    if samples.is_empty() {
+        return None;
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let mid = sorted.len() / 2;
+    if sorted.len() % 2 == 0 {
+        Some((sorted[mid - 1] + sorted[mid]) / 2)
+    } else {
+        Some(sorted[mid])
+    }
+}
+
+fn calculate_rate_now(samples: &[(f64, u64)], window_secs: f64) -> f64 {
+    if samples.len() < 2 {
+        return 0.0;
+    }
+    let &(t_latest, b_latest) = samples.last().unwrap();
+    let mut i = samples.len() - 1;
+    while i > 0 && (t_latest - samples[i - 1].0) <= window_secs {
+        i -= 1;
+    }
+    let &(t_old, b_old) = &samples[if i == samples.len() - 1 { i - 1 } else { i }];
+    let dt = t_latest - t_old;
+    let db = b_latest.saturating_sub(b_old);
+    if dt > 0.02 {
+        let mb = db as f64 / (1024.0 * 1024.0);
+        (mb / dt * 10.0).round() / 10.0
+    } else {
+        0.0
+    }
+}
+
+fn calculate_steady_speed(samples: &[(f64, u64)]) -> f64 {
+    if samples.len() < 2 {
+        return 0.0;
+    }
+    let &(t_end, b_end) = samples.last().unwrap();
+    let cutoff_t = t_end * 0.3; // 剔除前 30% TCP Slow Start 阶段
+    let start_sample = samples
+        .iter()
+        .find(|&&(t, _)| t >= cutoff_t)
+        .unwrap_or(&samples[0]);
+
+    let dt = t_end - start_sample.0;
+    let db = b_end.saturating_sub(start_sample.1);
+    if dt > 0.05 && db > 0 {
+        let mb = db as f64 / (1024.0 * 1024.0);
+        (mb / dt * 10.0).round() / 10.0
+    } else if t_end > 0.05 && b_end > 0 {
+        let mb = b_end as f64 / (1024.0 * 1024.0);
+        (mb / t_end * 10.0).round() / 10.0
+    } else {
+        0.0
+    }
+}
+
+fn is_settled(samples: &[(f64, u64)], min_secs: f64) -> bool {
+    if samples.is_empty() {
+        return false;
+    }
+    let t_end = samples.last().unwrap().0;
+    if t_end < min_secs {
+        return false;
+    }
+    let mut rates = Vec::new();
+    let mut k = samples.len() as isize - 1;
+    while k >= 0 && (t_end - samples[k as usize].0) <= 2.0 {
+        let rate = calculate_rate_now(&samples[..=k as usize], 0.8);
+        if rate > 0.0 {
+            rates.push(rate);
+        }
+        k -= 3;
+    }
+    if rates.len() >= 4 {
+        let min_r = rates.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_r = rates.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let avg_r = rates.iter().sum::<f64>() / rates.len() as f64;
+        if avg_r > 0.0 && (max_r - min_r) / avg_r <= 0.08 {
+            return true;
+        }
+    }
+    false
+}
+
+fn next_chunk_size(current_mb_s: f64, streams: usize, lo: usize, hi: usize) -> usize {
+    let bytes_per_sec = (current_mb_s * 1024.0 * 1024.0) as usize;
+    let want = if bytes_per_sec > 0 {
+        (bytes_per_sec / streams.max(1)).max(lo).min(hi)
+    } else {
+        lo
+    };
+    ((want + 65535) / 65536) * 65536
+}
+
+fn generate_random_payload_block(size: usize) -> Vec<u8> {
+    let mut buf = vec![0u8; size];
+    let mut state: u32 = 0x8a5b3c1d;
+    for chunk in buf.chunks_exact_mut(4) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        chunk.copy_from_slice(&state.to_le_bytes());
+    }
+    buf
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn test_network_speed(
     on_progress: tauri::ipc::Channel<SpeedTestProgress>,
 ) -> CmdResult<SpeedTestResult> {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     if SPEEDTEST_RUNNING
@@ -178,23 +301,62 @@ pub async fn test_network_speed(
     });
 
     // Phase 1: Ping / Latency, packet loss, and location
-    let probe_count = 8;
+    // First, 1 warm-up request to establish TLS tunnel and retrieve location metadata
+    let mut location: Option<String> = None;
+    if let Ok(Ok(resp)) = tokio::time::timeout(
+        Duration::from_millis(3000),
+        client.get("https://speed.cloudflare.com/__down?bytes=0").send(),
+    )
+    .await
+    {
+        if resp.status().is_success() {
+            let headers = resp.headers();
+            let city = headers
+                .get("cf-meta-city")
+                .or_else(|| headers.get("city"))
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let country = headers
+                .get("cf-meta-country")
+                .or_else(|| headers.get("country"))
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+
+            location = match (city, country) {
+                (Some(c), Some(co)) => Some(format!("{c}, {co}")),
+                (Some(c), None) => Some(c.to_string()),
+                (None, Some(co)) => Some(co.to_string()),
+                (None, None) => None,
+            };
+        }
+    }
+
+    let probe_count = 10;
     let mut delays = Vec::with_capacity(probe_count);
     let mut failed_probes = 0;
-    let mut location: Option<String> = None;
 
     for _ in 0..probe_count {
         let t0 = Instant::now();
         let resp = tokio::time::timeout(
-            Duration::from_millis(2500),
+            Duration::from_millis(2000),
             client.get("https://speed.cloudflare.com/__down?bytes=0").send(),
         )
         .await;
 
         match resp {
             Ok(Ok(response)) if response.status().is_success() => {
-                let rtt = t0.elapsed().as_millis() as u32;
-                delays.push(rtt);
+                let raw_rtt = t0.elapsed().as_millis() as u32;
+                let dur = response
+                    .headers()
+                    .get("server-timing")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(parse_server_timing_dur)
+                    .unwrap_or(0.0) as u32;
+                // Subtract Cloudflare Worker processing duration to get true network RTT
+                let effective_rtt = raw_rtt.saturating_sub(dur).max(1);
+                delays.push(effective_rtt);
 
                 if location.is_none() {
                     let headers = response.headers();
@@ -223,7 +385,7 @@ pub async fn test_network_speed(
                 failed_probes += 1;
             }
         }
-        tokio::time::sleep(Duration::from_millis(40)).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
     }
 
     if delays.is_empty() {
@@ -244,20 +406,13 @@ pub async fn test_network_speed(
         ));
     }
 
-    // The first probe pays for DNS + TCP + TLS through the proxy tunnel; drop the
-    // slowest sample so one handshake cannot skew the average.
-    let avg_latency = if delays.len() >= 3 {
-        let max = *delays.iter().max().unwrap();
-        (delays.iter().sum::<u32>() - max) / ((delays.len() - 1) as u32)
-    } else {
-        delays.iter().sum::<u32>() / (delays.len() as u32)
-    };
+    let median_latency = calculate_median(&delays).unwrap_or(0);
     let loss_rate = (failed_probes as f64 / probe_count as f64) * 100.0;
     let rounded_loss_rate = (loss_rate * 10.0).round() / 10.0;
 
     let _ = on_progress.send(SpeedTestProgress {
         stage: "ping".to_string(),
-        latency: Some(avg_latency),
+        latency: Some(median_latency),
         loss_rate: Some(rounded_loss_rate),
         download_speed: None,
         upload_speed: None,
@@ -266,88 +421,96 @@ pub async fn test_network_speed(
         error: None,
     });
 
-    // Phase 2: Download test
+    // Phase 2: Multi-stream download test
+    const DOWNLOAD_STREAMS: usize = 4;
+    const DOWNLOAD_MAX_DURATION: Duration = Duration::from_secs(8);
+    const DOWNLOAD_MIN_DURATION: Duration = Duration::from_secs(4);
+
     let dl_start = Instant::now();
-    let max_dl_duration = Duration::from_secs(8);
-    let mut total_dl_bytes = 0u64;
-    let mut last_progress = Instant::now();
-    // Sliding window of recent samples for the early-exit stability check.
-    let mut window: std::collections::VecDeque<(f64, u64)> =
-        std::collections::VecDeque::with_capacity(8);
-    let mut stable_ticks = 0u32;
+    let total_dl_bytes = Arc::new(AtomicU64::new(0));
+    let stop_download = Arc::new(AtomicBool::new(false));
+    let current_dl_chunk = Arc::new(AtomicUsize::new(512 * 1024)); // 512KB start
 
-    if let Ok(Ok(mut resp)) = tokio::time::timeout(
-        Duration::from_secs(10),
-        client.get("https://speed.cloudflare.com/__down?bytes=25000000").send(),
-    )
-    .await
-    {
-        if resp.status().is_success() {
-            while let Ok(Ok(Some(chunk))) = tokio::time::timeout(Duration::from_secs(2), resp.chunk()).await {
-                total_dl_bytes += chunk.len() as u64;
-                let elapsed = dl_start.elapsed();
-                let elapsed_secs = elapsed.as_secs_f64();
+    let mut dl_handles = Vec::with_capacity(DOWNLOAD_STREAMS);
+    for _ in 0..DOWNLOAD_STREAMS {
+        let client = client.clone();
+        let total_dl_bytes = total_dl_bytes.clone();
+        let stop_download = stop_download.clone();
+        let current_dl_chunk = current_dl_chunk.clone();
 
-                if last_progress.elapsed() >= Duration::from_millis(200) {
-                    let secs = elapsed_secs;
-                    if secs > 0.05 {
-                        let mb = (total_dl_bytes as f64) / (1024.0 * 1024.0);
-                        let spd = (mb / secs * 10.0).round() / 10.0;
-                        let _ = on_progress.send(SpeedTestProgress {
-                            stage: "download".to_string(),
-                            latency: Some(avg_latency),
-                            loss_rate: Some(rounded_loss_rate),
-                            download_speed: Some(spd),
-                            upload_speed: None,
-                            location: location.clone(),
-                            timestamp: None,
-                            error: None,
-                        });
-                    }
+        dl_handles.push(tokio::spawn(async move {
+            while !stop_download.load(Ordering::Relaxed) {
+                let chunk_size = current_dl_chunk.load(Ordering::Relaxed);
+                let url = format!("https://speed.cloudflare.com/__down?bytes={chunk_size}");
+                let resp_res = tokio::time::timeout(
+                    Duration::from_secs(6),
+                    client.get(&url).send(),
+                )
+                .await;
 
-                    window.push_back((secs, total_dl_bytes));
-                    while window.len() > 6 {
-                        window.pop_front();
-                    }
-                    // After the ramp-up, stop early once the recent rate stays
-                    // within 10% of the overall rate for about a second; this
-                    // avoids pulling the remaining ~20MB on metered links.
-                    if elapsed_secs >= 4.0 && window.len() >= 6 {
-                        let (old_t, old_b) = *window.front().expect("window is non-empty");
-                        let overall = total_dl_bytes as f64 / elapsed_secs;
-                        let recent =
-                            (total_dl_bytes - old_b) as f64 / (elapsed_secs - old_t);
-                        if overall > 0.0 && (recent / overall - 1.0).abs() <= 0.10 {
-                            stable_ticks += 1;
-                        } else {
-                            stable_ticks = 0;
+                match resp_res {
+                    Ok(Ok(mut resp)) if resp.status().is_success() => {
+                        while let Ok(Ok(Some(chunk))) = tokio::time::timeout(Duration::from_secs(2), resp.chunk()).await {
+                            total_dl_bytes.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                            if stop_download.load(Ordering::Relaxed) {
+                                break;
+                            }
                         }
-                        if stable_ticks >= 5 {
+                    }
+                    _ => {
+                        if stop_download.load(Ordering::Relaxed) {
                             break;
                         }
+                        tokio::time::sleep(Duration::from_millis(150)).await;
                     }
-
-                    last_progress = Instant::now();
-                }
-
-                if elapsed >= max_dl_duration {
-                    break;
                 }
             }
+        }));
+    }
+
+    let mut dl_samples: Vec<(f64, u64)> = Vec::with_capacity(100);
+    dl_samples.push((0.0, 0));
+    let mut last_dl_progress = Instant::now();
+
+    while dl_start.elapsed() < DOWNLOAD_MAX_DURATION {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let elapsed_secs = dl_start.elapsed().as_secs_f64();
+        let bytes = total_dl_bytes.load(Ordering::Relaxed);
+        dl_samples.push((elapsed_secs, bytes));
+
+        let current_rate = calculate_rate_now(&dl_samples, 1.0);
+        let next_chunk = next_chunk_size(current_rate, DOWNLOAD_STREAMS, 256 * 1024, 25 * 1024 * 1024);
+        current_dl_chunk.store(next_chunk, Ordering::Relaxed);
+
+        if last_dl_progress.elapsed() >= Duration::from_millis(200) {
+            let _ = on_progress.send(SpeedTestProgress {
+                stage: "download".to_string(),
+                latency: Some(median_latency),
+                loss_rate: Some(rounded_loss_rate),
+                download_speed: Some(current_rate),
+                upload_speed: None,
+                location: location.clone(),
+                timestamp: None,
+                error: None,
+            });
+            last_dl_progress = Instant::now();
+        }
+
+        if is_settled(&dl_samples, DOWNLOAD_MIN_DURATION.as_secs_f64()) {
+            break;
         }
     }
 
-    let dl_secs = dl_start.elapsed().as_secs_f64();
-    let final_dl_speed = if dl_secs > 0.05 && total_dl_bytes > 0 {
-        let mb = (total_dl_bytes as f64) / (1024.0 * 1024.0);
-        (mb / dl_secs * 10.0).round() / 10.0
-    } else {
-        0.0
-    };
+    stop_download.store(true, Ordering::Relaxed);
+    for h in dl_handles {
+        let _ = h.await;
+    }
+
+    let final_dl_speed = calculate_steady_speed(&dl_samples);
 
     let _ = on_progress.send(SpeedTestProgress {
         stage: "upload_start".to_string(),
-        latency: Some(avg_latency),
+        latency: Some(median_latency),
         loss_rate: Some(rounded_loss_rate),
         download_speed: Some(final_dl_speed),
         upload_speed: Some(0.0),
@@ -356,61 +519,109 @@ pub async fn test_network_speed(
         error: None,
     });
 
-    // Phase 3: Upload test
+    // Phase 3: Multi-stream upload test with incompressible random payload
+    const UPLOAD_STREAMS: usize = 3;
+    const UPLOAD_MAX_DURATION: Duration = Duration::from_secs(6);
+    const UPLOAD_MIN_DURATION: Duration = Duration::from_secs(3);
+
     let ul_start = Instant::now();
-    let mut final_ul_speed = 0.0;
-    let payload_size = 5 * 1024 * 1024; // 5MB
-    let payload = vec![0u8; payload_size];
+    let total_ul_bytes = Arc::new(AtomicU64::new(0));
+    let stop_upload = Arc::new(AtomicBool::new(false));
+    let current_ul_chunk = Arc::new(AtomicUsize::new(256 * 1024));
+    let random_seed_buffer = Arc::new(generate_random_payload_block(1024 * 1024));
 
-    let ul_result = tokio::time::timeout(
-        Duration::from_secs(8),
-        client
-            .post("https://speed.cloudflare.com/__up")
-            .body(payload)
-            .send(),
-    )
-    .await;
+    let mut ul_handles = Vec::with_capacity(UPLOAD_STREAMS);
+    for _ in 0..UPLOAD_STREAMS {
+        let client = client.clone();
+        let total_ul_bytes = total_ul_bytes.clone();
+        let stop_upload = stop_upload.clone();
+        let current_ul_chunk = current_ul_chunk.clone();
+        let random_buf = random_seed_buffer.clone();
 
-    match ul_result {
-        Ok(Ok(resp)) if resp.status().is_success() => {
-            let ul_secs = ul_start.elapsed().as_secs_f64();
-            // Fast links finish 5MB in under 50ms; keep a low floor so they
-            // still report a speed instead of a silent 0.
-            if ul_secs > 0.005 {
-                let mb = (payload_size as f64) / (1024.0 * 1024.0);
-                final_ul_speed = (mb / ul_secs * 10.0).round() / 10.0;
-            }
-        }
-        _ => {
-            // Fallback with 1MB payload
-            let small_payload_size = 1024 * 1024;
-            let small_payload = vec![0u8; small_payload_size];
-            let small_start = Instant::now();
-            if let Ok(Ok(resp)) = tokio::time::timeout(
-                Duration::from_secs(4),
-                client
-                    .post("https://speed.cloudflare.com/__up")
-                    .body(small_payload)
-                    .send(),
-            )
-            .await
-            {
-                if resp.status().is_success() {
-                    let small_secs = small_start.elapsed().as_secs_f64();
-                    if small_secs > 0.005 {
-                        let mb = (small_payload_size as f64) / (1024.0 * 1024.0);
-                        final_ul_speed = (mb / small_secs * 10.0).round() / 10.0;
+        ul_handles.push(tokio::spawn(async move {
+            while !stop_upload.load(Ordering::Relaxed) {
+                let chunk_size = current_ul_chunk.load(Ordering::Relaxed);
+                let payload = if chunk_size <= random_buf.len() {
+                    random_buf[..chunk_size].to_vec()
+                } else {
+                    let mut data = Vec::with_capacity(chunk_size);
+                    while data.len() < chunk_size {
+                        let needed = chunk_size - data.len();
+                        let take = needed.min(random_buf.len());
+                        data.extend_from_slice(&random_buf[..take]);
+                    }
+                    data
+                };
+
+                let resp_res = tokio::time::timeout(
+                    Duration::from_secs(6),
+                    client
+                        .post("https://speed.cloudflare.com/__up")
+                        .body(payload)
+                        .send(),
+                )
+                .await;
+
+                match resp_res {
+                    Ok(Ok(resp)) if resp.status().is_success() => {
+                        total_ul_bytes.fetch_add(chunk_size as u64, Ordering::Relaxed);
+                    }
+                    _ => {
+                        if stop_upload.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(150)).await;
                     }
                 }
             }
+        }));
+    }
+
+    let mut ul_samples: Vec<(f64, u64)> = Vec::with_capacity(100);
+    ul_samples.push((0.0, 0));
+    let mut last_ul_progress = Instant::now();
+
+    while ul_start.elapsed() < UPLOAD_MAX_DURATION {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let elapsed_secs = ul_start.elapsed().as_secs_f64();
+        let bytes = total_ul_bytes.load(Ordering::Relaxed);
+        ul_samples.push((elapsed_secs, bytes));
+
+        let current_rate = calculate_rate_now(&ul_samples, 1.0);
+        let next_chunk = next_chunk_size(current_rate, UPLOAD_STREAMS, 256 * 1024, 4 * 1024 * 1024);
+        current_ul_chunk.store(next_chunk, Ordering::Relaxed);
+
+        if last_ul_progress.elapsed() >= Duration::from_millis(200) {
+            let _ = on_progress.send(SpeedTestProgress {
+                stage: "upload".to_string(),
+                latency: Some(median_latency),
+                loss_rate: Some(rounded_loss_rate),
+                download_speed: Some(final_dl_speed),
+                upload_speed: Some(current_rate),
+                location: location.clone(),
+                timestamp: None,
+                error: None,
+            });
+            last_ul_progress = Instant::now();
+        }
+
+        if is_settled(&ul_samples, UPLOAD_MIN_DURATION.as_secs_f64()) {
+            break;
         }
     }
+
+    stop_upload.store(true, Ordering::Relaxed);
+    for h in ul_handles {
+        let _ = h.await;
+    }
+
+    let final_ul_speed = calculate_steady_speed(&ul_samples);
 
     let timestamp = chrono::Local::now().format("%Y/%m/%d %H:%M").to_string();
     let final_location = location.unwrap_or_else(|| "Unknown".to_string());
 
     let result = SpeedTestResult {
-        latency: avg_latency,
+        latency: median_latency,
         loss_rate: rounded_loss_rate,
         download_speed: final_dl_speed,
         upload_speed: final_ul_speed,

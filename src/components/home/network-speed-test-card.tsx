@@ -75,12 +75,20 @@ const resolveErrorMessage = (error: unknown, t: (key: string) => string) => {
 interface MetricTileProps {
   label: string
   value: string
+  subValue?: string
   icon: React.ReactElement<any>
   iconColor: string
   bg: string
 }
 
-const MetricTile = ({ label, value, icon, iconColor, bg }: MetricTileProps) => (
+const MetricTile = ({
+  label,
+  value,
+  subValue,
+  icon,
+  iconColor,
+  bg,
+}: MetricTileProps) => (
   <Box
     sx={{
       display: 'flex',
@@ -101,17 +109,28 @@ const MetricTile = ({ label, value, icon, iconColor, bg }: MetricTileProps) => (
       >
         {label}
       </Typography>
-      <Typography
-        variant="h6"
-        sx={{
-          fontWeight: 'bold',
-          fontSize: '1.125rem',
-          lineHeight: 1.2,
-          color: 'text.primary',
-        }}
-      >
-        {value}
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: 'bold',
+            fontSize: '1.125rem',
+            lineHeight: 1.2,
+            color: 'text.primary',
+          }}
+        >
+          {value}
+        </Typography>
+        {subValue && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ fontSize: '0.75rem', lineHeight: 1.2, fontWeight: 500 }}
+          >
+            {subValue}
+          </Typography>
+        )}
+      </Box>
     </Box>
   </Box>
 )
@@ -191,6 +210,10 @@ export const NetworkSpeedTestCard = () => {
       icon: <CloudDownloadRounded />,
       iconColor: '#4caf50',
       value: `${testData.downloadSpeed !== null ? testData.downloadSpeed.toFixed(1) : '-'} MB/s`,
+      subValue:
+        testData.downloadSpeed !== null
+          ? `${(testData.downloadSpeed * 8).toFixed(1)} Mbps`
+          : undefined,
     },
     {
       key: 'upload',
@@ -198,6 +221,10 @@ export const NetworkSpeedTestCard = () => {
       icon: <CloudUploadRounded />,
       iconColor: '#ff9800',
       value: `${testData.uploadSpeed !== null ? testData.uploadSpeed.toFixed(1) : '-'} MB/s`,
+      subValue:
+        testData.uploadSpeed !== null
+          ? `${(testData.uploadSpeed * 8).toFixed(1)} Mbps`
+          : undefined,
     },
   ]
 
@@ -243,6 +270,7 @@ export const NetworkSpeedTestCard = () => {
             key={tile.key}
             label={tile.label}
             value={tile.value}
+            subValue={tile.subValue}
             icon={tile.icon}
             iconColor={tile.iconColor}
             bg={itemBg}
