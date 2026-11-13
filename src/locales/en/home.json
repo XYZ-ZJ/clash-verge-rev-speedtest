@@ -94,6 +94,21 @@
         "proxyDetected": "Proxy",
         "abuseDetected": "Abuse"
       },
+      "detailModal": {
+        "title": "Egress Details & Traffic Routing",
+        "openTooltip": "View Egress & Split Tunneling Details",
+        "refresh": "Refresh",
+        "startDetect": "Start Detection",
+        "testing": "Detecting...",
+        "lastCheck": "Last check",
+        "close": "Close",
+        "cfTitle": "CLOUDFLARE Turnstile Verification",
+        "retest": "Retest",
+        "exitsTitle": "Your Exits",
+        "hideIp": "Hide IP",
+        "showIp": "Show IP",
+        "findingsTitle": "Findings"
+      },
       "errors": {
         "load": "Failed to get IP info",
         "loadWithDetails": "Failed to get IP info: {{message}}",

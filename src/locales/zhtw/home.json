@@ -94,6 +94,21 @@
         "proxyDetected": "代理標記",
         "abuseDetected": "濫用記錄"
       },
+      "detailModal": {
+        "title": "出口詳情與分流透視",
+        "openTooltip": "展開出口與分流透視",
+        "refresh": "重新整理檢測",
+        "startDetect": "開始檢測",
+        "testing": "檢測中...",
+        "lastCheck": "檢測時間",
+        "close": "關閉",
+        "cfTitle": "實測：CLOUDFLARE 人機驗證",
+        "retest": "再測一次",
+        "exitsTitle": "你的出口",
+        "hideIp": "隱藏 IP",
+        "showIp": "顯示 IP",
+        "findingsTitle": "檢測結論"
+      },
       "errors": {
         "load": "取得 IP 資訊失敗",
         "loadWithDetails": "取得 IP 資訊失敗：{{message}}",

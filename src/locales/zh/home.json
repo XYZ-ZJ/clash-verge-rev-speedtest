@@ -94,6 +94,21 @@
         "proxyDetected": "代理标记",
         "abuseDetected": "滥用记录"
       },
+      "detailModal": {
+        "title": "出口详情与分流透视",
+        "openTooltip": "展开出口与分流透视",
+        "refresh": "刷新检测",
+        "startDetect": "开始检测",
+        "testing": "检测中...",
+        "lastCheck": "检测时间",
+        "close": "关闭",
+        "cfTitle": "实测：CLOUDFLARE 人机验证",
+        "retest": "再测一次",
+        "exitsTitle": "你的出口",
+        "hideIp": "隐藏 IP",
+        "showIp": "显示 IP",
+        "findingsTitle": "检测结论"
+      },
       "errors": {
         "load": "获取 IP 信息失败",
         "loadWithDetails": "获取 IP 信息失败：{{message}}",

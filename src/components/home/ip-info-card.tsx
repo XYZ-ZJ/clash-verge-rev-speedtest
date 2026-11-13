@@ -1,5 +1,6 @@
 import {
   LocationOnOutlined,
+  OpenInFullOutlined,
   RefreshOutlined,
   ShieldOutlined,
   VisibilityOffOutlined,
@@ -13,6 +14,7 @@ import {
   IconButton,
   Skeleton,
   Switch,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -35,6 +37,7 @@ import { useQuery } from '@/services/query-client'
 import getSystem from '@/utils/get-system'
 
 import { EnhancedCard } from './enhanced-card'
+import { IpDetailModal } from './ip-detail-modal'
 
 const IP_REFRESH_SECONDS = 300
 const COUNTDOWN_TICK_INTERVAL = 5_000
@@ -116,8 +119,12 @@ type CountDownState = XOR<
   }
 >
 
-const IPInfoCardContainer = forwardRef<HTMLElement, React.PropsWithChildren>(
-  ({ children }, ref) => {
+interface IPInfoCardContainerProps extends React.PropsWithChildren {
+  onOpenDetail?: () => void
+}
+
+const IPInfoCardContainer = forwardRef<HTMLElement, IPInfoCardContainerProps>(
+  ({ children, onOpenDetail }, ref) => {
     const { t } = useTranslation()
     const { refetch: mutate } = useIPInfo()
 
@@ -128,9 +135,16 @@ const IPInfoCardContainer = forwardRef<HTMLElement, React.PropsWithChildren>(
         iconColor="info"
         ref={ref}
         action={
-          <IconButton size="small" onClick={() => mutate()}>
-            <RefreshOutlined />
-          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Tooltip title={t('home.components.ipInfo.detailModal.openTooltip')}>
+              <IconButton size="small" onClick={onOpenDetail}>
+                <OpenInFullOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <IconButton size="small" onClick={() => mutate()}>
+              <RefreshOutlined fontSize="small" />
+            </IconButton>
+          </Box>
         }
       >
         {children}
@@ -142,6 +156,7 @@ const IPInfoCardContainer = forwardRef<HTMLElement, React.PropsWithChildren>(
 export const IpInfoCard = () => {
   const { t } = useTranslation()
   const [showIp, setShowIp] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [autoRefresh, setAutoRefresh] = useLocalStorage(
     'ip-info-auto-refresh',
     true,
@@ -561,7 +576,18 @@ export const IpInfoCard = () => {
   }
 
   return (
-    <IPInfoCardContainer ref={containerRef}>{mainElement}</IPInfoCardContainer>
+    <>
+      <IPInfoCardContainer
+        ref={containerRef}
+        onOpenDetail={() => setDetailOpen(true)}
+      >
+        {mainElement}
+      </IPInfoCardContainer>
+      <IpDetailModal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+      />
+    </>
   )
 }
 

@@ -114,6 +114,21 @@ export interface TranslationResources {
           title: string
         }
         ipInfo: {
+          detailModal: {
+            cfTitle: string
+            close: string
+            exitsTitle: string
+            findingsTitle: string
+            hideIp: string
+            lastCheck: string
+            openTooltip: string
+            refresh: string
+            retest: string
+            showIp: string
+            startDetect: string
+            testing: string
+            title: string
+          }
           errors: {
             load: string
             loadWithDetails: string
