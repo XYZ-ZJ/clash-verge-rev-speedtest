@@ -3,7 +3,6 @@ import {
   CheckCircleRounded,
   CloseOutlined,
   LanguageOutlined,
-  OpenInFullOutlined,
   RefreshOutlined,
   VisibilityOffOutlined,
   VisibilityOutlined,
@@ -17,11 +16,9 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  Divider,
-  Grid,
   IconButton,
   Skeleton,
-  Tooltip,
+  type Theme,
   Typography,
 } from '@mui/material'
 import { memo, useCallback, useEffect, useState } from 'react'
@@ -98,14 +95,16 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 3,
-          backgroundImage: 'none',
-          boxShadow: (theme) =>
-            theme.palette.mode === 'dark'
-              ? '0 12px 40px rgba(0, 0, 0, 0.6)'
-              : '0 12px 40px rgba(0, 0, 0, 0.12)',
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+            backgroundImage: 'none',
+            boxShadow: (theme: Theme) =>
+              theme.palette.mode === 'dark'
+                ? '0 12px 40px rgba(0, 0, 0, 0.6)'
+                : '0 12px 40px rgba(0, 0, 0, 0.12)',
+          },
         },
       }}
     >
@@ -191,7 +190,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                 : isCfWarn
                   ? 'warning.main'
                   : 'error.main',
-              bgcolor: (theme) =>
+              bgcolor: (theme: Theme) =>
                 theme.palette.mode === 'dark'
                   ? 'rgba(255, 255, 255, 0.03)'
                   : 'rgba(0, 0, 0, 0.02)',
@@ -316,9 +315,15 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
             </Box>
           </Box>
 
-          <Grid container spacing={2.5}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', md: 'row' },
+              gap: 2.5,
+            }}
+          >
             {/* 左栏：你的出口 */}
-            <Grid item xs={12} md={5.5}>
+            <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 44%' }, minWidth: 0 }}>
               <Box
                 sx={{
                   display: 'flex',
@@ -381,10 +386,10 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   </Typography>
                 )}
               </Box>
-            </Grid>
+            </Box>
 
             {/* 右栏：检测结论 */}
-            <Grid item xs={12} md={6.5}>
+            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 56%' }, minWidth: 0 }}>
               <Box sx={{ mb: 1 }}>
                 <Typography
                   variant="caption"
@@ -404,7 +409,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   borderRadius: 2,
                   border: 1,
                   borderColor: 'divider',
-                  bgcolor: (theme) =>
+                  bgcolor: (theme: Theme) =>
                     theme.palette.mode === 'dark'
                       ? 'rgba(255, 255, 255, 0.02)'
                       : 'rgba(0, 0, 0, 0.01)',
@@ -431,8 +436,8 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   </Typography>
                 )}
               </Box>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Box>
       </DialogContent>
     </Dialog>
@@ -452,7 +457,7 @@ const ExitCard = memo(({ item, hideIp }: ExitCardProps) => {
         borderRadius: 2,
         border: 1,
         borderColor: 'divider',
-        bgcolor: (theme) =>
+        bgcolor: (theme: Theme) =>
           theme.palette.mode === 'dark'
             ? 'rgba(255, 255, 255, 0.025)'
             : 'rgba(0, 0, 0, 0.015)',
@@ -469,7 +474,7 @@ const ExitCard = memo(({ item, hideIp }: ExitCardProps) => {
           border: 1,
           borderColor: item.isProxy ? 'primary.main' : 'success.main',
           color: item.isProxy ? 'primary.main' : 'success.main',
-          bgcolor: (theme) =>
+          bgcolor: (theme: Theme) =>
             item.isProxy
               ? theme.palette.mode === 'dark'
                 ? 'rgba(25, 118, 210, 0.12)'
