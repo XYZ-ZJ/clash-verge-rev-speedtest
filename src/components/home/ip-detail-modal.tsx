@@ -28,6 +28,7 @@ import {
   EgressItem,
   EgressReport,
   FindingItem,
+  detectCloudflareStatus,
   runFullEgressDetection,
 } from '@/services/egress'
 import getSystem from '@/utils/get-system'
@@ -46,39 +47,36 @@ const getCountryFlag = (countryCode: string | undefined) => {
   return String.fromCodePoint(...codePoints)
 }
 
-// 缓存检测结果，避免每次关闭再打开都重新发请求，严格支持手动刷新
-let cachedReport: EgressReport | null = null
-
 export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const { t } = useTranslation()
-  const [report, setReport] = useState<EgressReport | null>(cachedReport)
+  const [report, setReport] = useState<EgressReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
 
+  // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
     setLoading(true)
     try {
       const res = await runFullEgressDetection()
-      cachedReport = res
       setReport(res)
     } finally {
       setLoading(false)
     }
   }, [])
 
+  // 独立实测 Cloudflare 人机验证与节点放行状态
   const handleRetestCf = useCallback(async () => {
     setCfLoading(true)
     try {
-      // 局部重新探测海外出口与 CF 状态
-      const res = await runFullEgressDetection()
-      cachedReport = res
-      setReport(res)
+      const cfStatus = await detectCloudflareStatus()
+      setReport((prev) => (prev ? { ...prev, cfStatus } : prev))
     } finally {
       setCfLoading(false)
     }
   }, [])
 
+  // 弹窗打开且未有数据时，自动触发首次真实探测
   useEffect(() => {
     if (open && !report && !loading) {
       handleDetect()
@@ -124,7 +122,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
           <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.05rem' }}>
             {t('home.components.ipInfo.detailModal.title')}
           </Typography>
-          {report?.timestamp && (
+          {report?.timestamp && !loading && (
             <Typography
               variant="caption"
               color="text.secondary"
@@ -221,25 +219,35 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               <Box sx={{ flex: 1 }}>
                 {loading && !report ? (
                   <>
-                    <Skeleton variant="text" width={100} height={26} />
-                    <Skeleton variant="text" width="80%" height={20} />
+                    <Skeleton variant="text" width={120} height={26} />
+                    <Skeleton variant="text" width="85%" height={20} />
                   </>
                 ) : (
                   <>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{
-                        fontWeight: 700,
-                        color: isCfPass
-                          ? 'success.main'
-                          : isCfWarn
-                            ? 'warning.main'
-                            : 'error.main',
-                        lineHeight: 1.3,
-                      }}
-                    >
-                      {report?.cfStatus.title || '直接通过'}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography
+                        variant="subtitle1"
+                        sx={{
+                          fontWeight: 700,
+                          color: isCfPass
+                            ? 'success.main'
+                            : isCfWarn
+                              ? 'warning.main'
+                              : 'error.main',
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        {report?.cfStatus.title || '直接通过'}
+                      </Typography>
+                      {report?.cfStatus.rttMs ? (
+                        <Chip
+                          size="small"
+                          label={`${report.cfStatus.rttMs} ms`}
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.68rem', fontWeight: 600 }}
+                        />
+                      ) : null}
+                    </Box>
                     <Typography
                       variant="body2"
                       color="text.primary"
@@ -279,7 +287,9 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                 },
               }}
             >
-              {t('home.components.ipInfo.detailModal.retest')}
+              {cfLoading
+                ? t('home.components.ipInfo.detailModal.testing')
+                : t('home.components.ipInfo.detailModal.retest')}
             </Button>
           </Box>
         </Box>
