@@ -53,6 +53,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const [loading, setLoading] = useState(false)
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
+  const [justRefreshed, setJustRefreshed] = useState(false)
 
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
@@ -123,14 +124,14 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
             {t('home.components.ipInfo.detailModal.title')}
           </Typography>
           {report?.timestamp && !loading && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ ml: 1, display: { xs: 'none', sm: 'inline-block' } }}
-            >
-              {t('home.components.ipInfo.detailModal.lastCheck')}:{' '}
-              {new Date(report.timestamp).toLocaleTimeString()}
-            </Typography>
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, ml: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                {t('home.components.ipInfo.detailModal.lastCheck')}: {new Date(report.timestamp).toLocaleTimeString()}
+              </Typography>
+              {justRefreshed && (
+                <Chip size="small" label="已更新" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.62rem' }} />
+              )}
+            </Box>
           )}
         </Box>
 
@@ -330,6 +331,8 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               display: 'flex',
               flexDirection: { xs: 'column', md: 'row' },
               gap: 2.5,
+              opacity: loading ? 0.5 : 1,
+              transition: 'opacity 0.25s ease-in-out',
             }}
           >
             {/* 左栏：你的出口 */}
@@ -342,16 +345,19 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   mb: 1,
                 }}
               >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontWeight: 700,
-                    color: 'text.secondary',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  {t('home.components.ipInfo.detailModal.exitsTitle')}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      color: 'text.secondary',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {t('home.components.ipInfo.detailModal.exitsTitle')}
+                  </Typography>
+                  {loading && <CircularProgress size={12} color="inherit" />}
+                </Box>
                 <Button
                   size="small"
                   onClick={() => setHideIp(!hideIp)}
@@ -401,16 +407,19 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
             {/* 右栏：检测结论 */}
             <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 56%' }, minWidth: 0 }}>
               <Box sx={{ mb: 1 }}>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontWeight: 700,
-                    color: 'text.secondary',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  {t('home.components.ipInfo.detailModal.findingsTitle')}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      color: 'text.secondary',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {t('home.components.ipInfo.detailModal.findingsTitle')}
+                  </Typography>
+                  {loading && <CircularProgress size={12} color="inherit" />}
+                </Box>
               </Box>
 
               <Box

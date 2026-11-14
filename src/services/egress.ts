@@ -51,10 +51,18 @@ const safeFetch = async (url: string, timeoutMs = 4000): Promise<string | null> 
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    const res = await fetch(url, {
+    // 拼接防缓存随机时间戳，确保每一次手动刷新都绝对穿透本地/代理缓存，发起真实 HTTP 网络请求
+    const separator = url.includes('?') ? '&' : '?'
+    const cacheBusterUrl = `${url}${separator}_t=${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+
+    const res = await fetch(cacheBusterUrl, {
       signal: controller.signal,
       connectTimeout: timeoutMs,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
     })
     clearTimeout(timeout)
     if (res.ok) {
@@ -89,15 +97,22 @@ export const detectCloudflareStatus = async (): Promise<{
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 4500)
+    const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     const [resMeta, resTrace] = await Promise.all([
-      fetch('https://speed.cloudflare.com/meta', {
+      fetch(`https://speed.cloudflare.com/meta?_t=${nonce}`, {
         signal: controller.signal,
         connectTimeout: 4500,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Cache-Control': 'no-cache, no-store',
+        },
       }).catch(() => null),
-      fetch('https://1.1.1.1/cdn-cgi/trace', {
+      fetch(`https://1.1.1.1/cdn-cgi/trace?_t=${nonce}`, {
         signal: controller.signal,
         connectTimeout: 4500,
+        headers: {
+          'Cache-Control': 'no-cache, no-store',
+        },
       }).catch(() => null),
     ])
     clearTimeout(timeout)

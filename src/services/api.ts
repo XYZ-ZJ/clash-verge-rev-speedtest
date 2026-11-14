@@ -526,11 +526,20 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
         )
       }
 
-      const conclusionItem = data.find((item) => item.type === 'conclusion')
-      // 只要检测出国内服务器（中国电信/移动/联通/阿里/腾讯等）、局域网私有 IP，或服务端判定泄露，严密判定为泄露！
-      const hasLeak =
-        dnsServers.some((s) => isCnDns(s) || isPrivateIp(s.ip)) ||
-        Boolean(conclusionItem && /leak/i.test(conclusionItem.ip))
+      const isOverseasProxy = Boolean(
+        ipItem?.country && ipItem.country.toLowerCase() !== 'cn',
+      )
+
+      // 严密且符合分流规律的远程 DNS 泄露判定：
+      // 1. 若测试请求走海外代理出口，但 DNS 查询服务器混入了中国大陆境内服务器或局域网私有 IP，为真实远程 DNS 泄露；
+      // 2. 若走海外代理，且 DNS 均为境外安全服务器，为正常安全解析，绝不误报；
+      // 3. 若走国内直连，国内流量走国内直连 DNS 符合分流规则，不是泄露。
+      let hasLeak = false
+      if (isOverseasProxy) {
+        hasLeak = dnsServers.some((s) => isCnDns(s) || isPrivateIp(s.ip))
+      } else {
+        hasLeak = dnsServers.some((s) => isPrivateIp(s.ip))
+      }
 
       return {
         hasLeak,
