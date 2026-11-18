@@ -3,7 +3,10 @@
 本项目 Fork 自官方开源仓库 [clash-verge-rev/clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev) (`dev` 分支)，在原版基础上针对网络测速、流量统计、IP/DNS 检测与系统路由安全性进行了增强与修复。
 
 <p align="center">
-  <img src="./docs/preview.jpg" alt="界面预览" width="880" />
+  <img src="./docs/preview.jpg" alt="首页界面预览" width="880" />
+</p>
+<p align="center">
+  <img src="./docs/preview_egress.jpg" alt="出口详情与分流透视预览" width="880" />
 </p>
 
 ---
@@ -21,8 +24,9 @@
 - 重构数据采集架构，客户端最小化或退入系统托盘时后台持续保持流量采样，彻底解决原版后台不统计流量的问题。
 
 ### 3. IP 信息与风控评估优化
-- 卡片右下角去除经纬度，改为显示国家代码与城市（如 `JP, Tokyo`）。
-- 新增 IP 综合风控分、风险等级（低/中/高风险）及网络类型（数据中心/住宅/商业/移动网络）展示。
+- 卡片右下角去除经纬度，改为显示国家代码与城市（如 `US, Los Angeles`）。
+- 新增 IP 综合风控分、风险等级（低/中/高风险）及网络类型（住宅/数据中心/商业/移动网络）展示。
+- 参考 `IP.Check.Place` 多库评估机制，并发交叉查询 IPinfo、ipapi、ipquery、proxycheck.io 与 Scamalytics 权威数据源，精准区分住宅宽带与数据中心 IP 并融合原生连续风控评分。
 - 重构 IP 检测服务数据映射，全面兼容各类服务商的嵌套与扁平数据结构，解决部分服务商全显 Unknown 的问题。
 
 ### 4. IP 出口详情与分流透视
