@@ -17,6 +17,10 @@ const getUserAgentPromise = once(async () => {
     return 'clash-verge-rev'
   }
 })
+
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
 // IP 风控信息定义
 export interface RiskInfo {
   score: number
@@ -28,7 +32,7 @@ export interface RiskInfo {
   isAbuser?: boolean
 }
 
-// 启发式风控与风险等级计算
+// 启发式风控与风险等级计算（仅在外部权威风控源不可用时作为兜底）
 export function calculateRiskInfo(params: {
   isDatacenter?: boolean
   isVpn?: boolean
@@ -39,6 +43,7 @@ export function calculateRiskInfo(params: {
   type?: RiskInfo['type']
   organization?: string
   asnOrg?: string
+  nativeScore?: number
 }): RiskInfo {
   let type: RiskInfo['type'] = params.type || 'unknown'
   const orgText = `${params.organization || ''} ${params.asnOrg || ''}`.toLowerCase()
@@ -49,31 +54,38 @@ export function calculateRiskInfo(params: {
     } else if (params.isDatacenter) {
       type = 'datacenter'
     } else if (
-      /hosting|datacenter|data\s*centre|vps|cloud|server|compute|dedicated|cdn|asn|network|telecom|infrastructure|llc|corp|inc|ltd|limited|gmbh|co\.|technology|technologies|solutions|communications|node|transit|peering|digital|service/i.test(
+      /\b(hosting|datacenter|data\s*centre|colocation|vps|aws|amazon\s*web|google\s*cloud|microsoft\s*azure|digitalocean|vultr|linode|hetzner|ovh|choopa|oracle\s*cloud|alibaba\s*cloud|tencent\s*cloud|cloudflare|rackspace|leaseweb|quadranet|psychz|zenlayer|m247|datacamp)\b/i.test(
         orgText,
       )
     ) {
       type = 'datacenter'
     } else if (
-      /broadband|telecom|fiber|cable|dsl|residential|consumer/i.test(orgText)
+      /\b(broadband|fiber|fibre|cable|dsl|residential|consumer|comcast|verizon|at&t|charter|spectrum|cox|frontier|t-mobile|vodafone|orange|telefonica|singtel|starhub|ntt|kddi|softbank|chunghwa|hinet|china\s*telecom|china\s*unicom|china\s*mobile)\b/i.test(
+        orgText,
+      )
     ) {
       type = 'residential'
     }
   }
 
-  let score = 5
-  if (type === 'datacenter') {
-    score += 35
-  } else if (type === 'business') {
-    score += 15
-  } else if (type === 'residential' || type === 'mobile') {
+  let score: number
+  if (typeof params.nativeScore === 'number' && Number.isFinite(params.nativeScore)) {
+    score = Math.round(params.nativeScore)
+  } else {
     score = 5
-  }
+    if (type === 'datacenter') {
+      score += 25
+    } else if (type === 'business') {
+      score += 10
+    } else if (type === 'residential' || type === 'mobile') {
+      score = 3
+    }
 
-  if (params.isProxy) score += 25
-  if (params.isVpn) score += 20
-  if (params.isTor) score += 40
-  if (params.isAbuser) score += 40
+    if (params.isProxy) score += 25
+    if (params.isVpn) score += 20
+    if (params.isTor) score += 40
+    if (params.isAbuser) score += 40
+  }
 
   score = Math.min(100, Math.max(0, score))
 
@@ -113,17 +125,27 @@ export interface IpInfo {
   risk?: RiskInfo
 }
 
+interface IpQueryRiskPayload {
+  is_mobile?: boolean
+  is_vpn?: boolean
+  is_tor?: boolean
+  is_proxy?: boolean
+  is_datacenter?: boolean
+  risk_score?: number
+}
+
 // IP检测服务配置
 interface ServiceConfig {
   url: string
-  hasSecurityInfo?: boolean
-  mapping: (data: any) => IpInfo
+  priority?: boolean
+  mapping: (data: any) => { info: IpInfo; ipqueryRisk?: IpQueryRiskPayload }
 }
 
 // 常见国家名称到二字码映射，用于部分接口只返回国家全名时的兜底
 const COUNTRY_NAME_TO_CODE: Record<string, string> = {
   japan: 'JP',
   'united states': 'US',
+  'united states of america': 'US',
   usa: 'US',
   'hong kong': 'HK',
   taiwan: 'TW',
@@ -159,6 +181,7 @@ const cleanAsn = (val: any): number => {
     return match ? parseInt(match[0], 10) : 0
   }
   if (val && typeof val.asn === 'number') return val.asn
+  if (val && typeof val.asn === 'string') return cleanAsn(val.asn)
   return 0
 }
 
@@ -168,131 +191,113 @@ const cleanAsnOrg = (asnVal: any, orgVal: any): string => {
     if (cleaned) return cleaned
   }
   if (asnVal && typeof asnVal.org === 'string') return asnVal.org
+  if (asnVal && typeof asnVal.name === 'string') return asnVal.name
   if (typeof orgVal === 'string') return orgVal
   return ''
 }
 
-// 可用的IP检测服务列表及字段映射
+const parseAbuserScorePercent = (val: unknown): number | null => {
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return val <= 1 ? Math.round(val * 100) : Math.round(val)
+  }
+  if (typeof val === 'string') {
+    const match = val.match(/[\d.]+/)
+    if (match) {
+      const num = parseFloat(match[0])
+      if (Number.isFinite(num)) {
+        return num <= 1 ? Math.round(num * 100) : Math.round(num)
+      }
+    }
+  }
+  return null
+}
+
+// 可用的IP基础信息检测服务列表（按稳定性与信息完整度分层）
 const IP_CHECK_SERVICES: ServiceConfig[] = [
   {
-    url: 'https://api.ip.sb/geoip',
-    hasSecurityInfo: true,
+    url: 'https://api.ipquery.io/?format=json',
+    priority: true,
     mapping: (data) => {
-      const countryCode = resolveCountryCode(data.country_code, data.country)
-      const asn = cleanAsn(data.asn)
-      const asnOrg = cleanAsnOrg(data.asn_organization, data.organization || data.isp)
-      const org = data.organization || data.isp || asnOrg || ''
+      const countryCode = resolveCountryCode(
+        data.location?.country_code,
+        data.location?.country,
+      )
+      const asn = cleanAsn(data.isp?.asn)
+      const asnOrg = cleanAsnOrg(data.isp?.org, data.isp?.isp)
+      const org = data.isp?.isp || data.isp?.org || asnOrg || ''
+      const riskRaw: IpQueryRiskPayload | undefined = data.risk
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: data.country || countryCode || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: org,
-        asn,
-        asn_organization: asnOrg,
-        longitude: Number(data.longitude) || 0,
-        latitude: Number(data.latitude) || 0,
-        timezone: data.timezone || '',
-        risk: calculateRiskInfo({
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: data.location?.country || countryCode || '',
+          region: data.location?.state || '',
+          city: data.location?.city || '',
           organization: org,
-          asnOrg,
-        }),
+          asn,
+          asn_organization: asnOrg,
+          longitude: Number(data.location?.longitude) || 0,
+          latitude: Number(data.location?.latitude) || 0,
+          timezone: data.location?.timezone || '',
+        },
+        ipqueryRisk: riskRaw,
       }
     },
   },
   {
     url: 'https://ipwho.is/',
-    hasSecurityInfo: true,
+    priority: true,
     mapping: (data) => {
-      const isDatacenter = Boolean(data.security?.hosting)
-      let resolvedType: RiskInfo['type'] = 'unknown'
-      if (isDatacenter) resolvedType = 'datacenter'
-      else if (data.connection?.isp && !isDatacenter) resolvedType = 'residential'
-
       const countryCode = resolveCountryCode(data.country_code, data.country)
       const asn = cleanAsn(data.connection?.asn || data.asn)
       const asnOrg = cleanAsnOrg(data.connection?.org, data.connection?.isp)
       const org = data.connection?.org || data.connection?.isp || asnOrg || ''
-
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: data.country || countryCode || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: org,
-        asn,
-        asn_organization: asnOrg,
-        longitude: Number(data.longitude) || 0,
-        latitude: Number(data.latitude) || 0,
-        timezone: data.timezone?.id || data.timezone || '',
-        risk: calculateRiskInfo({
-          isDatacenter,
-          isVpn: Boolean(data.security?.vpn),
-          isProxy: Boolean(data.security?.proxy),
-          isTor: Boolean(data.security?.tor),
-          type: resolvedType,
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: data.country || countryCode || '',
+          region: data.region || '',
+          city: data.city || '',
           organization: org,
-          asnOrg,
-        }),
+          asn,
+          asn_organization: asnOrg,
+          longitude: Number(data.longitude) || 0,
+          latitude: Number(data.latitude) || 0,
+          timezone: data.timezone?.id || data.timezone || '',
+        },
       }
     },
   },
   {
     url: 'https://api.ipapi.is/',
-    hasSecurityInfo: true,
+    priority: true,
     mapping: (data) => {
-      const isDatacenter = Boolean(data.is_datacenter)
-      const isMobile = Boolean(data.is_mobile)
-      let resolvedType: RiskInfo['type'] = 'unknown'
-      if (isMobile) resolvedType = 'mobile'
-      else if (
-        isDatacenter ||
-        data.company?.type === 'hosting' ||
-        data.asn?.type === 'hosting'
-      )
-        resolvedType = 'datacenter'
-      else if (data.company?.type === 'isp' || data.asn?.type === 'isp')
-        resolvedType = 'residential'
-      else if (
-        data.company?.type === 'business' ||
-        data.asn?.type === 'business'
-      )
-        resolvedType = 'business'
-
       const country = data.country || data.location?.country || ''
-      const countryCode = resolveCountryCode(data.country_code || data.location?.country_code, country)
+      const countryCode = resolveCountryCode(
+        data.country_code || data.location?.country_code,
+        country,
+      )
       const asn = cleanAsn(data.asn?.asn || data.asn)
       const org =
         (typeof data.company === 'string' ? data.company : data.company?.name) ||
         (typeof data.asn === 'string' ? data.asn : data.asn?.org) ||
         ''
       const asnOrg = cleanAsnOrg(data.asn, org)
-
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: country || countryCode || '',
-        region: data.region || data.location?.state || '',
-        city: data.city || data.location?.city || '',
-        organization: org,
-        asn,
-        asn_organization: asnOrg,
-        longitude: Number(data.lon ?? data.longitude ?? data.location?.longitude) || 0,
-        latitude: Number(data.lat ?? data.latitude ?? data.location?.latitude) || 0,
-        timezone: data.timezone || data.location?.timezone || '',
-        risk: calculateRiskInfo({
-          isDatacenter,
-          isMobile,
-          isVpn: Boolean(data.is_vpn),
-          isProxy: Boolean(data.is_proxy),
-          isTor: Boolean(data.is_tor),
-          isAbuser: Boolean(data.is_abuser),
-          type: resolvedType,
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: country || countryCode || '',
+          region: data.region || data.location?.state || '',
+          city: data.city || data.location?.city || '',
           organization: org,
-          asnOrg,
-        }),
+          asn,
+          asn_organization: asnOrg,
+          longitude: Number(data.lon ?? data.longitude ?? data.location?.longitude) || 0,
+          latitude: Number(data.lat ?? data.latitude ?? data.location?.latitude) || 0,
+          timezone: data.timezone || data.location?.timezone || '',
+        },
       }
     },
   },
@@ -303,21 +308,19 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
       const asn = cleanAsn(data.asn)
       const org = data.asOrg || ''
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: countryCode || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: org,
-        asn,
-        asn_organization: org,
-        longitude: Number(data.longitude) || 0,
-        latitude: Number(data.latitude) || 0,
-        timezone: data.timezone || '',
-        risk: calculateRiskInfo({
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: countryCode || '',
+          region: data.region || '',
+          city: data.city || '',
           organization: org,
-          asnOrg: org,
-        }),
+          asn,
+          asn_organization: org,
+          longitude: Number(data.longitude) || 0,
+          latitude: Number(data.latitude) || 0,
+          timezone: data.timezone || '',
+        },
       }
     },
   },
@@ -328,21 +331,19 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
       const asn = cleanAsn(data.asn)
       const org = data.organization_name || data.organization || ''
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: data.country || countryCode || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: org,
-        asn,
-        asn_organization: org,
-        longitude: Number(data.longitude) || 0,
-        latitude: Number(data.latitude) || 0,
-        timezone: data.timezone || '',
-        risk: calculateRiskInfo({
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: data.country || countryCode || '',
+          region: data.region || '',
+          city: data.city || '',
           organization: org,
-          asnOrg: org,
-        }),
+          asn,
+          asn_organization: org,
+          longitude: Number(data.longitude) || 0,
+          latitude: Number(data.latitude) || 0,
+          timezone: data.timezone || '',
+        },
       }
     },
   },
@@ -353,50 +354,328 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
       const asn = cleanAsn(data.asn)
       const org = data.org || ''
       return {
-        ip: data.ip || '',
-        country_code: countryCode,
-        country: data.country_name || countryCode || '',
-        region: data.region || '',
-        city: data.city || '',
-        organization: org,
-        asn,
-        asn_organization: org,
-        longitude: Number(data.longitude) || 0,
-        latitude: Number(data.latitude) || 0,
-        timezone: data.timezone || '',
-        risk: calculateRiskInfo({
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: data.country_name || countryCode || '',
+          region: data.region || '',
+          city: data.city || '',
           organization: org,
-          asnOrg: org,
-        }),
+          asn,
+          asn_organization: org,
+          longitude: Number(data.longitude) || 0,
+          latitude: Number(data.latitude) || 0,
+          timezone: data.timezone || '',
+        },
+      }
+    },
+  },
+  {
+    url: 'https://api.ip.sb/geoip',
+    mapping: (data) => {
+      const countryCode = resolveCountryCode(data.country_code, data.country)
+      const asn = cleanAsn(data.asn)
+      const asnOrg = cleanAsnOrg(data.asn_organization, data.organization || data.isp)
+      const org = data.organization || data.isp || asnOrg || ''
+      return {
+        info: {
+          ip: data.ip || '',
+          country_code: countryCode,
+          country: data.country || countryCode || '',
+          region: data.region || '',
+          city: data.city || '',
+          organization: org,
+          asn,
+          asn_organization: asnOrg,
+          longitude: Number(data.longitude) || 0,
+          latitude: Number(data.latitude) || 0,
+          timezone: data.timezone || '',
+        },
       }
     },
   },
 ]
 
+const fetchWithTimeout = async (
+  url: string,
+  timeoutMs = 3500,
+): Promise<Awaited<ReturnType<typeof fetch>> | null> => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      connectTimeout: timeoutMs,
+      headers: {
+        'User-Agent': BROWSER_UA,
+        'Cache-Control': 'no-cache, no-store',
+      },
+    })
+    return res.ok ? res : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// 参考 IP.Check.Place 多库交叉验证思路：并发查询 IPinfo、ipapi、ipquery、proxycheck、Scamalytics
+const enrichIpRiskFromAuthoritativeSources = async (
+  baseInfo: IpInfo,
+  initialIpQueryRisk?: IpQueryRiskPayload,
+): Promise<IpInfo> => {
+  const encodedIp = encodeURIComponent(baseInfo.ip)
+
+  const [ipinfoRes, ipapiRes, ipqueryRes, proxycheckRes, scamRes] =
+    await Promise.all([
+      fetchWithTimeout(`https://ipinfo.io/widget/demo/${encodedIp}`, 3800)
+        .then((r) => (r ? r.json().catch(() => null) : null)),
+      fetchWithTimeout(`https://ipinfo.check.place/${encodedIp}?db=ipapi`, 3800)
+        .then((r) => (r ? r.json().catch(() => null) : null)),
+      initialIpQueryRisk
+        ? Promise.resolve({ risk: initialIpQueryRisk })
+        : fetchWithTimeout(`https://api.ipquery.io/${encodedIp}?format=json`, 3500)
+            .then((r) => (r ? r.json().catch(() => null) : null)),
+      fetchWithTimeout(
+        `https://proxycheck.io/v2/${encodedIp}?vpn=1&asn=1&risk=1`,
+        3500,
+      ).then((r) => (r ? r.json().catch(() => null) : null)),
+      fetchWithTimeout(`https://scamalytics.com/ip/${encodedIp}`, 3800)
+        .then((r) => (r ? r.text().catch(() => null) : null)),
+    ])
+
+  // 若 IPinfo 返回了更完整的基础信息，顺便补全缺失字段
+  const ipinfoData = ipinfoRes?.data
+  if (ipinfoData) {
+    if (!baseInfo.country_code && ipinfoData.country) {
+      baseInfo.country_code = resolveCountryCode(ipinfoData.country, ipinfoData.country)
+    }
+    if (!baseInfo.region && ipinfoData.region) baseInfo.region = ipinfoData.region
+    if (!baseInfo.city && ipinfoData.city) baseInfo.city = ipinfoData.city
+    if (!baseInfo.timezone && ipinfoData.timezone) baseInfo.timezone = ipinfoData.timezone
+    if (!baseInfo.asn && ipinfoData.asn?.asn) {
+      baseInfo.asn = cleanAsn(ipinfoData.asn.asn)
+    }
+    if (!baseInfo.asn_organization && ipinfoData.asn?.name) {
+      baseInfo.asn_organization = ipinfoData.asn.name
+    }
+    if (!baseInfo.organization && (ipinfoData.company?.name || ipinfoData.asn?.name)) {
+      baseInfo.organization = ipinfoData.company?.name || ipinfoData.asn?.name
+    }
+  }
+
+  // 1. 多源加权投票确定 IP 类型（权重：IPinfo=2、ipapi=2、ipquery=1、proxycheck=1）
+  const votes = { residential: 0, datacenter: 0, business: 0 }
+  let isMobile = false
+  let hasAuthoritativeType = false
+
+  // 源 A: IPinfo (与 IP.Check.Place 同源)
+  if (ipinfoData) {
+    const asnType = String(ipinfoData.asn?.type || '').toLowerCase()
+    const comType = String(ipinfoData.company?.type || '').toLowerCase()
+    const isHosting = Boolean(ipinfoData.privacy?.hosting)
+    if (isHosting || comType === 'hosting' || asnType === 'hosting') {
+      votes.datacenter += 2
+      hasAuthoritativeType = true
+    } else if (comType === 'isp' || asnType === 'isp') {
+      if (comType === 'business' && asnType === 'isp') {
+        votes.residential += 1
+        votes.business += 1
+      } else {
+        votes.residential += 2
+      }
+      hasAuthoritativeType = true
+    } else if (comType === 'business' || asnType === 'business') {
+      votes.business += 2
+      hasAuthoritativeType = true
+    }
+  }
+
+  // 源 B: ipapi (via ipinfo.check.place?db=ipapi，与 IP.Check.Place 同源)
+  const ipapiData =
+    ipapiRes && typeof ipapiRes === 'object' && ipapiRes.ip ? ipapiRes : null
+  if (ipapiData) {
+    if (ipapiData.is_mobile) isMobile = true
+    const asnType = String(ipapiData.asn?.type || '').toLowerCase()
+    const comType = String(ipapiData.company?.type || '').toLowerCase()
+    if (ipapiData.is_datacenter || comType === 'hosting' || asnType === 'hosting') {
+      votes.datacenter += 2
+      hasAuthoritativeType = true
+    } else if (comType === 'isp' || asnType === 'isp') {
+      if (comType === 'business' && asnType === 'isp') {
+        votes.residential += 1
+        votes.business += 1
+      } else {
+        votes.residential += 2
+      }
+      hasAuthoritativeType = true
+    } else if (comType === 'business' || asnType === 'business') {
+      votes.business += 2
+      hasAuthoritativeType = true
+    }
+  }
+
+  // 源 C: ipquery
+  const iqRisk: IpQueryRiskPayload | undefined = ipqueryRes?.risk
+  if (iqRisk && typeof iqRisk === 'object') {
+    if (iqRisk.is_mobile) isMobile = true
+    if (iqRisk.is_datacenter === true) {
+      votes.datacenter += 1
+      hasAuthoritativeType = true
+    } else if (iqRisk.is_datacenter === false && !iqRisk.is_vpn && !iqRisk.is_proxy) {
+      votes.residential += 1
+      hasAuthoritativeType = true
+    }
+  }
+
+  // 源 D: proxycheck.io
+  const pcItem = proxycheckRes?.[baseInfo.ip]
+  if (pcItem && typeof pcItem === 'object') {
+    const pcType = String(pcItem.type || '').toLowerCase()
+    if (pcType === 'wireless' || pcType === 'mobile') {
+      isMobile = true
+      hasAuthoritativeType = true
+    } else if (pcType === 'hosting' || pcType === 'vpn') {
+      votes.datacenter += 1
+      hasAuthoritativeType = true
+    } else if (pcType === 'residential') {
+      votes.residential += 1
+      hasAuthoritativeType = true
+    } else if (pcType === 'business') {
+      votes.business += 1
+      hasAuthoritativeType = true
+    }
+  }
+
+  // 源 E: Scamalytics HTML 欺诈分提取
+  let scamScore: number | null = null
+  let scamBlacklisted = false
+  if (typeof scamRes === 'string' && scamRes.length > 0) {
+    const scoreMatch = scamRes.match(/"score"\s*:\s*"(\d+)"/)
+    if (scoreMatch) {
+      const parsed = parseInt(scoreMatch[1], 10)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+        scamScore = parsed
+      }
+    }
+    if (/"is_blacklisted_external"\s*:\s*true/i.test(scamRes)) {
+      scamBlacklisted = true
+    }
+  }
+
+  let resolvedType: RiskInfo['type'] = 'unknown'
+  if (isMobile) {
+    resolvedType = 'mobile'
+  } else if (hasAuthoritativeType) {
+    if (votes.residential >= votes.datacenter && votes.residential >= votes.business && votes.residential > 0) {
+      resolvedType = 'residential'
+    } else if (votes.datacenter >= votes.business && votes.datacenter > 0) {
+      resolvedType = 'datacenter'
+    } else if (votes.business > 0) {
+      resolvedType = 'business'
+    }
+  }
+
+  // 2. 风险因子融合判定（防止单源误报）
+  const isTor = Boolean(
+    ipinfoData?.privacy?.tor || ipapiData?.is_tor || iqRisk?.is_tor,
+  )
+  const isAbuser = Boolean(ipapiData?.is_abuser || scamBlacklisted)
+  const pcIsProxy = pcItem?.proxy === 'yes'
+  const pcRiskNum = typeof pcItem?.risk === 'number' ? pcItem.risk : null
+  const isVpn = Boolean(
+    ipinfoData?.privacy?.vpn ||
+      ipapiData?.is_vpn ||
+      iqRisk?.is_vpn ||
+      (String(pcItem?.type || '').toLowerCase() === 'vpn' &&
+        resolvedType === 'datacenter'),
+  )
+  const isProxy = Boolean(
+    ipinfoData?.privacy?.proxy ||
+      ipapiData?.is_proxy ||
+      iqRisk?.is_proxy ||
+      (pcIsProxy &&
+        (resolvedType === 'datacenter' || (pcRiskNum !== null && pcRiskNum >= 50))),
+  )
+
+  // 3. 收集真实原生连续风控分（0-100），多源去极值融合
+  const nativeScores: number[] = []
+  if (ipapiData) {
+    const comAbuse = parseAbuserScorePercent(ipapiData.company?.abuser_score)
+    const asnAbuse = parseAbuserScorePercent(ipapiData.asn?.abuser_score)
+    const maxAbuse =
+      comAbuse !== null && asnAbuse !== null
+        ? Math.max(comAbuse, asnAbuse)
+        : (comAbuse ?? asnAbuse)
+    if (maxAbuse !== null) nativeScores.push(Math.min(100, Math.max(0, maxAbuse)))
+  }
+  if (typeof iqRisk?.risk_score === 'number' && Number.isFinite(iqRisk.risk_score)) {
+    nativeScores.push(Math.min(100, Math.max(0, Math.round(iqRisk.risk_score))))
+  }
+  if (pcRiskNum !== null && Number.isFinite(pcRiskNum)) {
+    nativeScores.push(Math.min(100, Math.max(0, Math.round(pcRiskNum))))
+  }
+  if (scamScore !== null) {
+    nativeScores.push(scamScore)
+  }
+
+  let fusedScore: number | undefined
+  if (nativeScores.length >= 3) {
+    // 去掉最高极值，避免单个偏激数据源误拉高正常住宅 IP 评分
+    const sorted = [...nativeScores].sort((a, b) => a - b)
+    const trimmed = sorted.slice(0, sorted.length - 1)
+    fusedScore = Math.round(
+      trimmed.reduce((sum, v) => sum + v, 0) / trimmed.length,
+    )
+  } else if (nativeScores.length === 2) {
+    fusedScore = Math.round((nativeScores[0] + nativeScores[1]) / 2)
+  } else if (nativeScores.length === 1) {
+    fusedScore = nativeScores[0]
+  }
+
+  // 对明确检出的机房/代理/滥用风险做合理下限校准；住宅且无风险因子时完全保留真实低分
+  if (typeof fusedScore === 'number') {
+    if (isTor || isAbuser) fusedScore = Math.max(fusedScore, 65)
+    else if (isVpn || isProxy) fusedScore = Math.max(fusedScore, 35)
+    else if (resolvedType === 'datacenter') fusedScore = Math.max(fusedScore, 25)
+  }
+
+  baseInfo.risk = calculateRiskInfo({
+    isDatacenter: resolvedType === 'datacenter',
+    isMobile,
+    isVpn,
+    isProxy,
+    isTor,
+    isAbuser,
+    type: resolvedType,
+    organization: baseInfo.organization,
+    asnOrg: baseInfo.asn_organization,
+    nativeScore: fusedScore,
+  })
+
+  return baseInfo
+}
+
 // 获取当前IP和地理位置信息
 export const getIpInfo = async (): Promise<
   IpInfo & { lastFetchTs: number }
 > => {
-  // 配置参数
-  const maxRetries = 2
+  const maxRetries = 1
   const serviceTimeout = 5000
 
-  const priorityServices = IP_CHECK_SERVICES.filter(
-    (s) => s.hasSecurityInfo,
-  ).sort(() => Math.random() - 0.5)
-  const fallbackServices = IP_CHECK_SERVICES.filter(
-    (s) => !s.hasSecurityInfo,
-  ).sort(() => Math.random() - 0.5)
-  const shuffledServices = [...priorityServices, ...fallbackServices]
+  const priorityServices = IP_CHECK_SERVICES.filter((s) => s.priority)
+  const fallbackServices = IP_CHECK_SERVICES.filter((s) => !s.priority)
+  const orderedServices = [...priorityServices, ...fallbackServices]
   let lastError: unknown | null = null
   const userAgent = await getUserAgentPromise()
   console.debug('User-Agent for IP detection:', userAgent)
 
-  for (const service of shuffledServices) {
+  for (const service of orderedServices) {
     debugLog(`尝试IP检测服务: ${service.url}`)
 
     try {
-      return await asyncRetry(
+      const baseResult = await asyncRetry(
         async (bail) => {
           console.debug('Fetching IP information:', service.url)
 
@@ -411,7 +690,8 @@ export const getIpInfo = async (): Promise<
               signal: timeoutController.signal,
               connectTimeout: serviceTimeout,
               headers: {
-                'User-Agent': userAgent,
+                'User-Agent': BROWSER_UA,
+                'Cache-Control': 'no-cache, no-store',
               },
             })
 
@@ -432,10 +712,7 @@ export const getIpInfo = async (): Promise<
 
             if (data && data.ip) {
               debugLog(`IP检测成功，使用服务: ${service.url}`)
-              return Object.assign(service.mapping(data), {
-                // use last fetch success timestamp
-                lastFetchTs: Date.now(),
-              })
+              return service.mapping(data)
             } else {
               return bail(new Error(`无效的响应格式 from ${service.url}`))
             }
@@ -445,11 +722,19 @@ export const getIpInfo = async (): Promise<
         },
         {
           retries: maxRetries,
-          minTimeout: 1000,
-          maxTimeout: 4000,
+          minTimeout: 800,
+          maxTimeout: 2500,
           randomize: true,
         },
       )
+
+      const enriched = await enrichIpRiskFromAuthoritativeSources(
+        baseResult.info,
+        baseResult.ipqueryRisk,
+      )
+      return Object.assign(enriched, {
+        lastFetchTs: Date.now(),
+      })
     } catch (error) {
       debugLog(`IP检测服务失败: ${service.url}`, error)
       lastError = error
