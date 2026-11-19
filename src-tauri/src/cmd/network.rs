@@ -411,13 +411,15 @@ async fn run_download_test(
     use std::time::{Duration, Instant};
 
     const DOWNLOAD_STREAMS: usize = 8;
-    const DOWNLOAD_STREAM_BYTES: usize = 100_000_000;
-    const DOWNLOAD_MIN_SETTLE_BYTES: u64 = 100 * 1024 * 1024;
-    const DOWNLOAD_MAX_BYTES: u64 = 200 * 1024 * 1024;
-    const DOWNLOAD_MIN_DURATION: Duration = Duration::from_secs(6);
-    const DOWNLOAD_FALLBACK_SETTLE_DURATION: Duration = Duration::from_secs(8);
+    // Cloudflare limits single __down request to 50MB (larger requests return 403 Forbidden).
+    // 25MB per stream across 8 concurrent streams generates an initial 200MB download pool.
+    const DOWNLOAD_STREAM_BYTES: usize = 25_000_000;
+    const DOWNLOAD_MIN_SETTLE_BYTES: u64 = 60 * 1024 * 1024;
+    const DOWNLOAD_MAX_BYTES: u64 = 180 * 1024 * 1024;
+    const DOWNLOAD_MIN_DURATION: Duration = Duration::from_secs(5);
+    const DOWNLOAD_FALLBACK_SETTLE_DURATION: Duration = Duration::from_secs(7);
     const DOWNLOAD_MIN_CAP_DURATION: Duration = Duration::from_secs(3);
-    const DOWNLOAD_MAX_DURATION: Duration = Duration::from_secs(12);
+    const DOWNLOAD_MAX_DURATION: Duration = Duration::from_secs(10);
     const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(6);
 
     let total_dl_bytes = Arc::new(AtomicU64::new(0));
@@ -462,55 +464,52 @@ async fn run_download_test(
         }));
     }
 
-    // Start measuring once data actually flows so proxy CONNECT + TLS handshakes
-    // do not depress throughput or shorten the steady-state window.
+    // Wait for initial packets to flow so proxy CONNECT + TLS handshakes
+    // do not artificially depress initial steady-state throughput.
     let wait_start = Instant::now();
     while total_dl_bytes.load(Ordering::Relaxed) == 0 && wait_start.elapsed() < FIRST_BYTE_TIMEOUT {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
+    let dl_start = Instant::now();
     let base_bytes = total_dl_bytes.load(Ordering::Relaxed);
     let mut dl_samples: Vec<(f64, u64)> = Vec::with_capacity(120);
+    dl_samples.push((0.0, 0));
+    let mut last_dl_progress = Instant::now();
 
-    if base_bytes > 0 {
-        let dl_start = Instant::now();
-        dl_samples.push((0.0, 0));
-        let mut last_dl_progress = Instant::now();
+    while dl_start.elapsed() < DOWNLOAD_MAX_DURATION {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let elapsed_secs = dl_start.elapsed().as_secs_f64();
+        let bytes = total_dl_bytes
+            .load(Ordering::Relaxed)
+            .saturating_sub(base_bytes);
+        dl_samples.push((elapsed_secs, bytes));
 
-        while dl_start.elapsed() < DOWNLOAD_MAX_DURATION {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let elapsed_secs = dl_start.elapsed().as_secs_f64();
-            let bytes = total_dl_bytes
-                .load(Ordering::Relaxed)
-                .saturating_sub(base_bytes);
-            dl_samples.push((elapsed_secs, bytes));
+        let current_rate = calculate_rate_now(&dl_samples, 1.5);
 
-            let current_rate = calculate_rate_now(&dl_samples, 1.5);
+        if last_dl_progress.elapsed() >= Duration::from_millis(200) {
+            let _ = on_progress.send(SpeedTestProgress {
+                stage: "download".to_string(),
+                latency: Some(median_latency),
+                loss_rate: Some(rounded_loss_rate),
+                download_speed: Some(current_rate),
+                upload_speed: None,
+                location: location.map(str::to_string),
+                timestamp: None,
+                error: None,
+            });
+            last_dl_progress = Instant::now();
+        }
 
-            if last_dl_progress.elapsed() >= Duration::from_millis(200) {
-                let _ = on_progress.send(SpeedTestProgress {
-                    stage: "download".to_string(),
-                    latency: Some(median_latency),
-                    loss_rate: Some(rounded_loss_rate),
-                    download_speed: Some(current_rate),
-                    upload_speed: None,
-                    location: location.map(str::to_string),
-                    timestamp: None,
-                    error: None,
-                });
-                last_dl_progress = Instant::now();
-            }
+        let elapsed = dl_start.elapsed();
+        if bytes >= DOWNLOAD_MAX_BYTES && elapsed >= DOWNLOAD_MIN_CAP_DURATION {
+            break;
+        }
 
-            let elapsed = dl_start.elapsed();
-            if bytes >= DOWNLOAD_MAX_BYTES && elapsed >= DOWNLOAD_MIN_CAP_DURATION {
-                break;
-            }
-
-            let can_early_settle = bytes >= DOWNLOAD_MIN_SETTLE_BYTES
-                || elapsed >= DOWNLOAD_FALLBACK_SETTLE_DURATION;
-            if can_early_settle && is_settled(&dl_samples, DOWNLOAD_MIN_DURATION.as_secs_f64()) {
-                break;
-            }
+        let can_early_settle = bytes >= DOWNLOAD_MIN_SETTLE_BYTES
+            || elapsed >= DOWNLOAD_FALLBACK_SETTLE_DURATION;
+        if can_early_settle && is_settled(&dl_samples, DOWNLOAD_MIN_DURATION.as_secs_f64()) {
+            break;
         }
     }
 
