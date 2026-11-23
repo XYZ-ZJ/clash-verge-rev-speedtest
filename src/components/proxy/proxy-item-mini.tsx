@@ -126,6 +126,16 @@ export const ProxyItemMini = (props: Props) => {
             <TypeBox color="text.secondary" component="span">
               {type}
             </TypeBox>
+            {!unresolved && details?.xhttp && (
+              <TypeBox color="text.secondary" component="span">
+                XHTTP
+              </TypeBox>
+            )}
+            {!unresolved && details?.xmux && (
+              <TypeBox color="text.secondary" component="span">
+                XMUX
+              </TypeBox>
+            )}
             {!unresolved && details?.udp && (
               <TypeBox color="text.secondary" component="span">
                 UDP

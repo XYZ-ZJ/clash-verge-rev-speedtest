@@ -1080,6 +1080,12 @@ export const CurrentProxyCard = () => {
                     sx={{ mr: 0.5 }}
                   />
                 )}
+                {currentProxy?.xhttp && (
+                  <Chip size="small" label="XHTTP" variant="outlined" />
+                )}
+                {currentProxy?.xmux && (
+                  <Chip size="small" label="XMUX" variant="outlined" />
+                )}
                 {currentProxy?.udp && (
                   <Chip size="small" label="UDP" variant="outlined" />
                 )}

@@ -88,6 +88,8 @@ interface IProxyItem {
   tfo: boolean
   mptcp: boolean
   smux: boolean
+  xhttp?: boolean
+  xmux?: boolean
   history: {
     time: string
     delay: number

@@ -860,6 +860,8 @@ export type ProxyCapabilities = {
   tfo: boolean
   mptcp: boolean
   smux: boolean
+  xhttp: boolean
+  xmux: boolean
 }
 
 export type ProxyGroupView =

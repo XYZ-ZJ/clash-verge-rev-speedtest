@@ -10,6 +10,13 @@ pub struct ProxyViewInput {
     pub group_scopes: BTreeMap<String, GroupScope>,
     pub proxies: Proxies,
     pub providers: Option<ProxyProviders>,
+    pub node_features: BTreeMap<String, NodeFeature>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, specta::Type)]
+pub struct NodeFeature {
+    pub xhttp: bool,
+    pub xmux: bool,
 }
 
 /// The providers a group draws from (Mihomo order) and its `exclude-type` entries.
@@ -55,6 +62,8 @@ pub struct ProxyCapabilities {
     pub tfo: bool,
     pub mptcp: bool,
     pub smux: bool,
+    pub xhttp: bool,
+    pub xmux: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, specta::Type)]
@@ -250,6 +259,7 @@ impl ProxyViewBuilder {
             group_scopes,
             proxies,
             providers,
+            node_features,
         } = input;
         let provider_state = if providers.is_some() {
             ProxyViewProviderState::Ready
@@ -257,8 +267,9 @@ impl ProxyViewBuilder {
             ProxyViewProviderState::Unavailable
         };
         let (mut core_groups, core_nodes) = partition_core(proxies);
-        let (mut records, core_node_ids) = build_core_records(core_nodes);
-        let (providers, provider_candidates) = build_provider_records(providers, &mut records);
+        let (mut records, core_node_ids) = build_core_records(core_nodes, &node_features);
+        let (providers, provider_candidates) =
+            build_provider_records(providers, &mut records, &node_features);
         let resolver = MemberResolver {
             group_names: core_groups.keys().cloned().collect(),
             group_scopes: &group_scopes,
@@ -306,6 +317,7 @@ fn partition_core(proxies: Proxies) -> (BTreeMap<String, Proxy>, BTreeMap<String
 
 fn build_core_records(
     core_nodes: BTreeMap<String, Proxy>,
+    features: &BTreeMap<String, NodeFeature>,
 ) -> (BTreeMap<String, ProxyNodeView>, BTreeMap<String, String>) {
     let mut records = BTreeMap::new();
     let mut ids = BTreeMap::new();
@@ -313,6 +325,7 @@ fn build_core_records(
     for (index, (name, proxy)) in core_nodes.into_iter().enumerate() {
         let record_id = format!("c:{index}");
         ids.insert(name.clone(), record_id.clone());
+        let feature = features.get(&name).copied();
         records.insert(
             record_id.clone(),
             build_node(
@@ -320,6 +333,7 @@ fn build_core_records(
                 name.clone(),
                 proxy,
                 ProxyNodeSource::Core { proxy_name: name },
+                feature,
             ),
         );
     }
@@ -330,6 +344,7 @@ fn build_core_records(
 fn build_provider_records(
     providers: Option<ProxyProviders>,
     records: &mut BTreeMap<String, ProxyNodeView>,
+    features: &BTreeMap<String, NodeFeature>,
 ) -> (Vec<ProxyProviderView>, ProviderCandidates) {
     let providers = providers
         .map(|providers| providers.providers.into_iter().collect::<BTreeMap<_, _>>())
@@ -362,6 +377,7 @@ fn build_provider_records(
                 .entry(proxy_name.clone())
                 .or_insert_with(Vec::new)
                 .push((provider_name.clone(), record_id.clone()));
+            let feature = features.get(&node_name).copied();
             records.insert(
                 record_id.clone(),
                 build_node(
@@ -372,6 +388,7 @@ fn build_provider_records(
                         provider_name: provider_name.clone(),
                         proxy_name,
                     },
+                    feature,
                 ),
             );
             proxy_record_ids.push(record_id);
@@ -441,12 +458,20 @@ fn build_group(name: String, proxy: Proxy, resolver: &MemberResolver<'_>) -> Pro
             tfo,
             mptcp,
             smux,
+            xhttp: false,
+            xmux: false,
         },
         members,
     }
 }
 
-fn build_node(record_id: String, name: String, proxy: Proxy, source: ProxyNodeSource) -> ProxyNodeView {
+fn build_node(
+    record_id: String,
+    name: String,
+    proxy: Proxy,
+    source: ProxyNodeSource,
+    feature: Option<NodeFeature>,
+) -> ProxyNodeView {
     let Proxy {
         id,
         hidden,
@@ -461,6 +486,8 @@ fn build_node(record_id: String, name: String, proxy: Proxy, source: ProxyNodeSo
         proxy_type,
         ..
     } = proxy;
+
+    let feature = feature.unwrap_or_default();
 
     ProxyNodeView {
         record_id,
@@ -477,6 +504,8 @@ fn build_node(record_id: String, name: String, proxy: Proxy, source: ProxyNodeSo
             tfo,
             mptcp,
             smux,
+            xhttp: feature.xhttp,
+            xmux: feature.xmux,
         },
         source,
     }

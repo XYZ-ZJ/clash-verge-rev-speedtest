@@ -113,6 +113,12 @@ export const ProxyItem = (props: Props) => {
                 {showType && now && ` - ${now}`}
               </Box>
               {showType && <TypeBox>{type}</TypeBox>}
+              {!unresolved && showType && details?.xhttp && (
+                <TypeBox>XHTTP</TypeBox>
+              )}
+              {!unresolved && showType && details?.xmux && (
+                <TypeBox>XMUX</TypeBox>
+              )}
               {!unresolved && showType && details?.udp && (
                 <TypeBox>UDP</TypeBox>
               )}
