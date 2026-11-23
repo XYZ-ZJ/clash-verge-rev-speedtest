@@ -128,6 +128,8 @@ const virtualGroup = (members: ProxyGroupView['members']): ProxyGroupView => ({
   tfo: false,
   mptcp: false,
   smux: false,
+  xhttp: false,
+  xmux: false,
   history: [],
   members,
 })
