@@ -1,6 +1,7 @@
 use super::CmdResult;
 use crate::cmd::StringifyErr as _;
 use crate::core::{proxy_control, sysopt::Sysopt};
+use clash_verge_logging::{Type, logging};
 
 use gethostname::gethostname;
 use sysproxy::{Autoproxy, Sysproxy};
