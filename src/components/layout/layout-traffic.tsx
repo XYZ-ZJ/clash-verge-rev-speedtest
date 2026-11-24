@@ -10,7 +10,7 @@ import { useEffect, useRef } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { useTranslation } from 'react-i18next'
 
-import { useClashMode } from '@/hooks/use-clash-mode'
+import { useClashMode } from '@/hooks/use-clash'
 import { useConnectionData } from '@/hooks/use-connection-data'
 import { useMemoryData } from '@/hooks/use-memory-data'
 import { useTrafficData } from '@/hooks/use-traffic-data'

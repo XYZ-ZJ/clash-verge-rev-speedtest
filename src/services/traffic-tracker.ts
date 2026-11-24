@@ -1,8 +1,5 @@
 import { useSyncExternalStore } from 'react'
 
-import type { IConnectionsData, IConnectionsItem } from '@/definitions/clash'
-import type { ITrafficItem } from '@/hooks/use-traffic-data'
-
 export const NON_PROXY_KEYWORDS = new Set([
   'DIRECT',
   'REJECT',
@@ -11,6 +8,18 @@ export const NON_PROXY_KEYWORDS = new Set([
   'COMPATIBLE',
   'DNS',
 ])
+
+export interface ConnectionDataInput {
+  activeConnections?: IConnectionsItem[]
+  closedConnections?: IConnectionsItem[]
+}
+
+export interface TrafficInput {
+  up?: number
+  down?: number
+  upTotal?: number
+  downTotal?: number
+}
 
 /**
  * 严格判断连接是否真正经由代理节点转发
@@ -41,7 +50,9 @@ export const isThroughProxyNode = (
   }
 
   // 4. 链路上包含 DIRECT 或 REJECT 等字样（例如代理组选择了 DIRECT）
-  if (chains.some((c) => NON_PROXY_KEYWORDS.has(c.trim().toUpperCase()))) {
+  if (
+    chains.some((c: string) => NON_PROXY_KEYWORDS.has(c.trim().toUpperCase()))
+  ) {
     return false
   }
 
@@ -101,8 +112,8 @@ class TrafficTrackerStore {
   }
 
   update(
-    connectionData: IConnectionsData | undefined,
-    traffic: ITrafficItem | undefined,
+    connectionData: ConnectionDataInput | undefined,
+    traffic: TrafficInput | undefined,
     currentMode: string | null | undefined,
   ) {
     if (!connectionData) return
