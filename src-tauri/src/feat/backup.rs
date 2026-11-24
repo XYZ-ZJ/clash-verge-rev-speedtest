@@ -31,15 +31,22 @@ pub struct LocalBackupFile {
 /// single-segment name so a crafted value can neither traverse out of the
 /// local backup directory nor out of the WebDAV server's backup folder.
 fn validate_backup_name(filename: &str) -> Result<()> {
+    use std::path::{Component, Path};
+
     if filename.is_empty()
         || filename == "."
         || filename.contains('/')
         || filename.contains('\\')
-        || filename.contains("..")
+        || filename.contains('\0')
     {
         return Err(anyhow!("invalid backup filename: {filename:?}"));
     }
-    Ok(())
+
+    let mut components = Path::new(filename).components();
+    match components.next() {
+        Some(Component::Normal(seg)) if seg == filename && components.next().is_none() => Ok(()),
+        _ => Err(anyhow!("invalid backup filename structure: {filename:?}")),
+    }
 }
 
 /// Reloads restored configs into memory while preserving WebDAV credentials.

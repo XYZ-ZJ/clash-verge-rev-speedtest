@@ -1,4 +1,4 @@
-import { commands } from '@/services/bindings'
+import { testDnsLeak } from '@/services/cmds'
 import { getName, getVersion } from '@tauri-apps/api/app'
 import { fetch } from '@tauri-apps/plugin-http'
 import { asyncRetry } from 'foxts/async-retry'
@@ -778,7 +778,7 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
   // 该请求使用 HTTP 代理隧道（CONNECT），客户端本地完全不会进行 DNS 查询，
   // 从而彻底杜绝本地物理网卡向路由器下发 DNS 发送查询，全部解析由 Clash 内核处理！
   try {
-    const rawJson = await commands.testDnsLeak()
+    const rawJson = await testDnsLeak()
     const data: any[] = JSON.parse(rawJson)
     if (Array.isArray(data)) {
       const dnsServers: DnsServerInfo[] = data

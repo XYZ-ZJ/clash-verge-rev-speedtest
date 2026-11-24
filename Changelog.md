@@ -19,6 +19,38 @@
        scripts-workflow/group_platforms.sh regroups, --check verifies
      HTML comments are stripped by the update dialog's sanitizer and hidden on
      GitHub, so they never reach users. -->
+## v2.6.1
+
+<details>
+<summary><strong> ✨ 新增功能 </strong></summary>
+
+- 首页新增当前代理节点独立网络测速卡片（支持延迟、丢包率、流式下载与分块上传四维测定）
+- 首页新增「代理流量」与「直连流量」双轨分类统计卡片与高性能 Canvas 流量折线图
+- 首页新增 DNS 泄露端到端检测卡片与 TUN 严格路由自动加固
+- 首页新增多源 IP 风险综合评分展示（0-100分与网络类型识别）与出口详情分流透视弹窗
+- 出口透视集成 Cloudflare 边缘人机验证信誉实测与 WebRTC 泄露检测
+
+</details>
+
+<details>
+<summary><strong> 🚀 优化改进 </strong></summary>
+
+- 代理节点列表支持展示 XHTTP 传输协议与 XMUX 多路复用标识标签
+- 异步上下文代理特性提取重构为并发后台任务，杜绝大订阅下的调度卡顿与 Clippy 复杂度告警
+- 测速引擎单块上限严格限制为 25MB 并实施稳态平滑采样，有效杜绝 Cloudflare 403 阻断
+
+</details>
+
+<details>
+<summary><strong> 🐞 修复问题 </strong></summary>
+
+- 修复 DNS 泄露检测在零端口下的安全直连降级隐患，改用 nanoid 随机化探针标识
+- 修复流量卡片在 React Compiler 检查下的状态读取冲突与 cloneElement 规范警告
+- 修复配置文件原子写入与备份文件名安全路径校验，杜绝截断损坏与目录穿越风险
+- 修复出口透视未探测即硬编码协议结论的缺陷，优化时区比对缺失兜底
+
+</details>
+
 ## v2.6.0
 
 <details>

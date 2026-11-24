@@ -171,10 +171,17 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
         ],
       })
       let resolved = false
+      const cleanup = () => {
+        clearTimeout(timer)
+        try {
+          pc.close()
+        } catch {}
+      }
+
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true
-          try { pc.close() } catch {}
+          cleanup()
           resolve(null)
         }
       }, 3500)
@@ -183,20 +190,27 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
         if (e.candidate) {
           const cand = e.candidate.candidate
           const match = cand.match(
-            /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{1,4}){7})/i
+            /([0-9]{1,3}(?:\.[0-9]{1,3}){3}|(?:[0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})/i,
           )
           if (match && cand.includes('srflx')) {
             if (!resolved) {
               resolved = true
-              clearTimeout(timer)
-              try { pc.close() } catch {}
+              cleanup()
               resolve(match[1])
             }
           }
         }
       }
       pc.createDataChannel('egress-probe')
-      pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => resolve(null))
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .catch(() => {
+          if (!resolved) {
+            resolved = true
+            cleanup()
+            resolve(null)
+          }
+        })
     } catch {
       resolve(null)
     }
@@ -209,7 +223,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   // 1. 并发探测国内直连与海外代理出口及 Cloudflare 状态
   const [v4DirectText, biliDirectText, ipSbText, cfTraceText, webrtcIp, cfStatus] =
     await Promise.all([
-      safeFetch('http://ip.3322.net'),
+      safeFetch('https://api.ipify.org'),
       safeFetch('https://api.bilibili.com/x/web-interface/zone'),
       safeFetch('https://api.ip.sb/geoip'),
       safeFetch('https://1.1.1.1/cdn-cgi/trace'),
@@ -404,19 +418,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // (4) 端口和协议
-  if (proxyExit) {
-    findings.push({
-      key: 'protocols',
-      label: '端口和协议',
-      ok: true, // 正常标绿
-      badge: `${proxyExit.id} ${proxyExit.country}`,
-      badgeColor: 'success',
-      text: `同一台服务器，TCP 和 UDP 各端口都走 ${proxyExit.id} ${proxyExit.country}`,
-    })
-  }
-
-  // (5) IPv6 状态
+  // (4) IPv6 状态
   const ipv6Exit = exits.find((e) => e.type === 'IPv6')
   if (ipv6Exit) {
     const isIpv6DirectLeak = !ipv6Exit.isProxy && proxyExit
@@ -441,33 +443,44 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // (6) 时区比对（用户特别强调：和出口一致标绿，不一致标红）
+  // (5) 时区比对（和出口一致标绿，不一致标红，无数据标灰）
   const systemTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
   const sysOffset = getUtcOffsetHours(systemTz)
-  const exitOffset = getUtcOffsetHours(proxyTimezone || systemTz)
-  const isTimezoneSame = sysOffset === exitOffset
-
   const formatOffset = (h: number) => `UTC${h >= 0 ? '+' : ''}${h}`
 
-  if (isTimezoneSame) {
+  if (!proxyTimezone) {
     findings.push({
       key: 'timezone',
       label: '时区',
-      ok: true, // 一致标绿！
-      badge: `${formatOffset(sysOffset)}`,
-      badgeColor: 'success',
-      text: `和出口一致（${proxyCountry || '当前出口'}）`,
+      ok: true,
+      badge: '未提供',
+      badgeColor: 'default',
+      text: '未获取到代理出口的时区数据，无法进行时区比对',
     })
   } else {
-    findings.push({
-      key: 'timezone',
-      label: '时区',
-      ok: false, // 不一致标红！
-      badge: '时区差异',
-      badgeColor: 'error',
-      text: `和出口不一致：系统(${systemTz}, ${formatOffset(sysOffset)}) vs 出口(${proxyTimezone || proxyCountry}, ${formatOffset(exitOffset)})`,
-      helpText: '部分对时区敏感的网站（如部分银行或 AI 服务）可能会检测本地系统时区与 IP 时区的偏差。',
-    })
+    const exitOffset = getUtcOffsetHours(proxyTimezone)
+    const isTimezoneSame = sysOffset === exitOffset
+
+    if (isTimezoneSame) {
+      findings.push({
+        key: 'timezone',
+        label: '时区',
+        ok: true, // 一致标绿
+        badge: `${formatOffset(sysOffset)} 一致`,
+        badgeColor: 'success',
+        text: `和出口一致（${proxyCountry || '当前出口'}：${proxyTimezone}）`,
+      })
+    } else {
+      findings.push({
+        key: 'timezone',
+        label: '时区',
+        ok: false, // 不一致标红
+        badge: '时区差异',
+        badgeColor: 'error',
+        text: `和出口不一致：系统(${systemTz}, ${formatOffset(sysOffset)}) vs 出口(${proxyTimezone}, ${formatOffset(exitOffset)})`,
+        helpText: '部分对时区敏感的网站（如部分银行或 AI 服务）可能会检测本地系统时区与 IP 时区的偏差。',
+      })
+    }
   }
 
   return {

@@ -13,7 +13,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material'
-import { cloneElement, useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary'
 import { useTranslation } from 'react-i18next'
 
@@ -109,7 +109,9 @@ const SpeedRow = ({
   value: string
 }) => (
   <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-    {cloneElement(icon, { sx: { fontSize: 18, color, mr: 0.5, flexShrink: 0 } })}
+    <Box sx={{ fontSize: 18, color, mr: 0.5, flexShrink: 0, display: 'inline-flex', '& svg': { fontSize: 18 } }}>
+      {icon}
+    </Box>
     <Typography
       variant="body2"
       noWrap
@@ -299,6 +301,12 @@ export const EnhancedTrafficStats = () => {
 
   // 追踪连接生命周期中代理与直连的累计流量
   const trafficTrackerRef = useRef(createInitialTracker())
+  const [accumulatedTotals, setAccumulatedTotals] = useState({
+    proxyDownTotal: 0,
+    proxyUpTotal: 0,
+    directDownTotal: 0,
+    directUpTotal: 0,
+  })
 
   // 增量统计代理与直连流量
   useEffect(() => {
@@ -352,6 +360,12 @@ export const EnhancedTrafficStats = () => {
       tracker.proxyUpTotal = initProxyUp
       tracker.directDownTotal = initDirectDown
       tracker.directUpTotal = initDirectUp
+      setAccumulatedTotals({
+        proxyDownTotal: initProxyDown,
+        proxyUpTotal: initProxyUp,
+        directDownTotal: initDirectDown,
+        directUpTotal: initDirectUp,
+      })
       return
     }
 
@@ -393,6 +407,13 @@ export const EnhancedTrafficStats = () => {
         }
       }
     }
+
+    setAccumulatedTotals({
+      proxyDownTotal: tracker.proxyDownTotal,
+      proxyUpTotal: tracker.proxyUpTotal,
+      directDownTotal: tracker.directDownTotal,
+      directUpTotal: tracker.directUpTotal,
+    })
   }, [connectionData, traffic, currentMode])
 
   // 使用useMemo计算解析后的分类流量数据
@@ -481,21 +502,21 @@ export const EnhancedTrafficStats = () => {
     }
 
     // 累计总量：双轨真实累加，并以各自实测比例校准至内核权威总流量，绝不发生减法截断为0
-    const tracker = trafficTrackerRef.current
     const globalDownTotal = traffic?.downTotal || 0
     const globalUpTotal = traffic?.upTotal || 0
 
     const measuredDownTotal =
-      tracker.proxyDownTotal + tracker.directDownTotal
-    const measuredUpTotal = tracker.proxyUpTotal + tracker.directUpTotal
+      accumulatedTotals.proxyDownTotal + accumulatedTotals.directDownTotal
+    const measuredUpTotal =
+      accumulatedTotals.proxyUpTotal + accumulatedTotals.directUpTotal
 
-    let displayProxyDownTotal = tracker.proxyDownTotal
-    let displayDirectDownTotal = tracker.directDownTotal
-    let displayProxyUpTotal = tracker.proxyUpTotal
-    let displayDirectUpTotal = tracker.directUpTotal
+    let displayProxyDownTotal = accumulatedTotals.proxyDownTotal
+    let displayDirectDownTotal = accumulatedTotals.directDownTotal
+    let displayProxyUpTotal = accumulatedTotals.proxyUpTotal
+    let displayDirectUpTotal = accumulatedTotals.directUpTotal
 
     if (measuredDownTotal > 0 && globalDownTotal > 0) {
-      const proxyRatio = tracker.proxyDownTotal / measuredDownTotal
+      const proxyRatio = accumulatedTotals.proxyDownTotal / measuredDownTotal
       displayProxyDownTotal = globalDownTotal * proxyRatio
       displayDirectDownTotal = globalDownTotal * (1 - proxyRatio)
     } else if (globalDownTotal > 0) {
@@ -504,7 +525,7 @@ export const EnhancedTrafficStats = () => {
     }
 
     if (measuredUpTotal > 0 && globalUpTotal > 0) {
-      const proxyRatio = tracker.proxyUpTotal / measuredUpTotal
+      const proxyRatio = accumulatedTotals.proxyUpTotal / measuredUpTotal
       displayProxyUpTotal = globalUpTotal * proxyRatio
       displayDirectUpTotal = globalUpTotal * (1 - proxyRatio)
     } else if (globalUpTotal > 0) {
@@ -542,7 +563,7 @@ export const EnhancedTrafficStats = () => {
         activeCount: directActiveCount,
       },
     }
-  }, [connectionData, traffic, currentMode])
+  }, [connectionData, traffic, currentMode, accumulatedTotals])
 
   // 渲染流量图表
   const trafficGraphComponent = useMemo(() => {

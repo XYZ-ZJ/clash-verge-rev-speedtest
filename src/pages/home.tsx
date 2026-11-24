@@ -291,7 +291,11 @@ const HomePage = () => {
   }, [])
 
   const renderCard = useCallback(
-    (cardKey: string, component: React.ReactNode, size: any = 6) => {
+    (
+      cardKey: string,
+      component: React.ReactNode,
+      size: React.ComponentProps<typeof Grid>['size'] = 6,
+    ) => {
       if (!homeCards[cardKey]) return null
 
       return (

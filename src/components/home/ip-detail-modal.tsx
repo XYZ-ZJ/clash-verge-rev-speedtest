@@ -53,7 +53,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const [loading, setLoading] = useState(false)
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
-  const [justRefreshed, setJustRefreshed] = useState(false)
+
 
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
@@ -128,9 +128,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               <Typography variant="caption" color="text.secondary">
                 {t('home.components.ipInfo.detailModal.lastCheck')}: {new Date(report.timestamp).toLocaleTimeString()}
               </Typography>
-              {justRefreshed && (
-                <Chip size="small" label="已更新" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.62rem' }} />
-              )}
+
             </Box>
           )}
         </Box>

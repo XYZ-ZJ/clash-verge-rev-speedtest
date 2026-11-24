@@ -13,7 +13,7 @@ import {
   useTheme,
 } from '@mui/material'
 import { Channel } from '@tauri-apps/api/core'
-import { cloneElement, useCallback, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EnhancedCard } from '@/components/home/enhanced-card'
@@ -98,9 +98,9 @@ const MetricTile = ({
       backgroundColor: bg,
     }}
   >
-    {cloneElement(icon, {
-      sx: { fontSize: 32, color: iconColor, mr: 1.5, flexShrink: 0 },
-    })}
+    <Box sx={{ fontSize: 32, color: iconColor, mr: 1.5, flexShrink: 0, display: 'inline-flex', '& svg': { fontSize: 32 } }}>
+      {icon}
+    </Box>
     <Box sx={{ minWidth: 0, flex: 1 }}>
       <Typography
         variant="body2"

@@ -107,19 +107,105 @@ fn runtime_group_scopes(config: Option<&Mapping>) -> BTreeMap<String, GroupScope
 
 fn detect_node_feature(map: &Mapping) -> Option<NodeFeature> {
     let network = map.get("network").and_then(|v| v.as_str())?;
-    if network.eq_ignore_ascii_case("xhttp") {
-        let mut xmux = false;
-        if let Some(opts) = map.get("xhttp-opts").and_then(|v| v.as_mapping()) {
-            if opts.contains_key("reuse-settings") || opts.contains_key("xmux") {
-                xmux = true;
-            }
-        } else if map.contains_key("reuse-settings") || map.contains_key("xmux") {
-            xmux = true;
-        }
-        Some(NodeFeature { xhttp: true, xmux })
-    } else {
-        None
+    if !network.eq_ignore_ascii_case("xhttp") {
+        return None;
     }
+
+    let xmux = if let Some(opts) = map.get("xhttp-opts").and_then(|v| v.as_mapping()) {
+        opts.contains_key("reuse-settings") || opts.contains_key("xmux")
+    } else {
+        map.contains_key("reuse-settings") || map.contains_key("xmux")
+    };
+
+    Some(NodeFeature { xhttp: true, xmux })
+}
+
+fn scan_proxies_slice(proxies: &[Value], features: &mut BTreeMap<String, NodeFeature>) {
+    for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
+        if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
+            if let Some(feat) = detect_node_feature(proxy) {
+                features.insert(name.to_owned(), feat);
+            }
+        }
+    }
+}
+
+fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<String, NodeFeature>) {
+    if !full_path.is_file() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(full_path) else {
+        return;
+    };
+    let Ok(serde_yaml_ng::Value::Mapping(pdoc)) =
+        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
+    else {
+        return;
+    };
+    if let Some(proxies) = pdoc.get("proxies").and_then(|v| v.as_sequence()) {
+        scan_proxies_slice(proxies, features);
+    }
+}
+
+fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeature>) {
+    let app_dir = crate::utils::dirs::app_home_dir().ok();
+    for (_key, val) in providers {
+        let Some(provider_map) = val.as_mapping() else {
+            continue;
+        };
+
+        if let Some(payload) = provider_map.get("payload").and_then(|v| v.as_sequence()) {
+            scan_proxies_slice(payload, features);
+        }
+
+        if let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) {
+            let path = std::path::Path::new(raw_path);
+            let full_path = if path.is_absolute() {
+                path.to_path_buf()
+            } else if let Some(ref dir) = app_dir {
+                dir.join(path)
+            } else {
+                path.to_path_buf()
+            };
+            scan_provider_file(&full_path, features);
+        }
+    }
+}
+
+fn scan_current_profile(features: &mut BTreeMap<String, NodeFeature>) {
+    let Ok(profiles_dir) = crate::utils::dirs::app_profiles_dir() else {
+        return;
+    };
+    let profiles_yaml = profiles_dir.join(crate::utils::dirs::PROFILE_YAML);
+    if !profiles_yaml.is_file() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(&profiles_yaml) else {
+        return;
+    };
+    let Ok(serde_yaml_ng::Value::Mapping(profiles_cfg)) =
+        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
+    else {
+        return;
+    };
+    let Some(cur_uid) = profiles_cfg.get("current").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Some(items) = profiles_cfg.get("items").and_then(|v| v.as_sequence()) else {
+        return;
+    };
+    let Some(file_name) = items.iter().filter_map(|i| i.as_mapping()).find_map(|item| {
+        if item.get("uid").and_then(|u| u.as_str()) == Some(cur_uid) {
+            item.get("file").and_then(|f| f.as_str())
+        } else {
+            None
+        }
+    }) else {
+        return;
+    };
+
+    let profile_path = profiles_dir.join(file_name);
+    scan_provider_file(&profile_path, features);
 }
 
 fn collect_node_features(config: Option<&Mapping>) -> BTreeMap<String, NodeFeature> {
@@ -129,111 +215,14 @@ fn collect_node_features(config: Option<&Mapping>) -> BTreeMap<String, NodeFeatu
     };
 
     if let Some(proxies) = config.get("proxies").and_then(|v| v.as_sequence()) {
-        for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
-            if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
-                if let Some(feat) = detect_node_feature(proxy) {
-                    features.insert(name.to_owned(), feat);
-                }
-            }
-        }
+        scan_proxies_slice(proxies, &mut features);
     }
 
     if let Some(providers) = config.get("proxy-providers").and_then(|v| v.as_mapping()) {
-        for (_key, val) in providers {
-            let Some(provider_map) = val.as_mapping() else {
-                continue;
-            };
-
-            if let Some(payload) = provider_map.get("payload").and_then(|v| v.as_sequence()) {
-                for proxy in payload.iter().filter_map(|v| v.as_mapping()) {
-                    if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
-                        if let Some(feat) = detect_node_feature(proxy) {
-                            features.insert(name.to_owned(), feat);
-                        }
-                    }
-                }
-            }
-
-            if let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) {
-                let path = std::path::Path::new(raw_path);
-                let full_path = if path.is_absolute() {
-                    path.to_path_buf()
-                } else if let Ok(app_dir) = crate::utils::dirs::app_home_dir() {
-                    app_dir.join(path)
-                } else {
-                    path.to_path_buf()
-                };
-
-                if full_path.is_file() {
-                    if let Ok(content) = std::fs::read_to_string(&full_path) {
-                        if let Ok(serde_yaml_ng::Value::Mapping(pdoc)) =
-                            serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
-                        {
-                            if let Some(proxies) = pdoc.get("proxies").and_then(|v| v.as_sequence()) {
-                                for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
-                                    if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
-                                        if let Some(feat) = detect_node_feature(proxy) {
-                                            features.insert(name.to_owned(), feat);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        scan_providers(providers, &mut features);
     }
 
-    if let Ok(profiles_dir) = crate::utils::dirs::app_profiles_dir() {
-        let profiles_yaml = profiles_dir.join(crate::utils::dirs::PROFILE_YAML);
-        if profiles_yaml.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&profiles_yaml) {
-                if let Ok(serde_yaml_ng::Value::Mapping(profiles_cfg)) =
-                    serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
-                {
-                    let current_file = profiles_cfg
-                        .get("current")
-                        .and_then(|v| v.as_str())
-                        .and_then(|cur_uid| {
-                            profiles_cfg
-                                .get("items")
-                                .and_then(|v| v.as_sequence())
-                                .and_then(|items| {
-                                    items.iter().filter_map(|i| i.as_mapping()).find_map(|item| {
-                                        if item.get("uid").and_then(|u| u.as_str()) == Some(cur_uid) {
-                                            item.get("file").and_then(|f| f.as_str())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                })
-                        });
-
-                    if let Some(file_name) = current_file {
-                        let profile_path = profiles_dir.join(file_name);
-                        if profile_path.is_file() {
-                            if let Ok(content) = std::fs::read_to_string(&profile_path) {
-                                if let Ok(serde_yaml_ng::Value::Mapping(pdoc)) =
-                                    serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
-                                {
-                                    if let Some(proxies) = pdoc.get("proxies").and_then(|v| v.as_sequence()) {
-                                        for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
-                                            if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
-                                                if let Some(feat) = detect_node_feature(proxy) {
-                                                    features.entry(name.to_owned()).or_insert(feat);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    scan_current_profile(&mut features);
 
     features
 }
@@ -245,10 +234,16 @@ pub async fn get_proxy_view() -> CmdResult<ProxyViewV1> {
     let latest_runtime = runtime.latest_arc();
     let runtime_group_order = runtime_group_order(latest_runtime.config.as_ref());
     let group_scopes = runtime_group_scopes(latest_runtime.config.as_ref());
-    let node_features = collect_node_features(latest_runtime.config.as_ref());
+    let config_clone = latest_runtime.config.clone();
 
-    let mihomo = Handle::mihomo();
-    let (proxies, providers) = tokio::join!(mihomo.get_proxies(), mihomo.get_proxy_providers(),);
+    let (node_features, (proxies, providers)) = tokio::join!(
+        tokio::task::spawn_blocking(move || collect_node_features(config_clone.as_ref())),
+        async {
+            let mihomo = Handle::mihomo();
+            tokio::join!(mihomo.get_proxies(), mihomo.get_proxy_providers())
+        }
+    );
+    let node_features = node_features.unwrap_or_default();
     let proxies = proxies.stringify_err()?;
 
     Ok(ProxyViewBuilder::build(ProxyViewInput {

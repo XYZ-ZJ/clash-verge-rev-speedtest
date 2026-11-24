@@ -509,3 +509,8 @@ export async function checkMediaUnlockItem(name: string) {
 export async function testNetworkSpeed(onProgress: Channel<SpeedTestProgress>) {
   return commands.testNetworkSpeed(onProgress)
 }
+
+export async function testDnsLeak() {
+  return commands.testDnsLeak()
+}
+

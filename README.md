@@ -61,7 +61,7 @@
 
 | 平台架构 | 安装包文件名 | 说明 |
 | :--- | :--- | :--- |
-| **Windows x64** | `Clash.Verge_2.6.0_x64-setup.exe` | 适用于 64 位 Windows 系统的标准安装程序 |
+| **Windows x64** | `Clash.Verge_2.6.1_x64-setup.exe` | 适用于 64 位 Windows 系统的标准安装程序 |
 
 ---
 
