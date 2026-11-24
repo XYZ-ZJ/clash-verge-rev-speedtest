@@ -10,10 +10,13 @@ import { useEffect, useRef } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { useTranslation } from 'react-i18next'
 
+import { useClashMode } from '@/hooks/use-clash-mode'
+import { useConnectionData } from '@/hooks/use-connection-data'
 import { useMemoryData } from '@/hooks/use-memory-data'
 import { useTrafficData } from '@/hooks/use-traffic-data'
 import { useVerge } from '@/hooks/use-verge'
 import { useVisibility } from '@/hooks/use-visibility'
+import { globalTrafficTracker } from '@/services/traffic-tracker'
 import parseTraffic from '@/utils/parse-traffic'
 
 import { TrafficGraph, type TrafficRef } from './traffic-graph'
@@ -52,12 +55,21 @@ export const LayoutTraffic = () => {
   const trafficRef = useRef<TrafficRef>(null)
   const pageVisible = useVisibility()
 
+  const { data: currentMode } = useClashMode()
   const {
     response: { data: traffic },
   } = useTrafficData({ enabled: true })
   const {
+    response: { data: connectionData },
+  } = useConnectionData({ enabled: true })
+  const {
     response: { data: memory },
   } = useMemoryData({ enabled: displayMemory && pageVisible })
+
+  // 常驻后台累加统计：即便切页或最小化，连接数据仍持续更新至 globalTrafficTracker
+  useEffect(() => {
+    globalTrafficTracker.update(connectionData, traffic, currentMode)
+  }, [connectionData, traffic, currentMode])
 
   useEffect(() => {
     if (trafficRef.current) {

@@ -143,13 +143,21 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     let mtime = full_path.metadata().and_then(|m| m.modified()).ok();
     let cache_mutex = FILE_FEATURE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
 
-    if let Ok(cache) = cache_mutex.lock() {
-        if let Some((cached_mtime, cached_feats)) = cache.get(full_path) {
-            if *cached_mtime == mtime && mtime.is_some() {
-                features.extend(cached_feats.clone());
-                return;
+    let cached_feats = cache_mutex
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(full_path).cloned())
+        .and_then(|(cached_mtime, cached_feats)| {
+            if cached_mtime == mtime && mtime.is_some() {
+                Some(cached_feats)
+            } else {
+                None
             }
-        }
+        });
+
+    if let Some(cached_feats) = cached_feats {
+        features.extend(cached_feats);
+        return;
     }
 
     let Ok(content) = std::fs::read_to_string(full_path) else {
@@ -167,6 +175,9 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     }
 
     if let Ok(mut cache) = cache_mutex.lock() {
+        if cache.len() >= 128 {
+            cache.clear();
+        }
         cache.insert(full_path.to_path_buf(), (mtime, file_feats.clone()));
     }
     features.extend(file_feats);
@@ -189,6 +200,9 @@ fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeatu
             }
             let path = std::path::Path::new(raw_path);
             let full_path = if path.is_absolute() {
+                if !path.is_file() {
+                    continue;
+                }
                 path.to_path_buf()
             } else if let Some(ref dir) = app_dir {
                 dir.join(path)

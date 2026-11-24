@@ -2,7 +2,7 @@
 
 **Applies to:** the Clash Verge Rev desktop application for Windows, macOS and
 Linux, distributed from
-<https://github.com/clash-verge-rev/clash-verge-rev/releases>.
+<https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases>.
 
 **Last updated:** 2026-11-23
 
@@ -31,7 +31,7 @@ server of its own that the application talks to.
 ## 2. Who is responsible
 
 The Clash Verge Rev maintainers, reachable through the project's issue tracker
-at <https://github.com/clash-verge-rev/clash-verge-rev/issues>. Because the
+at <https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/issues>. Because the
 application performs no data collection, there is no data controller
 relationship, no processing agreement, and no data to request or erase from us.
 
@@ -96,7 +96,7 @@ On startup the application asks whether a newer release exists, in order, from:
 
 - `https://update.hwdns.net/…` and `https://gh-proxy.org/…` (third-party GitHub
   mirrors, used for reachability in restricted networks)
-- `https://github.com/clash-verge-rev/clash-verge-rev/releases/…`
+- `https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases/…`
 
 The request carries only what any HTTP request carries: your IP address, the
 `User-Agent` and the requested file. No identifier is generated or sent, and no
@@ -215,5 +215,5 @@ history. The date at the top reflects the most recent change.
 ## 9. Contact
 
 Open an issue at
-<https://github.com/clash-verge-rev/clash-verge-rev/issues>. Please do not
+<https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/issues>. Please do not
 include logs or configuration files containing credentials in public issues.
