@@ -278,6 +278,9 @@ const TrafficFallback = ({ error, resetErrorBoundary }: FallbackProps) => {
   )
 }
 
+// 模块级全局单例状态：跨路由页面切换（如从首页切到代理、配置页再切回）保持累计流量与连接缓存不重置
+const globalTrafficTracker = createInitialTracker()
+
 export const EnhancedTrafficStats = () => {
   const { t } = useTranslation()
   const theme = useTheme()
@@ -299,19 +302,18 @@ export const EnhancedTrafficStats = () => {
     response: { data: connectionData },
   } = useConnectionData({ enabled: true })
 
-  // 追踪连接生命周期中代理与直连的累计流量
-  const trafficTrackerRef = useRef(createInitialTracker())
-  const [accumulatedTotals, setAccumulatedTotals] = useState({
-    proxyDownTotal: 0,
-    proxyUpTotal: 0,
-    directDownTotal: 0,
-    directUpTotal: 0,
-  })
+  // 累计数据状态，初始值同步自全局单例，跨路由页面切换保持累加
+  const [accumulatedTotals, setAccumulatedTotals] = useState(() => ({
+    proxyDownTotal: globalTrafficTracker.proxyDownTotal,
+    proxyUpTotal: globalTrafficTracker.proxyUpTotal,
+    directDownTotal: globalTrafficTracker.directDownTotal,
+    directUpTotal: globalTrafficTracker.directUpTotal,
+  }))
 
   // 增量统计代理与直连流量
   useEffect(() => {
     if (!connectionData) return
-    const tracker = trafficTrackerRef.current
+    const tracker = globalTrafficTracker
     const activeConns = connectionData.activeConnections || []
     const closedConns = connectionData.closedConnections || []
     const allConns = [...activeConns, ...closedConns]
@@ -360,11 +362,21 @@ export const EnhancedTrafficStats = () => {
       tracker.proxyUpTotal = initProxyUp
       tracker.directDownTotal = initDirectDown
       tracker.directUpTotal = initDirectUp
-      setAccumulatedTotals({
-        proxyDownTotal: initProxyDown,
-        proxyUpTotal: initProxyUp,
-        directDownTotal: initDirectDown,
-        directUpTotal: initDirectUp,
+      setAccumulatedTotals((prev) => {
+        if (
+          prev.proxyDownTotal === initProxyDown &&
+          prev.proxyUpTotal === initProxyUp &&
+          prev.directDownTotal === initDirectDown &&
+          prev.directUpTotal === initDirectUp
+        ) {
+          return prev
+        }
+        return {
+          proxyDownTotal: initProxyDown,
+          proxyUpTotal: initProxyUp,
+          directDownTotal: initDirectDown,
+          directUpTotal: initDirectUp,
+        }
       })
       return
     }
@@ -408,11 +420,21 @@ export const EnhancedTrafficStats = () => {
       }
     }
 
-    setAccumulatedTotals({
-      proxyDownTotal: tracker.proxyDownTotal,
-      proxyUpTotal: tracker.proxyUpTotal,
-      directDownTotal: tracker.directDownTotal,
-      directUpTotal: tracker.directUpTotal,
+    setAccumulatedTotals((prev) => {
+      if (
+        prev.proxyDownTotal === tracker.proxyDownTotal &&
+        prev.proxyUpTotal === tracker.proxyUpTotal &&
+        prev.directDownTotal === tracker.directDownTotal &&
+        prev.directUpTotal === tracker.directUpTotal
+      ) {
+        return prev
+      }
+      return {
+        proxyDownTotal: tracker.proxyDownTotal,
+        proxyUpTotal: tracker.proxyUpTotal,
+        directDownTotal: tracker.directDownTotal,
+        directUpTotal: tracker.directUpTotal,
+      }
     })
   }, [connectionData, traffic, currentMode])
 

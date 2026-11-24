@@ -809,11 +809,21 @@ pub async fn test_dns_leak() -> CmdResult<std::string::String> {
             )
         })?;
 
-    let test_id = nanoid::nanoid!(16);
+    // RFC 952/1123 合规：DNS 标签只允许小写字母和数字，严禁包含下划线或以连字符开头
+    const DNS_ID_ALPHABET: [char; 36] = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+        'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+        'u', 'v', 'w', 'x', 'y', 'z',
+    ];
+    let test_id = nanoid::nanoid!(16, &DNS_ID_ALPHABET);
 
     // 1. 触发请求：由于客户端配置了 HTTP 代理，reqwest 向 127.0.0.1:{port} 发送 CONNECT {test_id}.bash.ws:443
     // 客户端本地绝对不会调用操作系统的 getaddrinfo，从而完全杜绝物理网卡和路由器 DNS 的介入！
-    let _ = client.get(format!("https://{test_id}.bash.ws")).send().await;
+    let trigger_res = client.get(format!("https://{test_id}.bash.ws")).send().await;
+    if let Err(ref e) = trigger_res {
+        logging!(debug, Type::Cmd, "DNS leak trigger request probe result: {e}");
+    }
 
     // 2. 获取检测结果
     let res = client

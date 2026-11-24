@@ -794,10 +794,15 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
       const ipItem = data.find((item) => item.type === 'ip')
 
       const isCnDns = (s: DnsServerInfo) => {
-        const country = s.country?.toLowerCase()
+        const country = (s.country || '').trim().toLowerCase()
+        const countryName = (s.country_name || '').trim().toLowerCase()
         const org = (s.org || '').toLowerCase()
         return (
           country === 'cn' ||
+          country === 'china' ||
+          countryName === 'cn' ||
+          countryName === 'china' ||
+          countryName.includes('china') ||
           /china|telecom|unicom|mobile|volcano|alibaba|tencent|baidu/i.test(org)
         )
       }
@@ -811,8 +816,10 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
         )
       }
 
+      const ipCountry = (ipItem?.country || ipItem?.country_name || '').trim().toLowerCase()
       const isOverseasProxy = Boolean(
-        ipItem?.country && ipItem.country.toLowerCase() !== 'cn',
+        ipCountry &&
+          !['cn', 'china'].includes(ipCountry),
       )
 
       // 严密且符合分流规律的远程 DNS 泄露判定：

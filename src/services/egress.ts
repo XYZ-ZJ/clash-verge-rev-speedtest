@@ -189,14 +189,25 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
       pc.onicecandidate = (e) => {
         if (e.candidate) {
           const cand = e.candidate.candidate
-          const match = cand.match(
-            /([0-9]{1,3}(?:\.[0-9]{1,3}){3}|(?:[0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})/i,
-          )
-          if (match && cand.includes('srflx')) {
-            if (!resolved) {
+          if (cand.includes('srflx')) {
+            // 标准 SDP candidate 行：candidate:foundation component transport priority ip port typ srflx ...
+            const parts = cand.trim().split(/\s+/)
+            let ipFound = ''
+            if (parts.length >= 8 && parts[6] === 'typ' && parts[7] === 'srflx' && parts[4]) {
+              ipFound = parts[4]
+            } else {
+              // 兼容正则：支持标准 IPv4 以及包括 240e:3b0::1:2、::1 等在内的压缩 IPv6 地址
+              const match = cand.match(
+                /((?:\d{1,3}\.){3}\d{1,3}|(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}|(?:::)?(?:[0-9a-fA-F]{1,4}:*)+(?:::)?(?:[0-9a-fA-F]{1,4})*)/,
+              )
+              if (match) {
+                ipFound = match[1]
+              }
+            }
+            if (ipFound && !resolved) {
               resolved = true
               cleanup()
-              resolve(match[1])
+              resolve(ipFound)
             }
           }
         }
@@ -223,7 +234,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   // 1. 并发探测国内直连与海外代理出口及 Cloudflare 状态
   const [v4DirectText, biliDirectText, ipSbText, cfTraceText, webrtcIp, cfStatus] =
     await Promise.all([
-      safeFetch('https://api.ipify.org'),
+      safeFetch('https://4.ipw.cn'),
       safeFetch('https://api.bilibili.com/x/web-interface/zone'),
       safeFetch('https://api.ip.sb/geoip'),
       safeFetch('https://1.1.1.1/cdn-cgi/trace'),

@@ -10,10 +10,11 @@ use crate::{
     process::AsyncHandler,
 };
 use clash_verge_logging::{Type, logging};
-use serde_yaml_ng::Mapping;
+use serde_yaml_ng::{Mapping, Value};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::atomic::{AtomicBool, Ordering},
+    sync::{Mutex, OnceLock},
 };
 
 /// Merges one selection pair into fresh backend state to avoid stale-list overwrites.
@@ -120,12 +121,17 @@ fn detect_node_feature(map: &Mapping) -> Option<NodeFeature> {
     Some(NodeFeature { xhttp: true, xmux })
 }
 
+static FILE_FEATURE_CACHE: OnceLock<
+    Mutex<HashMap<std::path::PathBuf, (Option<std::time::SystemTime>, BTreeMap<String, NodeFeature>)>>,
+> = OnceLock::new();
+
 fn scan_proxies_slice(proxies: &[Value], features: &mut BTreeMap<String, NodeFeature>) {
     for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
-        if let Some(name) = proxy.get("name").and_then(|v| v.as_str()) {
-            if let Some(feat) = detect_node_feature(proxy) {
-                features.insert(name.to_owned(), feat);
-            }
+        if let (Some(name), Some(feat)) = (
+            proxy.get("name").and_then(|v| v.as_str()),
+            detect_node_feature(proxy),
+        ) {
+            features.insert(name.to_owned(), feat);
         }
     }
 }
@@ -134,6 +140,18 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     if !full_path.is_file() {
         return;
     }
+    let mtime = full_path.metadata().and_then(|m| m.modified()).ok();
+    let cache_mutex = FILE_FEATURE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    if let Ok(cache) = cache_mutex.lock() {
+        if let Some((cached_mtime, cached_feats)) = cache.get(full_path) {
+            if *cached_mtime == mtime && mtime.is_some() {
+                features.extend(cached_feats.clone());
+                return;
+            }
+        }
+    }
+
     let Ok(content) = std::fs::read_to_string(full_path) else {
         return;
     };
@@ -142,9 +160,16 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     else {
         return;
     };
+
+    let mut file_feats = BTreeMap::new();
     if let Some(proxies) = pdoc.get("proxies").and_then(|v| v.as_sequence()) {
-        scan_proxies_slice(proxies, features);
+        scan_proxies_slice(proxies, &mut file_feats);
     }
+
+    if let Ok(mut cache) = cache_mutex.lock() {
+        cache.insert(full_path.to_path_buf(), (mtime, file_feats.clone()));
+    }
+    features.extend(file_feats);
 }
 
 fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeature>) {
@@ -159,6 +184,9 @@ fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeatu
         }
 
         if let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) {
+            if raw_path.contains("..") || raw_path.contains('\0') {
+                continue;
+            }
             let path = std::path::Path::new(raw_path);
             let full_path = if path.is_absolute() {
                 path.to_path_buf()

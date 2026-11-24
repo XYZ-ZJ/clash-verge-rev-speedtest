@@ -4,7 +4,7 @@
 Linux, distributed from
 <https://github.com/clash-verge-rev/clash-verge-rev/releases>.
 
-**Last updated:** 2026-09-09
+**Last updated:** 2026-11-23
 
 Clash Verge Rev is a free and open-source graphical client for the
 [mihomo](https://github.com/MetaCubeX/mihomo) proxy core, maintained by
@@ -111,14 +111,25 @@ Updating the mihomo core downloads it from GitHub Releases
 (`https://github.com/MetaCubeX/mihomo/releases/…`) only when you start the
 update.
 
-### 4.5 IP information card — *enabled by default*
+### 4.5 IP information card and network diagnostic services — *enabled by default or user-initiated*
 
 The Home page shows your apparent public IP address and its geolocation. To do
 this it queries one randomly chosen service from:
 `api.ip.sb`, `ipapi.co`, `api.ipapi.is`, `ipwho.is`, `ip.api.skk.moe`,
-`get.geojs.io`. The query is refreshed about every 5 minutes while the card is
-visible and the window is shown; it is not sent while the window is hidden or
-the Home page is not in view.
+`get.geojs.io`, `api.ipquery.io`, `ipinfo.io/widget/demo`, `ipinfo.check.place`.
+The query is refreshed about every 5 minutes while the card is visible and the
+window is shown; it is not sent while the window is hidden or the Home page is
+not in view.
+
+When opening the detailed IP Info, Egress Analysis, or DNS Leak diagnostics,
+the application queries specialised analysis endpoints to inspect outbound routing,
+fraud/risk scoring, and DNS resolvers:
+- **Direct & proxy egress detection:** `https://4.ipw.cn` (domestic direct probe),
+  `https://api.bilibili.com/x/web-interface/zone`, `https://speed.cloudflare.com/meta`.
+- **IP fraud & threat risk scoring (user-initiated):** `https://proxycheck.io/v2/`,
+  `https://scamalytics.com/ip/`.
+- **DNS Leak test (user-initiated):** queries `https://{test_id}.bash.ws` and
+  `https://bash.ws/dnsleak/test/{test_id}?json`, `https://edns.ip-api.com/json`.
 
 By design these services see and return the IP address the request came from —
 that is the feature. If a proxy is active, they see the proxy's address.
