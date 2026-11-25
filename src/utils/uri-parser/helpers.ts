@@ -275,7 +275,7 @@ export function normalizeHost(host: string): string {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
 }
 
-export function splitAuthorityAndPath(input: string): {
+function splitAuthorityAndPath(input: string): {
   auth?: string
   host: string
   port?: string
@@ -394,7 +394,7 @@ export function decodeBase64ToBytes(str: string): Uint8Array {
   return bytes
 }
 
-export function decodeBase64Utf8(str: string): string {
+function decodeBase64Utf8(str: string): string {
   return new TextDecoder('utf-8', { fatal: true }).decode(
     decodeBase64ToBytes(str),
   )

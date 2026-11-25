@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export const NON_PROXY_KEYWORDS = new Set([
+const NON_PROXY_KEYWORDS = new Set([
   'DIRECT',
   'REJECT',
   'REJECT-DROP',
@@ -9,12 +9,12 @@ export const NON_PROXY_KEYWORDS = new Set([
   'DNS',
 ])
 
-export interface ConnectionDataInput {
+interface ConnectionDataInput {
   activeConnections?: IConnectionsItem[]
   closedConnections?: IConnectionsItem[]
 }
 
-export interface TrafficInput {
+interface TrafficInput {
   up?: number
   down?: number
   upTotal?: number
@@ -65,7 +65,7 @@ export const isThroughProxyNode = (
   return true
 }
 
-export interface AccumulatedTotals {
+interface AccumulatedTotals {
   proxyDownTotal: number
   proxyUpTotal: number
   directDownTotal: number

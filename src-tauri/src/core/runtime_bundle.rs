@@ -348,10 +348,7 @@ fn collect_ssh_private_keys(
             proxy.remove("private-key");
             continue;
         }
-        let Some(source) = local_provider_source(config_root, &raw_path)
-            .ok()
-            .filter(|source| source.is_file())
-        else {
+        let Some(source) = local_provider_source(config_root, &raw_path).ok().filter(|source| source.is_file()) else {
             let name = proxy.get("name").and_then(Value::as_str).unwrap_or_default();
             logging!(
                 warn,

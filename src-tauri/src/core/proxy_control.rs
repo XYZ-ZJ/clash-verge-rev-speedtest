@@ -290,9 +290,7 @@ impl ServiceProxyOperations {
             // operation_lock away from apply/clear/stop for the whole stall.
             let outcome = tokio::time::timeout(GUARD_REQUEST_TIMEOUT, request())
                 .await
-                .map_err(|_| {
-                    anyhow::anyhow!("service proxy request timed out after {GUARD_REQUEST_TIMEOUT:?}")
-                })?;
+                .map_err(|_| anyhow::anyhow!("service proxy request timed out after {GUARD_REQUEST_TIMEOUT:?}"))?;
             let outcome = outcome?;
             service_apply_result(requested, outcome)?;
             Ok(true)

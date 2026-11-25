@@ -247,7 +247,7 @@ export const detectCloudflareStatus = async (): Promise<{
 }
 
 // WebRTC STUN 探测公网映射 IP
-export const detectWebRtcIp = async (): Promise<string | null> => {
+const detectWebRtcIp = async (): Promise<string | null> => {
   if (typeof window === 'undefined' || !window.RTCPeerConnection) return null
 
   return new Promise((resolve) => {

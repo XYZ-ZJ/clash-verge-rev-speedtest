@@ -22,7 +22,7 @@ const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 // IP 风控信息定义
-export interface RiskInfo {
+interface RiskInfo {
   score: number
   level: 'low' | 'medium' | 'high'
   type: 'datacenter' | 'residential' | 'mobile' | 'business' | 'unknown'
@@ -33,7 +33,7 @@ export interface RiskInfo {
 }
 
 // 启发式风控与风险等级计算（仅在外部权威风控源不可用时作为兜底）
-export function calculateRiskInfo(params: {
+function calculateRiskInfo(params: {
   isDatacenter?: boolean
   isVpn?: boolean
   isProxy?: boolean
@@ -114,7 +114,7 @@ export function calculateRiskInfo(params: {
 }
 
 // Get current IP and geolocation information （refactored IP detection with service-specific mappings）
-export interface IpInfo {
+interface IpInfo {
   ip: string
   country_code: string
   country: string
@@ -802,7 +802,7 @@ export const getIpInfo = async (): Promise<
 }
 
 // DNS 泄露检测服务接口定义
-export interface DnsServerInfo {
+interface DnsServerInfo {
   ip: string
   country?: string
   country_name?: string
@@ -810,7 +810,7 @@ export interface DnsServerInfo {
   org?: string
 }
 
-export interface DnsLeakResult {
+interface DnsLeakResult {
   hasLeak: boolean
   servers: DnsServerInfo[]
   conclusion: string

@@ -161,12 +161,11 @@ mod windows_owner {
         // The token file content is stable while this process runs. Caching it
         // per root avoids re-opening the file and rewriting its DACL on every
         // Service IPC round-trip; a different root (tests) still recomputes.
-        static CACHED_TOKEN: std::sync::OnceLock<(std::path::PathBuf, String)> =
-            std::sync::OnceLock::new();
-        if let Some((root, token)) = CACHED_TOKEN.get() {
-            if root == app_data_root {
-                return Ok(token.clone());
-            }
+        static CACHED_TOKEN: std::sync::OnceLock<(std::path::PathBuf, String)> = std::sync::OnceLock::new();
+        if let Some((root, token)) = CACHED_TOKEN.get()
+            && root == app_data_root
+        {
+            return Ok(token.clone());
         }
         let token = load_or_create_token_uncached(app_data_root, sid)?;
         let _ = CACHED_TOKEN.set((app_data_root.to_path_buf(), token.clone()));

@@ -13,8 +13,10 @@ use clash_verge_logging::{Type, logging};
 use serde_yaml_ng::{Mapping, Value};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    sync::atomic::{AtomicBool, Ordering},
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Merges one selection pair into fresh backend state to avoid stale-list overwrites.
@@ -185,8 +187,7 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     let Ok(content) = std::fs::read_to_string(full_path) else {
         return;
     };
-    let Ok(serde_yaml_ng::Value::Mapping(pdoc)) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
-    else {
+    let Ok(serde_yaml_ng::Value::Mapping(pdoc)) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content) else {
         return;
     };
 

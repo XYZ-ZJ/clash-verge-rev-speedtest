@@ -199,7 +199,7 @@ async fn import_subscription(url: &str, name: Option<&String>) {
         "", // 空 msg 传入，我们不希望导致 后端-前端-后端 死循环，这里只做提醒。
     );
 
-    post_import_updates(&uid).await;
+    post_import_updates(&uid);
 }
 
 async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem> {
@@ -213,7 +213,7 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
     }
 }
 
-async fn post_import_updates(uid: &String) {
+fn post_import_updates(uid: &str) {
     handle::Handle::refresh_verge();
     handle::Handle::notify_profile_changed(uid);
 }

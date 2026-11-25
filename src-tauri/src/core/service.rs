@@ -336,11 +336,12 @@ pub(crate) fn service_stop_reason() -> Result<Option<&'static str>> {
 pub(crate) fn trusted_service_evidence() -> Result<bool> {
     if !Path::new("/run/systemd/system").exists() {
         let slug = clash_verge_service_ipc::SERVICE_SLUG;
-        let has_unit = [
+        let candidates = [
             format!("/etc/systemd/system/{slug}.service"),
             format!("/usr/lib/systemd/system/{slug}.service"),
             format!("/etc/init.d/{slug}"),
-        ].into_iter().any(|p| PathBuf::from(p).exists());
+        ];
+        let has_unit = candidates.into_iter().any(|p| Path::new(&p).exists());
         return Ok(has_unit);
     }
     let unit = format!("{}.service", clash_verge_service_ipc::SERVICE_SLUG);

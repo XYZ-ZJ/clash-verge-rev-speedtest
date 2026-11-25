@@ -498,13 +498,13 @@ fn copy_bounded(mut reader: impl std::io::Read, out: &mut File) -> Result<()> {
 #[cfg(windows)]
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(package)).context("invalid core archive")?;
-    let mut entry = archive.by_index(0).context("the core archive is empty")?;
+    let entry = archive.by_index(0).context("the core archive is empty")?;
     copy_bounded(entry, out).context("failed to extract the core")
 }
 
 #[cfg(not(windows))]
 fn unpack(package: &[u8], out: &mut File) -> Result<()> {
-    let mut decoder = flate2::read::GzDecoder::new(package);
+    let decoder = flate2::read::GzDecoder::new(package);
     copy_bounded(decoder, out).context("failed to decompress the core")
 }
 

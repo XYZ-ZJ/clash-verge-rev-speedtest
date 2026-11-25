@@ -70,9 +70,7 @@ pub async fn save_profile_file(
     };
 
     // 保存新的配置文件（原子替换，避免写一半崩溃截断原文件）
-    help::save_yaml_str(&file_path, file_data.as_str())
-        .await
-        .stringify_err()?;
+    help::save_yaml_str(&file_path, file_data.as_str()).await.stringify_err()?;
 
     let changes_applied = handle_saved_profile_file(
         &file_path_str,
@@ -101,9 +99,7 @@ async fn restore_original(
 ) -> CmdResult<()> {
     if original_existed {
         // 回滚同样走原子替换
-        help::save_yaml_str(file_path, original_content)
-            .await
-            .stringify_err()
+        help::save_yaml_str(file_path, original_content).await.stringify_err()
     } else {
         fs::remove_file(file_path).await.stringify_err()
     }
