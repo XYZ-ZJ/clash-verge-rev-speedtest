@@ -240,6 +240,18 @@ pub fn get_last_part_and_decode(url: &str) -> Option<String> {
 }
 
 pub fn open_file(path: PathBuf) -> Result<()> {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "js" | "jse" | "vbs" | "vbe" | "bat" | "cmd" | "ps1" | "exe" | "msi" | "sh"
+            )
+        })
+    {
+        anyhow::bail!("refusing to execute script or executable via default opener: {}", path.display());
+    }
     open::that_detached(path.as_os_str())?;
     Ok(())
 }

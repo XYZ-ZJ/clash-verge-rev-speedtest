@@ -466,18 +466,22 @@ impl CoreManager {
         defer! {
             self.finish_config_update();
         }
+        {
+            let _life = self.lifecycle_lock.lock().await;
+            self.controlled_stop_core_inner().await?;
+        }
+
+        // Release locks while the OS elevation UI blocks so exit handlers stay responsive.
+        SERVICE_MANAGER
+            .handle_service_status(ServiceStatus::UninstallRequired)
+            .await?;
+
         // Lock order is config then lifecycle, for the unclaimed draft write below.
         let _config_write = Config::lock_config_write().await;
         let _life = self.lifecycle_lock.lock().await;
 
-        self.controlled_stop_core_inner().await?;
-
         let result = run_uninstall_transition(
-            || async {
-                SERVICE_MANAGER
-                    .handle_service_status(ServiceStatus::UninstallRequired)
-                    .await
-            },
+            || async { Ok(()) },
             || async {
                 // Must be asked after the uninstall: until then the Service still makes TUN capable.
                 let tun_enabled = Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false);
@@ -812,14 +816,42 @@ impl CoreManager {
             anyhow::bail!("invalid clash core: {clash_core}");
         }
 
-        Config::verge().await.edit_draft(|d| {
-            d.clash_core = Some(clash_core.to_owned());
-        });
-        Config::verge().await.apply();
+        let _config_write = Config::lock_config_write().await;
+        let prev_core = {
+            let verge = Config::verge().await;
+            let prev = verge.latest_arc().clash_core.clone();
+            verge.edit_draft(|d| {
+                d.clash_core = Some(clash_core.to_owned());
+            });
+            verge.apply();
 
-        let verge_data = Config::verge().await.latest_arc();
-        verge_data.save_file().await?;
-        self.update_config_checked().await
+            if let Err(err) = verge.latest_arc().save_file().await {
+                verge.edit_draft(|d| {
+                    d.clash_core = prev;
+                });
+                verge.apply();
+                return Err(err);
+            }
+            prev
+        };
+
+        if let Err(err) = self.update_config_checked().await {
+            let verge = Config::verge().await;
+            verge.edit_draft(|d| {
+                d.clash_core = prev_core;
+            });
+            verge.apply();
+            if let Err(rollback_err) = verge.latest_arc().save_file().await {
+                logging!(
+                    warn,
+                    Type::Core,
+                    "failed to persist clash_core rollback after core switch error: {rollback_err:#}"
+                );
+            }
+            return Err(err);
+        }
+
+        Ok(())
     }
 
     async fn prepare_startup(&self) -> StartupDecision {

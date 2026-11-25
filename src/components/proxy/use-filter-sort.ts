@@ -21,7 +21,13 @@ export function filterSort(
   latencyTimeout?: number,
   searchState?: ProxySearchState,
 ) {
-  const fp = filterProxies(proxies, groupName, filterText, searchState)
+  const fp = filterProxies(
+    proxies,
+    groupName,
+    filterText,
+    searchState,
+    latencyTimeout,
+  )
   const sp = sortProxies(fp, groupName, sortType, latencyTimeout)
   return sp
 }
@@ -34,26 +40,37 @@ function filterProxies(
   groupName: string,
   filterText: string,
   searchState?: ProxySearchState,
+  latencyTimeout?: number,
 ) {
   const query = filterText.trim()
   if (!query) return proxies
+
+  const effectiveTimeout =
+    typeof latencyTimeout === 'number' && latencyTimeout > 0
+      ? latencyTimeout
+      : DEFAULT_DELAY_TIMEOUT
 
   const res1 = regex1.exec(query)
   if (res1) {
     const symbol = res1[1]
     const symbol2 = res1[2].toLowerCase()
     const value =
-      symbol2 === 'error' ? 1e5 : symbol2 === 'timeout' ? 3000 : +symbol2
+      symbol2 === 'error'
+        ? 1e5
+        : symbol2 === 'timeout'
+          ? effectiveTimeout
+          : Number.parseInt(symbol2, 10)
 
     return proxies.filter(({ member }) => {
       const delay = delayManager.getDelayFix(member, groupName)
 
       if (delay < 0) return false
       if (symbol === '=' && symbol2 === 'error') return delay >= 1e5
-      if (symbol === '=' && symbol2 === 'timeout')
-        return delay < 1e5 && delay >= 3000
-      if (symbol === '=') return delay == value
-      if (symbol === '<') return delay <= value
+      if (symbol === '=' && symbol2 === 'timeout') {
+        return delay === 0 || (delay < 1e5 && delay >= effectiveTimeout)
+      }
+      if (symbol === '=') return delay === value
+      if (symbol === '<') return delay > 0 && delay <= value
       if (symbol === '>') return delay >= value
       return false
     })

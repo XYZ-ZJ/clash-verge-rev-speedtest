@@ -494,6 +494,17 @@ pub async fn view_profile(index: std::string::String) -> CmdResult {
         ));
     }
 
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("js"))
+    {
+        return CmdResult::Err(coded_error(
+            "PROFILE_OPEN_FAILED",
+            "refusing to invoke OS shell handler on .js script; please edit scripts using the built-in editor",
+        ));
+    }
+
     help::open_file(path).with_error_code("PROFILE_OPEN_FAILED")
 }
 

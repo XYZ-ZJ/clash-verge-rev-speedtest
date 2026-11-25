@@ -327,7 +327,12 @@ impl IVerge {
     }
 
     pub fn get_valid_clash_core(&self) -> String {
-        self.clash_core.clone().unwrap_or_else(|| "verge-mihomo".into())
+        self.clash_core
+            .as_deref()
+            .map(str::trim)
+            .filter(|core| Self::VALID_CLASH_CORES.contains(core))
+            .map(String::from)
+            .unwrap_or_else(|| "verge-mihomo".into())
     }
 
     pub async fn new() -> Self {
@@ -486,7 +491,11 @@ impl IVerge {
         patch_opt_field!(self, patch, proxy_host);
         patch_opt_field!(self, patch, theme_setting);
         patch_opt_field!(self, patch, web_ui_list);
-        patch_opt_field!(self, patch, clash_core);
+        if let Some(core) = patch.clash_core.as_deref().map(str::trim)
+            && Self::VALID_CLASH_CORES.contains(&core)
+        {
+            self.clash_core = Some(core.into());
+        }
         patch_opt_field!(self, patch, hotkeys);
         patch_opt_field!(self, patch, enable_global_hotkey);
 
@@ -504,7 +513,15 @@ impl IVerge {
         patch_opt_field!(self, patch, auto_backup_interval_hours);
         patch_opt_field!(self, patch, auto_backup_on_change);
 
+        let url_changed = patch
+            .webdav_url
+            .as_ref()
+            .is_some_and(|next| self.webdav_url.as_ref().map(|prev| prev.trim()) != Some(next.trim()));
         patch_opt_field!(self, patch, webdav_url);
+        if url_changed && patch.webdav_username.is_none() && patch.webdav_password.is_none() {
+            self.webdav_username = None;
+            self.webdav_password = None;
+        }
         patch_opt_field!(self, patch, webdav_username);
         patch_opt_field!(self, patch, webdav_password);
         #[cfg(target_os = "macos")]

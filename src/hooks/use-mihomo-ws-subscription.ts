@@ -104,7 +104,7 @@ const createSharedSubscriptionEntry = (
       }
 
       ws.addListener((msg: Message) => {
-        if (msg.type !== 'Text') return
+        if (entry.closed || msg.type !== 'Text') return
         const activeOwner = pickActiveOwner(entry)
         if (!activeOwner) return
 
@@ -323,6 +323,10 @@ export const useMihomoWsSubscription = <T>(
   const refresh = useCallback(() => {
     if (subscriptionCacheKey) {
       writeSubscriptionSnapshot(subscriptionCacheKey, fallbackData)
+      const entry = sharedSubscriptions.get(subscriptionCacheKey)
+      if (entry && !entry.closed && entry.refs > 1) {
+        void entry.scheduleReconnect()
+      }
     }
     setRefreshEpoch((epoch) => epoch + 1)
   }, [subscriptionCacheKey, fallbackData])

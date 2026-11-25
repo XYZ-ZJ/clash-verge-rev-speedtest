@@ -1,6 +1,10 @@
 import {
   decodeAndTrim,
+  getIfNotBlank,
   parseBoolOrPresence,
+  parseCommaList,
+  parseEchParam,
+  parseInsecureParam,
   parseInteger,
   parsePortOrDefault,
   parseQueryStringNormalized,
@@ -25,15 +29,9 @@ export function URI_TUIC(line: string): IProxyTuicConfig {
     requireAuth: true,
     errorMessage: 'Invalid tuic uri',
   })
-  const [uuid, passwordRaw] = splitOnce(auth, ':')
-  if (passwordRaw === undefined) {
-    throw new Error('Invalid tuic uri')
-  }
 
   const portNum = parsePortOrDefault(port, 443)
-  const password = safeDecodeURIComponent(passwordRaw) ?? passwordRaw
   const decodedName = decodeAndTrim(nameRaw)
-
   const name = decodedName ?? `TUIC ${server}:${portNum}`
 
   const proxy: IProxyTuicConfig = {
@@ -41,24 +39,31 @@ export function URI_TUIC(line: string): IProxyTuicConfig {
     name,
     server,
     port: portNum,
-    password,
-    uuid,
+  }
+
+  const [authLeft, authRight] = splitOnce(auth, ':')
+  if (authRight === undefined) {
+    // TUIC v4 uses `tuic://token@host:port` without a colon-separated uuid:password.
+    proxy.token = safeDecodeURIComponent(authLeft) ?? authLeft
+  } else {
+    proxy.uuid = safeDecodeURIComponent(authLeft) ?? authLeft
+    proxy.password = safeDecodeURIComponent(authRight) ?? authRight
   }
 
   const params = parseQueryStringNormalized(addons)
   for (const [key, value] of Object.entries(params)) {
     switch (key) {
       case 'token':
-        proxy.token = value
+        if (value) proxy.token = value
         break
       case 'ip':
-        proxy.ip = value
+        if (value) proxy.ip = value
         break
       case 'heartbeat-interval':
         proxy['heartbeat-interval'] = parseInteger(value)
         break
       case 'alpn':
-        proxy.alpn = value ? value.split(',') : undefined
+        proxy.alpn = parseCommaList(value)
         break
       case 'disable-sni':
         proxy['disable-sni'] = parseBoolOrPresence(value)
@@ -70,10 +75,10 @@ export function URI_TUIC(line: string): IProxyTuicConfig {
         proxy['request-timeout'] = parseInteger(value)
         break
       case 'udp-relay-mode':
-        proxy['udp-relay-mode'] = value
+        if (value) proxy['udp-relay-mode'] = value
         break
       case 'congestion-controller':
-        proxy['congestion-controller'] = value
+        if (value) proxy['congestion-controller'] = value
         break
       case 'max-udp-relay-packet-size':
         proxy['max-udp-relay-packet-size'] = parseInteger(value)
@@ -81,19 +86,45 @@ export function URI_TUIC(line: string): IProxyTuicConfig {
       case 'fast-open':
         proxy['fast-open'] = parseBoolOrPresence(value)
         break
-      case 'skip-cert-verify':
-      case 'allow-insecure':
-        proxy['skip-cert-verify'] = parseBoolOrPresence(value)
-        break
       case 'max-open-streams':
         proxy['max-open-streams'] = parseInteger(value)
         break
       case 'sni':
-        proxy.sni = value
+        if (value) proxy.sni = value
+        break
+      case 'fingerprint':
+      case 'pinSHA256':
+      case 'hpkp':
+        if (value) proxy.fingerprint = value
+        break
+      case 'ca':
+        if (value) proxy.ca = value
+        break
+      case 'ca-str':
+        if (value) proxy['ca-str'] = value
+        break
+      case 'udp-over-stream':
+        proxy['udp-over-stream'] = parseBoolOrPresence(value)
+        break
+      case 'udp-over-stream-version':
+        proxy['udp-over-stream-version'] = parseInteger(value)
         break
       default:
         break
     }
+  }
+
+  const insecure = parseInsecureParam(params)
+  if (insecure !== undefined) {
+    proxy['skip-cert-verify'] = insecure
+  }
+
+  const echOpts = parseEchParam(
+    getIfNotBlank(params.ech ?? params['ech-config']),
+    params['ech-query-server-name'] ?? params.echQueryServerName,
+  )
+  if (echOpts) {
+    proxy['ech-opts'] = echOpts
   }
 
   return proxy

@@ -1,6 +1,11 @@
 name: Backend Guardrails
 
 on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/backend-guardrails.yml"
   pull_request:
     paths:
       - "src-tauri/**"

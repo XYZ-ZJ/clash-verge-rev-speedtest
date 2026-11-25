@@ -159,24 +159,23 @@ const DEFAULT_DNS_CONFIG = {
     '*.arpa',
     'time.*.com',
     'ntp.*.com',
-    'time.*.com',
     '+.market.xiaomi.com',
     'localhost.ptlogin2.qq.com',
     '*.msftncsi.com',
     'www.msftconnecttest.com',
   ],
   'default-nameserver': [
-    '223.5.5.5',
     '1.1.1.1',
-    '223.6.6.6',
+    '8.8.4.4',
+    '9.9.9.9',
     '8.8.8.8',
-    '2400:3200::1',
+    '2606:4700:4700::1111',
     '2001:4860:4860::8888',
   ],
   nameserver: [
     '8.8.8.8',
-    'https://doh.pub/dns-query',
-    'https://dns.alidns.com/dns-query',
+    'https://1.1.1.1/dns-query',
+    'https://dns.google/dns-query',
   ],
   fallback: [],
   'nameserver-policy': {},
@@ -206,6 +205,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const [open, setOpen] = useState(false)
   const [visualization, setVisualization] = useState(true)
   const skipYamlSyncRef = useRef(false)
+  const loadedConfigRef = useRef<Record<string, any> | null>(null)
   const editorRef = useRef<MonacoEditorInstance | null>(null)
   const [values, setValues] = useState<{
     enable: boolean
@@ -392,6 +392,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
   }, [generateDnsConfig, values.hosts])
 
   const resetToDefaults = useCallback(() => {
+    loadedConfigRef.current = null
     setValues({
       enable: DEFAULT_DNS_CONFIG.enable,
       listen: DEFAULT_DNS_CONFIG.listen,
@@ -476,7 +477,9 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
 
       if (dnsConfig !== null) {
         const config = yaml.load(dnsConfig) as any
-
+        loadedConfigRef.current =
+          config && typeof config === 'object' ? config : null
+        skipYamlSyncRef.current = true
         updateValuesFromConfig(config)
         setYamlContent(dnsConfig)
       } else {
@@ -505,11 +508,20 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
       let config: Record<string, any>
 
       if (visualization) {
-        config = {}
+        const baseConfig =
+          loadedConfigRef.current && typeof loadedConfigRef.current === 'object'
+            ? { ...loadedConfigRef.current }
+            : {}
+        const existingDns =
+          baseConfig.dns && typeof baseConfig.dns === 'object'
+            ? baseConfig.dns
+            : {}
+
+        config = baseConfig
 
         const dnsConfig = generateDnsConfig()
         if (Object.keys(dnsConfig).length > 0) {
-          config.dns = dnsConfig
+          config.dns = { ...existingDns, ...dnsConfig }
         }
 
         config.hosts = parseHosts(values.hosts)

@@ -6,7 +6,7 @@ import { BaseDialog, BaseLoadingOverlay } from '@/components/base'
 import { useVerge } from '@/hooks/use-verge'
 import { listWebDavBackup } from '@/services/cmds'
 import { errorDetail, showNotice } from '@/services/notice-service'
-import { buildWebdavSignature, setWebdavStatus } from '@/services/webdav-status'
+import { setWebdavStatus, useWebdavSignature } from '@/services/webdav-status'
 
 import { BackupConfigViewer } from './backup-config-viewer'
 
@@ -26,7 +26,7 @@ export const BackupWebdavDialog = ({
   const { t } = useTranslation()
   const { verge } = useVerge()
   const [loading, setLoading] = useState(false)
-  const webdavSignature = buildWebdavSignature(verge)
+  const webdavSignature = useWebdavSignature(verge)
 
   const handleLoading = useCallback(
     (value: boolean) => {

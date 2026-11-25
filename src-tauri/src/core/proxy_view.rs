@@ -5,12 +5,18 @@ use tauri_plugin_mihomo::models::{
     DelayHistory, Proxies, Proxy, ProxyProvider, ProxyProviders, ProxyType, VehicleType,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct NodeFeatureScopes {
+    pub core: BTreeMap<String, NodeFeature>,
+    pub providers: BTreeMap<String, BTreeMap<String, NodeFeature>>,
+}
+
 pub struct ProxyViewInput {
     pub runtime_group_order: Vec<String>,
     pub group_scopes: BTreeMap<String, GroupScope>,
     pub proxies: Proxies,
     pub providers: Option<ProxyProviders>,
-    pub node_features: BTreeMap<String, NodeFeature>,
+    pub node_features: NodeFeatureScopes,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, specta::Type)]
@@ -267,9 +273,9 @@ impl ProxyViewBuilder {
             ProxyViewProviderState::Unavailable
         };
         let (mut core_groups, core_nodes) = partition_core(proxies);
-        let (mut records, core_node_ids) = build_core_records(core_nodes, &node_features);
+        let (mut records, core_node_ids) = build_core_records(core_nodes, &node_features.core);
         let (providers, provider_candidates) =
-            build_provider_records(providers, &mut records, &node_features);
+            build_provider_records(providers, &mut records, &node_features.providers);
         let resolver = MemberResolver {
             group_names: core_groups.keys().cloned().collect(),
             group_scopes: &group_scopes,
@@ -344,7 +350,7 @@ fn build_core_records(
 fn build_provider_records(
     providers: Option<ProxyProviders>,
     records: &mut BTreeMap<String, ProxyNodeView>,
-    features: &BTreeMap<String, NodeFeature>,
+    provider_features: &BTreeMap<String, BTreeMap<String, NodeFeature>>,
 ) -> (Vec<ProxyProviderView>, ProviderCandidates) {
     let providers = providers
         .map(|providers| providers.providers.into_iter().collect::<BTreeMap<_, _>>())
@@ -353,6 +359,7 @@ fn build_provider_records(
     let mut candidates = BTreeMap::new();
 
     for (provider_name, provider) in providers {
+        let scoped_features = provider_features.get(&provider_name);
         let ProxyProvider {
             vehicle_type,
             proxies,
@@ -377,7 +384,7 @@ fn build_provider_records(
                 .entry(proxy_name.clone())
                 .or_insert_with(Vec::new)
                 .push((provider_name.clone(), record_id.clone()));
-            let feature = features.get(&node_name).copied();
+            let feature = scoped_features.and_then(|map| map.get(&node_name).copied());
             records.insert(
                 record_id.clone(),
                 build_node(

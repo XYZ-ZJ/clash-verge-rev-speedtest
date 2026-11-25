@@ -47,10 +47,13 @@ const AI_RESTRICTED_COUNTRIES = new Set([
   'CN', 'RU', 'IR', 'KP', 'CU', 'SY', 'BY', 'VE',
 ])
 
-const safeFetch = async (url: string, timeoutMs = 4000): Promise<string | null> => {
+const safeFetch = async (
+  url: string,
+  timeoutMs = 4000,
+): Promise<string | null> => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     // 拼接防缓存随机时间戳，确保每一次手动刷新都绝对穿透本地/代理缓存，发起真实 HTTP 网络请求
     const separator = url.includes('?') ? '&' : '?'
     const cacheBusterUrl = `${url}${separator}_t=${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -61,29 +64,77 @@ const safeFetch = async (url: string, timeoutMs = 4000): Promise<string | null> 
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
+        Pragma: 'no-cache',
       },
     })
-    clearTimeout(timeout)
     if (res.ok) {
       return await res.text()
     }
   } catch {
     // 允许单个探针失败，不阻断整体报告
+  } finally {
+    clearTimeout(timeout)
   }
   return null
 }
 
-const getUtcOffsetHours = (tz?: string): number => {
+export const getUtcOffsetHours = (tz?: string): number | null => {
   try {
-    if (!tz) return -new Date().getTimezoneOffset() / 60
+    if (!tz) return null
     const now = new Date()
-    const str = now.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
-    const match = str.match(/GMT([+-]?\d+)/)
-    return match ? parseInt(match[1], 10) : -new Date().getTimezoneOffset() / 60
+    const str = now.toLocaleString('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    })
+    const match = str.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/)
+    if (match) {
+      const hours = parseInt(match[1], 10)
+      const mins = match[2] ? parseInt(match[2], 10) : 0
+      const sign = hours < 0 || match[1].startsWith('-') ? -1 : 1
+      return hours + (sign * mins) / 60
+    }
+    if (/\b(?:GMT|UTC)\b/.test(str)) {
+      return 0
+    }
+    return null
   } catch {
-    return -new Date().getTimezoneOffset() / 60
+    return null
   }
+}
+
+const isValidIpv4Address = (candidate: string): boolean => {
+  const octets = candidate.split('.')
+  if (octets.length !== 4) return false
+  return octets.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false
+    const num = Number(part)
+    return num >= 0 && num <= 255
+  })
+}
+
+const isValidIpAddress = (candidate: string): boolean => {
+  if (!candidate || candidate.length > 64) return false
+  if (isValidIpv4Address(candidate)) return true
+  if (!candidate.includes(':')) return false
+  try {
+    const normalized = candidate.replace(/^\[|\]$/g, '')
+    const parsed = new URL(`http://[${normalized}]`)
+    return parsed.hostname.startsWith('[') && parsed.hostname.endsWith(']')
+  } catch {
+    return false
+  }
+}
+
+export const extractCandidateIp = (cand: string): string | null => {
+  if (!cand.includes('srflx')) return null
+  const parts = cand.trim().split(/\s+/)
+  if (parts.length >= 8 && parts[6] === 'typ' && parts[7] === 'srflx' && parts[4]) {
+    if (isValidIpAddress(parts[4])) return parts[4]
+  }
+  for (const token of parts) {
+    if (isValidIpAddress(token)) return token
+  }
+  return null
 }
 
 // 真实探测 Cloudflare 边缘放行状态与人机验证
@@ -94,9 +145,9 @@ export const detectCloudflareStatus = async (): Promise<{
   rttMs: number
 }> => {
   const start = performance.now()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 4500)
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4500)
     const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     const [resMeta, resTrace] = await Promise.all([
       fetch(`https://speed.cloudflare.com/meta?_t=${nonce}`, {
@@ -115,7 +166,6 @@ export const detectCloudflareStatus = async (): Promise<{
         },
       }).catch(() => null),
     ])
-    clearTimeout(timeout)
     const rttMs = Math.round(performance.now() - start)
 
     if (resMeta && resMeta.ok) {
@@ -155,6 +205,8 @@ export const detectCloudflareStatus = async (): Promise<{
       description: '探测 Cloudflare 鉴权服务超时，该出口可能受到网络限制。',
       rttMs,
     }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -188,27 +240,11 @@ export const detectWebRtcIp = async (): Promise<string | null> => {
 
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          const cand = e.candidate.candidate
-          if (cand.includes('srflx')) {
-            // 标准 SDP candidate 行：candidate:foundation component transport priority ip port typ srflx ...
-            const parts = cand.trim().split(/\s+/)
-            let ipFound = ''
-            if (parts.length >= 8 && parts[6] === 'typ' && parts[7] === 'srflx' && parts[4]) {
-              ipFound = parts[4]
-            } else {
-              // 兼容正则：支持标准 IPv4 以及包括 240e:3b0::1:2、::1 等在内的压缩 IPv6 地址
-              const match = cand.match(
-                /((?:\d{1,3}\.){3}\d{1,3}|(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}|(?:::)?(?:[0-9a-fA-F]{1,4}:*)+(?:::)?(?:[0-9a-fA-F]{1,4})*)/,
-              )
-              if (match) {
-                ipFound = match[1]
-              }
-            }
-            if (ipFound && !resolved) {
-              resolved = true
-              cleanup()
-              resolve(ipFound)
-            }
+          const ipFound = extractCandidateIp(e.candidate.candidate)
+          if (ipFound && !resolved) {
+            resolved = true
+            cleanup()
+            resolve(ipFound)
           }
         }
       }
@@ -298,8 +334,12 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   const exits: EgressItem[] = []
   let dIndex = 1
 
-  // D1: 国内直连 IPv4
-  if (directV4) {
+  // 若国内直连探针与代理出口 IP 完全一致（典型为 Global 全代理模式），不再误标为国内直连分流出口
+  const isDirectV4SameAsProxy = Boolean(directV4 && proxyIp && directV4 === proxyIp)
+  const isDirectV6SameAsProxy = Boolean(directV6 && proxyIp && directV6 === proxyIp)
+
+  // D1: 国内直连 IPv4（仅当与代理出口不同时视作独立直连出口）
+  if (directV4 && !isDirectV4SameAsProxy) {
     exits.push({
       id: `D${dIndex++}`,
       ip: directV4,
@@ -313,8 +353,8 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // D2: 国内直连 IPv6 (如果有且与 IPv4 不同)
-  if (directV6 && directV6 !== directV4) {
+  // D2: 国内直连 IPv6 (如果有且与 IPv4 及代理出口不同)
+  if (directV6 && directV6 !== directV4 && !isDirectV6SameAsProxy) {
     exits.push({
       id: `D${dIndex++}`,
       ip: directV6,
@@ -328,7 +368,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // D3: 海外代理 IPv4
+  // 代理出口
   const proxyV4Id = `D${dIndex++}`
   if (proxyIp) {
     exits.push({
@@ -392,12 +432,13 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   // (3) WebRTC 检测
   if (webrtcIp) {
     const webrtcIsDirect =
-      directExit &&
-      (webrtcIp === directExit.ip ||
-        webrtcIp === directV4 ||
-        webrtcIp === directV6)
+      Boolean(directExit) &&
+      webrtcIp !== proxyExit?.ip &&
+      (webrtcIp === directExit?.ip ||
+        (!isDirectV4SameAsProxy && webrtcIp === directV4) ||
+        (!isDirectV6SameAsProxy && webrtcIp === directV6))
 
-    if (webrtcIsDirect) {
+    if (webrtcIsDirect && directExit) {
       findings.push({
         key: 'webrtc',
         label: 'WebRTC',
@@ -454,23 +495,33 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     })
   }
 
-  // (5) 时区比对（和出口一致标绿，不一致标红，无数据标灰）
-  const systemTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
-  const sysOffset = getUtcOffsetHours(systemTz)
-  const formatOffset = (h: number) => `UTC${h >= 0 ? '+' : ''}${h}`
+  // (5) 时区比对（和出口一致标绿，不一致标红，无数据或无法解析标灰）
+  const resolvedTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const systemTz = resolvedTz || `UTC`
+  const sysOffset =
+    getUtcOffsetHours(resolvedTz) ?? -new Date().getTimezoneOffset() / 60
+  const formatOffset = (h: number) => {
+    const sign = h >= 0 ? '+' : '-'
+    const absMins = Math.round(Math.abs(h) * 60)
+    const hrs = Math.floor(absMins / 60)
+    const mins = absMins % 60
+    return mins > 0
+      ? `UTC${sign}${hrs}:${String(mins).padStart(2, '0')}`
+      : `UTC${sign}${hrs}`
+  }
 
-  if (!proxyTimezone) {
+  const exitOffset = getUtcOffsetHours(proxyTimezone)
+  if (!proxyTimezone || exitOffset === null) {
     findings.push({
       key: 'timezone',
       label: '时区',
       ok: true,
       badge: '未提供',
       badgeColor: 'default',
-      text: '未获取到代理出口的时区数据，无法进行时区比对',
+      text: '未获取到代理出口的有效时区数据，无法进行时区比对',
     })
   } else {
-    const exitOffset = getUtcOffsetHours(proxyTimezone)
-    const isTimezoneSame = sysOffset === exitOffset
+    const isTimezoneSame = Math.abs(sysOffset - exitOffset) < 1e-6
 
     if (isTimezoneSame) {
       findings.push({

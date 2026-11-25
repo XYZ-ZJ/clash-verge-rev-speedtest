@@ -116,7 +116,7 @@ class TrafficTrackerStore {
     traffic: TrafficInput | undefined,
     currentMode: string | null | undefined,
   ) {
-    if (!connectionData) return
+    if (!connectionData || !currentMode) return
 
     const activeConns = connectionData.activeConnections || []
     const closedConns = connectionData.closedConnections || []
@@ -124,11 +124,19 @@ class TrafficTrackerStore {
 
     const globalDownTotal = traffic?.downTotal || 0
     const globalUpTotal = traffic?.upTotal || 0
+    const isTransientZeroFallback =
+      globalDownTotal === 0 &&
+      globalUpTotal === 0 &&
+      (traffic?.up || 0) === 0 &&
+      (traffic?.down || 0) === 0 &&
+      allConns.some((c) => this.seen.has(c.id))
 
-    // 检测到内核重启，重置累计值
+    // 仅在真实内核计数回落且非瞬断 FALLBACK_TRAFFIC 心跳时重置累计值
     if (
-      globalDownTotal < this.lastKernelDownTotal ||
-      globalUpTotal < this.lastKernelUpTotal
+      this.initialized &&
+      !isTransientZeroFallback &&
+      (globalDownTotal < this.lastKernelDownTotal ||
+        globalUpTotal < this.lastKernelUpTotal)
     ) {
       this.proxyDownTotal = 0
       this.proxyUpTotal = 0
@@ -137,8 +145,10 @@ class TrafficTrackerStore {
       this.seen.clear()
       this.initialized = false
     }
-    this.lastKernelDownTotal = globalDownTotal
-    this.lastKernelUpTotal = globalUpTotal
+    if (!isTransientZeroFallback) {
+      this.lastKernelDownTotal = globalDownTotal
+      this.lastKernelUpTotal = globalUpTotal
+    }
 
     let changed = false
 

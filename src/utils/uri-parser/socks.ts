@@ -1,6 +1,11 @@
 import {
   decodeAndTrim,
+  decodeBase64OrOriginal,
+  getIfNotBlank,
   parseBoolOrPresence,
+  parseCommaList,
+  parseEchParam,
+  parseInsecureParam,
   parseIpVersion,
   parsePortOrDefault,
   parseQueryStringNormalized,
@@ -19,17 +24,38 @@ export function URI_SOCKS(line: string): IProxySocks5Config {
   if (!afterScheme) {
     throw new Error('Invalid socks uri')
   }
+
+  const [beforeHash, nameRaw] = splitOnce(afterScheme, '#')
+  const [mainRaw, queryRaw] = splitOnce(beforeHash, '?')
+  let normalizedMain = mainRaw
+  if (!mainRaw.includes('@')) {
+    const decoded = decodeBase64OrOriginal(mainRaw)
+    if (decoded !== mainRaw) {
+      normalizedMain = decoded
+    }
+  }
+  const reconstructed =
+    normalizedMain +
+    (queryRaw !== undefined ? `?${queryRaw}` : '') +
+    (nameRaw !== undefined ? `#${nameRaw}` : '')
+
   const {
     auth: authRaw,
     host: server,
     port,
     query: addons,
-    fragment: nameRaw,
-  } = parseUrlLike(afterScheme, { errorMessage: 'Invalid socks uri' })
-  const portNum = parsePortOrDefault(port, 443)
+    fragment: fragmentRaw,
+  } = parseUrlLike(reconstructed, { errorMessage: 'Invalid socks uri' })
+  const portNum = parsePortOrDefault(port, 1080)
 
-  const auth = safeDecodeURIComponent(authRaw) ?? authRaw
-  const decodedName = decodeAndTrim(nameRaw)
+  let auth = safeDecodeURIComponent(authRaw) ?? authRaw
+  if (auth && !auth.includes(':')) {
+    const decodedAuth = decodeBase64OrOriginal(auth)
+    if (decodedAuth.includes(':')) {
+      auth = decodedAuth
+    }
+  }
+  const decodedName = decodeAndTrim(fragmentRaw)
   const name = decodedName ?? `SOCKS5 ${server}:${portNum}`
   const proxy: IProxySocks5Config = {
     type: 'socks5',
@@ -49,11 +75,20 @@ export function URI_SOCKS(line: string): IProxySocks5Config {
       case 'tls':
         proxy.tls = parseBoolOrPresence(value)
         break
-      case 'fingerprint':
-        proxy.fingerprint = value
+      case 'sni':
+      case 'peer':
+        if (value) proxy.sni = value
         break
-      case 'skip-cert-verify':
-        proxy['skip-cert-verify'] = parseBoolOrPresence(value)
+      case 'alpn':
+        proxy.alpn = parseCommaList(value)
+        break
+      case 'fingerprint':
+      case 'hpkp':
+      case 'pinSHA256':
+        if (value) proxy.fingerprint = value
+        break
+      case 'name-cert-verify':
+        if (value) proxy['name-cert-verify'] = value
         break
       case 'udp':
         proxy.udp = parseBoolOrPresence(value)
@@ -64,6 +99,19 @@ export function URI_SOCKS(line: string): IProxySocks5Config {
       default:
         break
     }
+  }
+
+  const insecure = parseInsecureParam(params)
+  if (insecure !== undefined) {
+    proxy['skip-cert-verify'] = insecure
+  }
+
+  const echOpts = parseEchParam(
+    getIfNotBlank(params.ech ?? params['ech-config']),
+    params['ech-query-server-name'] ?? params.echQueryServerName,
+  )
+  if (echOpts) {
+    proxy['ech-opts'] = echOpts
   }
 
   return proxy

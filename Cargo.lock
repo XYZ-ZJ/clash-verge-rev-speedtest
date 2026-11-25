@@ -1081,7 +1081,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clash-verge"
-version = "2.6.1"
+version = "2.6.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -7062,7 +7062,7 @@ dependencies = [
 [[package]]
 name = "sysproxy"
 version = "0.7.1"
-source = "git+https://github.com/clash-verge-rev/sysproxy-rs.git?branch=main#89ad876a0942c049ae72e1472f9fc3ed62023c5e"
+source = "git+https://github.com/clash-verge-rev/sysproxy-rs.git?rev=89ad876a0942c049ae72e1472f9fc3ed62023c5e#89ad876a0942c049ae72e1472f9fc3ed62023c5e"
 dependencies = [
  "iptools",
  "log",
@@ -7518,8 +7518,8 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-mihomo"
-version = "0.6.0"
-source = "git+https://github.com/clash-verge-rev/tauri-plugin-mihomo?rev=7a03d16f4d39b1bb885b7babe66b9e153e34b615#7a03d16f4d39b1bb885b7babe66b9e153e34b615"
+version = "0.7.1"
+source = "git+https://github.com/clash-verge-rev/tauri-plugin-mihomo?rev=7e4fa8642cf6c394ed88b5a969420d8eab60087f#7e4fa8642cf6c394ed88b5a969420d8eab60087f"
 dependencies = [
  "arc-swap",
  "clashmap",
@@ -8454,7 +8454,7 @@ dependencies = [
 [[package]]
 name = "tracing-estuary"
 version = "0.1.0"
-source = "git+https://github.com/Tunglies/tracing-estuary.git?branch=main#dbfce033fa4cff8f936f3e7c2282af1277546f3c"
+source = "git+https://github.com/Tunglies/tracing-estuary.git?rev=dbfce033fa4cff8f936f3e7c2282af1277546f3c#dbfce033fa4cff8f936f3e7c2282af1277546f3c"
 dependencies = [
  "anyhow",
  "compact_str",

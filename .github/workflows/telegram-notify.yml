@@ -45,14 +45,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Get Version and Release Info
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GITHUB_REPO: ${{ github.repository }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           else
             VERSION=$(jq -r '.version' package.json)
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "DOWNLOAD_URL=https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v${VERSION}" >> $GITHUB_ENV
+          echo "DOWNLOAD_URL=https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}" >> $GITHUB_ENV
           echo "BUILDTIME=$(TZ=Asia/Shanghai date)" >> $GITHUB_ENV
 
       - name: Generate release.txt
@@ -88,9 +91,6 @@ jobs:
 
           ### FAQ
           - [常见问题](https://clash-verge-rev.github.io/faq/windows.html)
-
-          ### 稳定机场VPN推荐
-          - [狗狗加速](https://cvr.dginv.click/#/register?code=oaxsAGo6)
 
           Created at ${{ env.BUILDTIME }}.
           EOF

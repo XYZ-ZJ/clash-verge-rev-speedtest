@@ -1,4 +1,5 @@
 import {
+  applyWsEarlyData,
   decodeBase64OrOriginal,
   firstString,
   getCipher,
@@ -7,6 +8,11 @@ import {
   isPresent,
   normalizeHost,
   parseBool,
+  parseBoolOrPresence,
+  parseCommaList,
+  parseEchParam,
+  parseInsecureParam,
+  parseInteger,
   parseRequiredPort,
   safeDecodeURIComponent,
   splitOnce,
@@ -62,6 +68,9 @@ function parseVmessParams(decoded: string, raw: string): Record<string, any> {
 
 function parseVmessQuantumult(content: string): IProxyVmessConfig {
   const partitions = content.split(',').map((p) => p.trim())
+  if (partitions.length < 5) {
+    throw new Error('Invalid Quantumult vmess uri')
+  }
   const params: Record<string, string> = {}
   for (const part of partitions) {
     if (part.indexOf('=') !== -1) {
@@ -76,8 +85,8 @@ function parseVmessQuantumult(content: string): IProxyVmessConfig {
     server: normalizeHost(partitions[1]),
     port: parseRequiredPort(partitions[2], 'Invalid vmess uri: invalid port'),
     cipher: getCipher(getIfNotBlank(partitions[3], 'auto')),
-    uuid: partitions[4].match(/^"(.*)"$/)?.[1] || '',
-    tls: params.obfs === 'wss',
+    uuid: partitions[4]?.match(/^"(.*)"$/)?.[1] || '',
+    tls: params.obfs === 'wss' || parseBool(params.tls),
     udp: parseBool(params['udp-relay']),
     tfo: parseBool(params['fast-open']),
     'skip-cert-verify':
@@ -142,13 +151,95 @@ export function URI_VMESS(line: string): IProxyVmessConfig {
       tlsValue === 'true',
     'skip-cert-verify': isPresent(params.verify_cert)
       ? !parseBool(params.verify_cert.toString())
-      : undefined,
+      : parseInsecureParam({
+          'skip-cert-verify': params['skip-cert-verify'],
+          allowInsecure: params.allowInsecure,
+          'allow-insecure': params['allow-insecure'],
+          insecure: params.insecure,
+        }),
   }
 
-  proxy.alterId = parseInt(getIfPresent(params.aid ?? params.alterId, 0), 10)
+  proxy.alterId =
+    parseInteger(String(getIfPresent(params.aid ?? params.alterId, 0))) ?? 0
 
-  if (proxy.tls && params.sni) {
+  if (params.sni) {
     proxy.servername = params.sni
+  }
+
+  if (Array.isArray(params.alpn)) {
+    const alpnList = params.alpn.map((a: unknown) => String(a).trim()).filter(Boolean)
+    if (alpnList.length > 0) proxy.alpn = alpnList
+  } else if (typeof params.alpn === 'string') {
+    const alpnList = parseCommaList(params.alpn)
+    if (alpnList) proxy.alpn = alpnList
+  }
+
+  const clientFp = getIfNotBlank(
+    params.fp ?? params['client-fingerprint'] ?? params.clientFingerprint,
+  )
+  if (clientFp) {
+    proxy['client-fingerprint'] = clientFp as ClientFingerprint
+  }
+
+  const certFp = getIfNotBlank(
+    params.fingerprint ?? params.hpkp ?? params.pinSHA256,
+  )
+  if (certFp) {
+    proxy.fingerprint = certFp
+  }
+
+  if (isPresent(params.udp)) {
+    proxy.udp = parseBoolOrPresence(String(params.udp))
+  }
+
+  const packetEncoding = getIfNotBlank(
+    params.packetEncoding ?? params['packet-encoding'],
+  )
+  if (packetEncoding) {
+    proxy['packet-encoding'] = packetEncoding
+  }
+
+  const globalPadding = params.globalPadding ?? params['global-padding']
+  if (isPresent(globalPadding)) {
+    proxy['global-padding'] = parseBoolOrPresence(String(globalPadding))
+  }
+
+  const authLength =
+    params.authenticatedLength ?? params['authenticated-length']
+  if (isPresent(authLength)) {
+    proxy['authenticated-length'] = parseBoolOrPresence(String(authLength))
+  }
+
+  const echOpts = parseEchParam(
+    typeof params.ech === 'string'
+      ? params.ech
+      : typeof params['ech-config'] === 'string'
+        ? params['ech-config']
+        : undefined,
+    params['ech-query-server-name'] ?? params.echQueryServerName,
+  )
+  if (echOpts) {
+    proxy['ech-opts'] = echOpts
+  }
+
+  if (params.security === 'reality' || params.pbk) {
+    const realityOpts: RealityOptions = {}
+    if (params.pbk) realityOpts['public-key'] = String(params.pbk)
+    if (params.sid) realityOpts['short-id'] = String(params.sid)
+    const mlkem = parseBool(
+      String(
+        params['support-x25519mlkem768'] ??
+          params.supportX25519mlkem768 ??
+          '',
+      ),
+    )
+    if (mlkem !== undefined) {
+      realityOpts['support-x25519mlkem768'] = mlkem
+    }
+    if (Object.keys(realityOpts).length > 0) {
+      proxy['reality-opts'] = realityOpts
+      proxy.tls = true
+    }
   }
 
   let httpupgrade = false
@@ -239,17 +330,22 @@ export function URI_VMESS(line: string): IProxyVmessConfig {
         break
       }
       case 'ws': {
-        if (!hostFirst && !pathFirst && !httpupgrade) {
-          delete proxy.network
-          break
-        }
         const wsOpts: WsOptions = {
-          path: pathFirst,
           headers: hostFirst ? { Host: hostFirst } : undefined,
         }
+        applyWsEarlyData(wsOpts, pathFirst, params.eh)
         if (httpupgrade) {
           wsOpts['v2ray-http-upgrade'] = true
           wsOpts['v2ray-http-upgrade-fast-open'] = true
+        }
+        if (
+          !hostFirst &&
+          !wsOpts.path &&
+          !wsOpts['max-early-data'] &&
+          !httpupgrade
+        ) {
+          delete proxy.network
+          break
         }
         proxy['ws-opts'] = wsOpts
         break

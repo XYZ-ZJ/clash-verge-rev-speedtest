@@ -6,10 +6,56 @@ use tauri::Url;
 
 use crate::{
     config::{Config, PrfItem, profiles},
-    core::{CoreManager, handle, timer::Timer},
+    core::{handle, timer::Timer},
     utils::help,
 };
 use clash_verge_logging::{Type, logging, logging_error};
+
+fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0b1100_0000) == 0b0100_0000)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_unique_local()
+                || v6.is_unicast_link_local()
+                || v6.is_multicast()
+                || v6.to_ipv4_mapped().is_some_and(|v4| is_disallowed_ip(std::net::IpAddr::V4(v4)))
+        }
+    }
+}
+
+fn validate_subscription_url(raw_url: &str) -> Result<Url> {
+    let parsed = Url::parse(raw_url)?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        anyhow::bail!("Unsupported subscription URL scheme: {}", parsed.scheme());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("Subscription URL missing host"))?;
+    let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    if lower_host == "localhost"
+        || lower_host.ends_with(".localhost")
+        || lower_host.ends_with(".local")
+        || lower_host.ends_with(".internal")
+    {
+        anyhow::bail!("Refusing private or local subscription host");
+    }
+    if let Ok(ip) = lower_host.parse::<std::net::IpAddr>()
+        && is_disallowed_ip(ip)
+    {
+        anyhow::bail!("Refusing private or loopback subscription IP");
+    }
+    Ok(parsed)
+}
 
 pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
     let param_str = if param.starts_with("[") && param.len() > 4 {
@@ -34,6 +80,32 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
         );
         return Ok(());
     };
+
+    if let Err(err) = validate_subscription_url(&url) {
+        logging!(warn, Type::Config, "rejected deep link url: {err:#}");
+        handle::Handle::notice(NoticeStatus::ImportSubUrlError, err.to_string());
+        return Ok(());
+    }
+
+    let display_name = name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("(unnamed)");
+    let confirmed = rfd::AsyncMessageDialog::new()
+        .set_level(rfd::MessageLevel::Info)
+        .set_title("Import Profile Confirmation")
+        .set_description(format!(
+            "An external link requested to import a subscription profile:\n\nName: {display_name}\nURL: {url}\n\nDo you want to import it?"
+        ))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show()
+        .await
+        == rfd::MessageDialogResult::Yes;
+
+    if !confirmed {
+        logging!(info, Type::Config, "Deep link import cancelled by user");
+        return Ok(());
+    }
 
     import_subscription(&url, name.as_ref()).await;
     Ok(())
@@ -81,11 +153,6 @@ fn decode_subscription_url(raw_url: &str) -> std::string::String {
 }
 
 async fn import_subscription(url: &str, name: Option<&String>) {
-    let had_current_profile = {
-        let profiles = Config::profiles().await;
-        profiles.latest_arc().current.is_some()
-    };
-
     let Some(mut item) = fetch_profile_item(url, name).await else {
         return;
     };
@@ -109,7 +176,7 @@ async fn import_subscription(url: &str, name: Option<&String>) {
         "", // 空 msg 传入，我们不希望导致 后端-前端-后端 死循环，这里只做提醒。
     );
 
-    post_import_updates(&uid, had_current_profile).await;
+    post_import_updates(&uid).await;
 }
 
 async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem> {
@@ -123,38 +190,7 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
     }
 }
 
-async fn post_import_updates(uid: &String, had_current_profile: bool) {
+async fn post_import_updates(uid: &String) {
     handle::Handle::refresh_verge();
     handle::Handle::notify_profile_changed(uid);
-
-    let should_update_core = if uid.is_empty() || had_current_profile {
-        false
-    } else {
-        let profiles = Config::profiles().await;
-        profiles.latest_arc().current.as_ref() == Some(uid)
-    };
-
-    if should_update_core {
-        refresh_core_config().await;
-    }
-}
-
-async fn refresh_core_config() {
-    logging!(
-        info,
-        Type::Config,
-        "Deep link import set current profile; refreshing core config"
-    );
-    match CoreManager::global().update_config_forced().await {
-        Ok(outcome) if outcome.is_valid() => handle::Handle::refresh_clash(),
-        Ok(outcome) => {
-            let message = outcome.to_string();
-            logging!(warn, Type::Config, "Apply config failed: {}", message);
-            handle::Handle::notice(NoticeStatus::ConfigValidateError, message);
-        }
-        Err(err) => {
-            logging!(error, Type::Config, "Apply config error: {err:#}");
-            handle::Handle::notice(NoticeStatus::UpdateFailed, format!("{err}"));
-        }
-    }
 }

@@ -36,6 +36,7 @@ import { useThemeMode } from '@/services/states'
 import type { MonacoEditorInstance } from '@/types/monaco'
 import { MONACO_FONT_FAMILY } from '@/utils/font-family'
 import parseUri from '@/utils/uri-parser'
+import { decodeBase64OrOriginal } from '@/utils/uri-parser/helpers'
 import { parseYamlSafe } from '@/utils/yaml'
 
 import {
@@ -181,12 +182,7 @@ export const ProxiesEditorViewer = (props: Props) => {
   const handleParseAsync = (cb: (proxies: IProxyConfig[]) => void) => {
     const proxies: IProxyConfig[] = []
     const names: string[] = []
-    let uris: string
-    try {
-      uris = atob(proxyUri)
-    } catch {
-      uris = proxyUri
-    }
+    const uris = decodeBase64OrOriginal(proxyUri)
     const lines = uris.trim().split('\n')
     let idx = 0
     const batchSize = 50
@@ -273,6 +269,13 @@ export const ProxiesEditorViewer = (props: Props) => {
     setVisualization(true)
   }
 
+  const serializeVisualConfig = useCallback(() => {
+    return yaml.dump(
+      { prepend: prependSeq, append: appendSeq, delete: deleteSeq },
+      { forceQuotes: true },
+    )
+  }, [prependSeq, appendSeq, deleteSeq])
+
   useEffect(() => {
     if (
       !hasLoadedSeqConfigRef.current ||
@@ -287,12 +290,7 @@ export const ProxiesEditorViewer = (props: Props) => {
       }
 
       try {
-        setCurrData(
-          yaml.dump(
-            { prepend: prependSeq, append: appendSeq, delete: deleteSeq },
-            { forceQuotes: true },
-          ),
-        )
+        setCurrData(serializeVisualConfig())
       } catch (e) {
         console.warn('[ProxiesEditorViewer] yaml.dump failed:', e)
         // 防止异常导致UI卡死
@@ -313,7 +311,7 @@ export const ProxiesEditorViewer = (props: Props) => {
         clearTimeout(timeoutId)
       }
     }
-  }, [prependSeq, appendSeq, deleteSeq])
+  }, [prependSeq, appendSeq, deleteSeq, serializeVisualConfig])
 
   useEffect(() => {
     if (!open) return
@@ -330,7 +328,11 @@ export const ProxiesEditorViewer = (props: Props) => {
 
   const handleSave = useLockFn(async () => {
     try {
-      const result = await mutate(() => saveProfileFile(property, currData), {
+      const nextData = visualization ? serializeVisualConfig() : currData
+      if (visualization) {
+        setCurrData(nextData)
+      }
+      const result = await mutate(() => saveProfileFile(property, nextData), {
         id: `save-profile-file:${property}`,
         errorNotice: false,
       })
@@ -340,7 +342,7 @@ export const ProxiesEditorViewer = (props: Props) => {
         return
       }
       showNotice.success('shared.feedback.notifications.saved')
-      onSave?.(prevData, currData)
+      onSave?.(prevData, nextData)
       onClose()
     } catch (err) {
       showNotice.error(err)

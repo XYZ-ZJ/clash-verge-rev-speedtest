@@ -175,8 +175,12 @@ fn collect_runtime_parts(mut config: Value, config_root: &Path) -> Result<Runtim
     for filename in GEO_ASSETS {
         let source = config_root.join(filename);
         if source.is_file() && destinations.insert((*filename).to_string()) {
+            let canonical_source = std::fs::canonicalize(&source)?;
+            if canonical_source.strip_prefix(&config_root).is_err() {
+                bail!("geo asset {filename:?} resolves outside the config root");
+            }
             assets.push(RuntimeAsset {
-                source: std::fs::canonicalize(&source)?.to_string_lossy().into_owned(),
+                source: canonical_source.to_string_lossy().into_owned(),
                 destination: (*filename).to_string(),
             });
         }
@@ -246,6 +250,15 @@ fn collect_provider_assets(
                 destination
             }
             (true, None) => {
+                if !is_local_path(raw_path) || provider_destination(config_root, raw_path).is_err() {
+                    logging!(
+                        warn,
+                        Type::Config,
+                        "remote provider {name:?} declares no url with unsafe path {raw_path:?}; stripping path"
+                    );
+                    provider.remove("path");
+                    continue;
+                }
                 logging!(
                     warn,
                     Type::Config,
@@ -254,7 +267,15 @@ fn collect_provider_assets(
                 continue;
             }
             (false, _) => {
+                if !is_local_path(raw_path) {
+                    bail!("local provider {name:?} uses disallowed UNC or device path: {raw_path:?}");
+                }
                 let Ok(source) = local_provider_source(config_root, raw_path) else {
+                    if std::path::Path::new(raw_path).is_absolute()
+                        || provider_destination(config_root, raw_path).is_err()
+                    {
+                        bail!("local provider {name:?} path is outside the config root: {raw_path:?}");
+                    }
                     logging!(
                         warn,
                         Type::Config,
@@ -311,11 +332,22 @@ fn collect_ssh_private_keys(
         let Some(raw_path) = proxy
             .get("private-key")
             .and_then(Value::as_str)
-            .filter(|key| !key.is_empty() && !key.contains("PRIVATE KEY") && is_local_path(key))
+            .filter(|key| !key.is_empty() && !key.contains("PRIVATE KEY"))
+            .map(str::to_owned)
         else {
             continue;
         };
-        let Some(source) = local_provider_source(config_root, raw_path)
+        if !is_local_path(&raw_path) {
+            let name = proxy.get("name").and_then(Value::as_str).unwrap_or_default();
+            logging!(
+                warn,
+                Type::Config,
+                "ssh proxy {name:?} uses disallowed UNC or device private-key path; stripping"
+            );
+            proxy.remove("private-key");
+            continue;
+        }
+        let Some(source) = local_provider_source(config_root, &raw_path)
             .ok()
             .filter(|source| source.is_file())
         else {
@@ -323,8 +355,9 @@ fn collect_ssh_private_keys(
             logging!(
                 warn,
                 Type::Config,
-                "ssh proxy {name:?} private key is unavailable below the config root; leaving it to the core"
+                "ssh proxy {name:?} private key is unavailable below the config root; stripping"
             );
+            proxy.remove("private-key");
             continue;
         };
         // A root-level alias keeps the user's path away from service name rules and mihomo's inline-key test.

@@ -12,6 +12,7 @@ import {
   buildWebdavSignature,
   getWebdavStatus,
   setWebdavStatus,
+  useWebdavSignature,
 } from '@/services/webdav-status'
 import { isValidUrl } from '@/utils/network'
 
@@ -54,7 +55,7 @@ export const BackupConfigViewer = memo(
       (webdav_username ?? '') !== username ||
       (webdav_password ?? '') !== password
 
-    const webdavSignature = buildWebdavSignature(verge)
+    const webdavSignature = useWebdavSignature(verge)
     const webdavStatus = getWebdavStatus(webdavSignature)
     const shouldAutoInit = webdavStatus !== 'failed'
 
@@ -98,14 +99,14 @@ export const BackupConfigViewer = memo(
       const trimmedUrl = data.url.trim()
       const trimmedUsername = data.username.trim()
       const isClearing = !trimmedUrl && !trimmedUsername && !data.password
-      if (!isClearing) checkForm()
-      const signature = buildWebdavSignature({
-        webdav_url: data.url,
-        webdav_username: data.username,
-        webdav_password: data.password,
-      })
-
       try {
+        if (!isClearing) checkForm()
+        const signature = await buildWebdavSignature({
+          webdav_url: trimmedUrl,
+          webdav_username: trimmedUsername,
+          webdav_password: data.password,
+        })
+
         setLoading(true)
         await mutate(
           () => saveWebdavConfig(trimmedUrl, trimmedUsername, data.password),
@@ -128,25 +129,27 @@ export const BackupConfigViewer = memo(
         showNotice.success('settings.modals.backup.messages.webdavConfigSaved')
         if (!isClearing) await onSaveSuccess(signature)
       } catch (error) {
-        showNotice.error(
-          'settings.modals.backup.messages.webdavConfigSaveFailed',
-          { error: errorDetail(error) },
-          3000,
-        )
+        if (error instanceof Error && error.message) {
+          showNotice.error(
+            'settings.modals.backup.messages.webdavConfigSaveFailed',
+            { error: errorDetail(error) },
+            3000,
+          )
+        }
       } finally {
         setLoading(false)
       }
     })
 
     const handleBackup = useLockFn(async () => {
-      checkForm()
-      const signature = buildWebdavSignature({
-        webdav_url: url,
-        webdav_username: username,
-        webdav_password: password,
-      })
-
+      let signature = ''
       try {
+        checkForm()
+        signature = await buildWebdavSignature({
+          webdav_url: url,
+          webdav_username: username,
+          webdav_password: password,
+        })
         setLoading(true)
         await mutate(() => createWebdavBackup(), {
           id: 'create-webdav-backup',
@@ -160,7 +163,9 @@ export const BackupConfigViewer = memo(
         showNotice.error('settings.modals.backup.messages.backupFailed', {
           error,
         })
-        setWebdavStatus(signature, 'failed')
+        if (signature) {
+          setWebdavStatus(signature, 'failed')
+        }
       } finally {
         setLoading(false)
       }

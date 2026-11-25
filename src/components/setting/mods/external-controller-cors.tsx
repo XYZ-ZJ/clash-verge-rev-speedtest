@@ -11,11 +11,9 @@ import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
 
 // Development origins must never be persisted into production configuration.
-const DEV_URLS = [
-  'tauri://localhost',
-  'http://tauri.localhost',
-  'http://localhost:3000',
-]
+const DEV_URLS = import.meta.env.DEV
+  ? ['tauri://localhost', 'http://tauri.localhost', 'http://localhost:3000']
+  : ['tauri://localhost', 'http://tauri.localhost']
 
 const getFullOrigins = (origins: string[]) => {
   const allOrigins = [...origins, ...DEV_URLS]

@@ -38,9 +38,9 @@ import {
 import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
 import {
-  buildWebdavSignature,
   getWebdavStatus,
   setWebdavStatus,
+  useWebdavSignature,
 } from '@/services/webdav-status'
 
 dayjs.extend(customParseFormat)
@@ -94,7 +94,7 @@ export const BackupHistoryViewer = ({
   const isWebDavConfigured = Boolean(
     verge?.webdav_url && verge?.webdav_username && verge?.webdav_password,
   )
-  const webdavSignature = buildWebdavSignature(verge)
+  const webdavSignature = useWebdavSignature(verge)
   const webdavStatus = getWebdavStatus(webdavSignature)
   const shouldSkipWebDav = !isLocal && !isWebDavConfigured
   const pageSize = 8

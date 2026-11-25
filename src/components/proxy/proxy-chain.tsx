@@ -377,16 +377,11 @@ export const ProxyChain = ({
   )
 
   const isConnected = useMemo(() => {
-    if (!proxyView || currentProxyChain.length === 0) {
+    if (!proxyView || currentProxyChain.length < 2) {
       return false
     }
 
     const lastNode = currentProxyChain[currentProxyChain.length - 1]
-    if (localStorage.getItem('proxy-chain-exit-node') === lastNode.name) {
-      return true
-    }
-    if (currentProxyChain.length < 2) return false
-
     if (mode === 'global') {
       return proxyView.global?.now === lastNode.name
     }

@@ -12,7 +12,8 @@ import {
   Tooltip,
 } from '@mui/material'
 import { useLockFn } from 'ahooks'
-import { useImperativeHandle, useState, type Ref } from 'react'
+import { useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BaseDialog, DialogRef, Switch } from '@/components/base'
@@ -25,6 +26,16 @@ export function ControllerViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const [open, setOpen] = useState(false)
   const [copySuccess, setCopySuccess] = useState<null | string>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearCopyTimer = () => {
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = null
+    }
+  }
+
+  useEffect(() => clearCopyTimer, [])
 
   const { clashInfo, patchInfo } = useClashInfo()
   const { verge, patchVerge } = useVerge()
@@ -50,10 +61,7 @@ export function ControllerViewer({ ref }: { ref?: Ref<DialogRef> }) {
     try {
       setIsSaving(true)
 
-      // 先保存 enable_external_controller 设置
-      await patchVerge({ enable_external_controller: enableController })
-
-      // 如果启用了外部控制器，则保存控制器地址和密钥
+      // Validate credentials before persisting enable_external_controller.
       if (enableController) {
         if (!controller.trim()) {
           showNotice.error(
@@ -69,8 +77,10 @@ export function ControllerViewer({ ref }: { ref?: Ref<DialogRef> }) {
           return
         }
 
+        await patchVerge({ enable_external_controller: true })
         await patchInfo({ 'external-controller': controller, secret })
       } else {
+        await patchVerge({ enable_external_controller: false })
         // 如果禁用了外部控制器，则清空控制器地址
         await patchInfo({ 'external-controller': '' })
       }
@@ -93,8 +103,12 @@ export function ControllerViewer({ ref }: { ref?: Ref<DialogRef> }) {
     async (text: string, type: string) => {
       try {
         await navigator.clipboard.writeText(text)
+        clearCopyTimer()
         setCopySuccess(type)
-        setTimeout(() => setCopySuccess(null))
+        copyTimerRef.current = setTimeout(() => {
+          copyTimerRef.current = null
+          setCopySuccess(null)
+        }, 2000)
       } catch (err) {
         console.warn('[ControllerViewer] copy to clipboard failed:', err)
         showNotice.error(

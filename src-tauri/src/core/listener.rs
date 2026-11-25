@@ -494,9 +494,21 @@ fn bind_claim(claim: &BindClaim) -> io::Result<Vec<Socket>> {
                 Err(_) => {}
             }
         }
-        if stale_guard {
-            return Ok(sockets);
+
+        let wildcard_socket = match bind_socket(claim) {
+            Ok(socket) => {
+                if claim.transport == ListenerTransport::Tcp {
+                    socket.listen(1)?;
+                }
+                Some(socket)
+            }
+            Err(error) if stale_guard && is_bind_conflict(&error) => None,
+            Err(error) => return Err(error),
+        };
+        if let Some(socket) = wildcard_socket {
+            sockets.push(socket);
         }
+        return Ok(sockets);
     }
 
     let socket = bind_socket(claim)?;

@@ -43,7 +43,18 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const { clash, mutateClash, patchClash } = useClash()
 
   const [open, setOpen] = useState(false)
-  const [values, setValues] = useState({
+  const [values, setValues] = useState<{
+    stack: string
+    device: string
+    autoRoute: boolean
+    routeExcludeAddress: string
+    autoRedirect: boolean
+    autoDetectInterface: boolean
+    dnsHijack: string[]
+    strictRoute: boolean
+    mtu: number | undefined
+    dnsMode: string
+  }>({
     stack: 'mips',
     device: OS === 'macos' ? 'utun1024' : 'Mihomo',
     autoRoute: true,
@@ -122,7 +133,13 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
         'dns-hijack': values.dnsHijack[0] === '' ? [] : values.dnsHijack,
         'dns-mode': values.dnsMode,
         'strict-route': values.strictRoute,
-        mtu: values.mtu ?? 1500,
+        mtu:
+          typeof values.mtu === 'number' &&
+          Number.isFinite(values.mtu) &&
+          values.mtu > 0 &&
+          values.mtu <= 65535
+            ? values.mtu
+            : 1500,
       }
       await patchClash({ tun })
       await mutateClash(
@@ -343,14 +360,19 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
             autoCapitalize="off"
             spellCheck="false"
             sx={{ width: 250 }}
-            value={values.mtu}
+            value={values.mtu ?? ''}
             placeholder="1500"
-            onChange={(e) =>
-              setValues((v) => ({
-                ...v,
-                mtu: parseInt(e.target.value),
-              }))
-            }
+            onChange={(e) => {
+              const raw = e.target.value.trim()
+              if (raw === '') {
+                setValues((v) => ({ ...v, mtu: undefined }))
+                return
+              }
+              const parsed = Number.parseInt(raw, 10)
+              if (Number.isFinite(parsed)) {
+                setValues((v) => ({ ...v, mtu: parsed }))
+              }
+            }}
           />
         </ListItem>
 

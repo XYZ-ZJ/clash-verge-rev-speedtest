@@ -205,7 +205,10 @@ fn start_embedded_server(listener: tokio::net::TcpListener, token: String) {
         let pac_content = verge_data.pac_file_content.as_deref().unwrap_or(DEFAULT_PAC);
         // Port changes disable PAC, so the draft port avoids per-request Core queries.
         let pac_port = MixedPort::desired().await;
-        let processed_content = pac_content.replace("%mixed-port%", &format!("{pac_port}"));
+        let proxy_host = verge_data.proxy_host.as_deref().unwrap_or("127.0.0.1");
+        let processed_content = pac_content
+            .replace("%proxy_host%", proxy_host)
+            .replace("%mixed-port%", &format!("{pac_port}"));
         Ok::<_, warp::Rejection>(
             warp::http::Response::builder()
                 .header("Content-Type", "application/x-ns-proxy-autoconfig")

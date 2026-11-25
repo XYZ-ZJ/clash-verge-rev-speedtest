@@ -1,7 +1,7 @@
 import { TextField } from '@mui/material'
 import { useLockFn } from 'ahooks'
 import { nanoid } from 'nanoid'
-import { forwardRef, useImperativeHandle, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -29,8 +29,26 @@ export const TestViewer = forwardRef<TestViewerRef, Props>(
     const [open, setOpen] = useState(false)
     const [openType, setOpenType] = useState<'new' | 'edit'>('new')
     const [loading, setLoading] = useState(false)
+    const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const { verge, patchVerge } = useVerge()
     const testList = verge?.test_list ?? []
+
+    const clearResetTimer = () => {
+      if (resetTimerRef.current !== null) {
+        clearTimeout(resetTimerRef.current)
+        resetTimerRef.current = null
+      }
+    }
+
+    const scheduleReset = () => {
+      clearResetTimer()
+      resetTimerRef.current = setTimeout(() => {
+        resetTimerRef.current = null
+        formIns.reset()
+      }, 500)
+    }
+
+    useEffect(() => clearResetTimer, [])
     const { control, ...formIns } = useForm<IVergeTestItem_Deserialize>({
       defaultValues: {
         name: '',
@@ -59,10 +77,12 @@ export const TestViewer = forwardRef<TestViewerRef, Props>(
 
     useImperativeHandle(ref, () => ({
       create: () => {
+        clearResetTimer()
         setOpenType('new')
         setOpen(true)
       },
       edit: (item) => {
+        clearResetTimer()
         if (item) {
           Object.entries(item).forEach(([key, value]) => {
             formIns.setValue(key as any, value)
@@ -106,7 +126,7 @@ export const TestViewer = forwardRef<TestViewerRef, Props>(
           }
           setOpen(false)
           setLoading(false)
-          setTimeout(() => formIns.reset(), 500)
+          scheduleReset()
         } catch (err: any) {
           showNotice.error('tests.modals.test.errors.saveFailed', err)
           setLoading(false)
@@ -116,7 +136,7 @@ export const TestViewer = forwardRef<TestViewerRef, Props>(
 
     const handleClose = () => {
       setOpen(false)
-      setTimeout(() => formIns.reset(), 500)
+      scheduleReset()
     }
 
     const text = {

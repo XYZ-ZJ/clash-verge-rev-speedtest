@@ -65,7 +65,6 @@ export const SystemInfoCard = () => {
     if (!verge?.auto_check_update) return
     if (readLastCheckTime() !== null) return
 
-    updateLastCheckTime()
     const timeoutId = window.setTimeout(() => {
       triggerCheckUpdate().catch(console.error)
     }, 5000)

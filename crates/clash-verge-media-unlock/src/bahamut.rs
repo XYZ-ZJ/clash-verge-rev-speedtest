@@ -12,6 +12,20 @@ struct DeviceResponse {
     deviceid: String,
 }
 
+fn encode_query_component(input: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut encoded = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
+}
+
 pub(super) async fn check_bahamut_anime(client: &Client) -> UnlockItem {
     let get = |url: &str| client.get(url).header(USER_AGENT, BAHAMUT_USER_AGENT);
     let device = get("https://ani.gamer.com.tw/ajax/getdeviceid.php").send().await.ok();
@@ -24,10 +38,14 @@ pub(super) async fn check_bahamut_anime(client: &Client) -> UnlockItem {
     let Some(device) = device else {
         return UnlockItem::checked(BAHAMUT_ANIME_NAME, "Failed", None);
     };
+    let device_id = device.deviceid.trim();
+    if device_id.is_empty() {
+        return UnlockItem::checked(BAHAMUT_ANIME_NAME, "Failed", None);
+    }
 
     let token_url = format!(
         "https://ani.gamer.com.tw/ajax/token.php?adID=89422&sn=37783&device={}",
-        device.deviceid
+        encode_query_component(device_id)
     );
 
     let unlocked = match get(&token_url).send().await {

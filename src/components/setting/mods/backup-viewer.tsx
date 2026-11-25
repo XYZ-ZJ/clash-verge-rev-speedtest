@@ -21,7 +21,7 @@ import {
 } from '@/services/cmds'
 import { mutate } from '@/services/mutate'
 import { errorDetail, showNotice } from '@/services/notice-service'
-import { buildWebdavSignature, setWebdavStatus } from '@/services/webdav-status'
+import { setWebdavStatus, useWebdavSignature } from '@/services/webdav-status'
 
 import { AutoBackupSettings } from './auto-backup-settings'
 import { BackupHistoryViewer } from './backup-history-viewer'
@@ -39,7 +39,7 @@ export function BackupViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const [historySource, setHistorySource] = useState<BackupSource>('local')
   const [historyPage, setHistoryPage] = useState(0)
   const [webdavDialogOpen, setWebdavDialogOpen] = useState(false)
-  const webdavSignature = buildWebdavSignature(verge)
+  const webdavSignature = useWebdavSignature(verge)
 
   useImperativeHandle(ref, () => ({
     open: () => setOpen(true),

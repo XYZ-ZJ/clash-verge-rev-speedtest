@@ -17,49 +17,49 @@ const TOP_LEVEL_AT_RULES = [
   '@charset',
   '@import',
   '@namespace',
-  '@font-face',
-  '@keyframes',
-  '@counter-style',
-  '@page',
-  '@property',
-  '@font-feature-values',
-  '@color-profile',
 ]
-let cssScopeSupport: boolean | null = null
 
-const canUseCssScope = () => {
-  if (cssScopeSupport !== null) {
-    return cssScopeSupport
+const sanitizeBackgroundImageUrl = (rawUrl: string): string => {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return ''
+  // Reject quotes, parentheses, backslashes, or newlines that can break out of CSS url('...')
+  if (/['"()\\\r\n]/.test(trimmed)) return ''
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('asset://') ||
+    trimmed.startsWith('/')
+  ) {
+    return trimmed
   }
-  try {
-    const testStyle = document.createElement('style')
-    testStyle.textContent = '@scope (:root) { }'
-    document.head.appendChild(testStyle)
-    cssScopeSupport = !!testStyle.sheet?.cssRules?.length
-    document.head.removeChild(testStyle)
-  } catch {
-    cssScopeSupport = false
-  }
-  return cssScopeSupport
+  return ''
 }
+
+const stripUnsafeCssAtRules = (css: string) =>
+  css
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim().toLowerCase()
+      return !TOP_LEVEL_AT_RULES.some((rule) => trimmed.startsWith(rule))
+    })
+    .join('\n')
 
 const wrapCssInjectionWithScope = (css?: string) => {
   if (!css?.trim()) {
     return ''
   }
-  const lowerCss = css.toLowerCase()
-  const hasTopLevelOnlyRule = TOP_LEVEL_AT_RULES.some((rule) =>
-    lowerCss.includes(rule),
-  )
-  if (hasTopLevelOnlyRule) {
-    return null
+  const safeCss = stripUnsafeCssAtRules(css)
+  if (!safeCss.trim()) {
+    return ''
+  }
+  if (!canUseCssScope()) {
+    return safeCss
   }
   const scopeRoot = CSS_INJECTION_SCOPE_ROOT
   const scopeLimit = `${CSS_INJECTION_SCOPE_LIMIT} > *`
-  const scopedBlock = `@scope (${scopeRoot}) to (${scopeLimit}) {
-${css}
+  return `@scope (${scopeRoot}) to (${scopeLimit}) {
+${safeCss}
 }`
-  return scopedBlock
 }
 
 /**
@@ -71,7 +71,9 @@ export const useCustomTheme = () => {
   const { theme_mode, theme_setting } = verge ?? {}
   const mode = useThemeMode()
   const setMode = useSetThemeMode()
-  const userBackgroundImage = theme_setting?.background_image || ''
+  const userBackgroundImage = sanitizeBackgroundImageUrl(
+    theme_setting?.background_image || '',
+  )
   const hasUserBackground = !!userBackgroundImage
 
   useEffect(() => {
@@ -252,11 +254,9 @@ export const useCustomTheme = () => {
     }
 
     if (styleElement) {
-      let scopedCss: string | null = null
-      if (canUseCssScope() && setting.css_injection) {
-        scopedCss = wrapCssInjectionWithScope(setting.css_injection)
-      }
-      const effectiveInjectedCss = scopedCss ?? setting.css_injection ?? ''
+      const effectiveInjectedCss = setting.css_injection
+        ? wrapCssInjectionWithScope(setting.css_injection)
+        : ''
       const globalStyles = `
         /* 修复滚动条样式 */
         ::-webkit-scrollbar {
@@ -307,7 +307,7 @@ export const useCustomTheme = () => {
         }
       `
 
-      styleElement.innerHTML = effectiveInjectedCss + globalStyles
+      styleElement.textContent = effectiveInjectedCss + globalStyles
     }
 
     return muiTheme

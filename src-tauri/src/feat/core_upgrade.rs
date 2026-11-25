@@ -371,20 +371,10 @@ async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]
         .map(str::to_owned);
 
     let Some(published) = published else {
-        logging!(
-            warn,
-            Type::Core,
-            "core upgrade: GitHub lists no digest for {asset}, keeping the staged-version check only"
-        );
-        return Ok(());
+        anyhow::bail!("core upgrade: release metadata for {tag} is missing sha256 digest for {asset}");
     };
     let Some(expected) = published.strip_prefix("sha256:") else {
-        logging!(
-            warn,
-            Type::Core,
-            "core upgrade: unsupported digest format {published} for {asset}"
-        );
-        return Ok(());
+        anyhow::bail!("core upgrade: unsupported digest format {published} for {asset}");
     };
 
     let digest = Sha256::digest(bytes);

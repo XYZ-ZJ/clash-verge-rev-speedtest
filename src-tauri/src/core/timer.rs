@@ -161,7 +161,9 @@ impl Timer {
                     && interval > 0
                     && let Some(uid) = item.uid.as_ref()
                     && let Some(updated) = item.updated
-                    && cur_timestamp - (updated as i64) >= (interval as i64) * 60
+                    && let Ok(updated_i64) = i64::try_from(updated)
+                    && let Ok(interval_i64) = i64::try_from(interval)
+                    && cur_timestamp.saturating_sub(updated_i64) >= interval_i64.saturating_mul(60)
                 {
                     logging!(info, Type::Timer, "Running overdue timer task immediately: uid={}", uid);
                     let _ = self.command_tx.send(TimerCommand::RunNow(uid.clone()));

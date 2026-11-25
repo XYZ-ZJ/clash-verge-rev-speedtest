@@ -123,8 +123,14 @@ async function getSignature(url) {
     method: 'GET',
     headers: { 'Content-Type': 'application/octet-stream' },
   })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch signature ${url}: ${response.status}`)
+  }
 
   return response.text()
 }
 
-resolveUpdater().catch(console.error)
+resolveUpdater().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

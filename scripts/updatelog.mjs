@@ -69,7 +69,7 @@ export async function resolveUpdateLogDefault() {
     }
 
     if (isCapturing) {
-      if (reEnd.test(line)) {
+      if (reEnd.test(line) || reTitle.test(line)) {
         break
       }
       content.push(line)

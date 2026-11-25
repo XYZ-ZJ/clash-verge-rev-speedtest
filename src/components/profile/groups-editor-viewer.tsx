@@ -627,6 +627,7 @@ export const GroupsEditorViewer = (props: Props) => {
                         multiple
                         options={proxyPolicyList}
                         disableCloseOnSelect
+                        value={field.value ?? []}
                         onChange={(_, value) => value && field.onChange(value)}
                         renderInput={(params) => <TextField {...params} />}
                         renderOption={(props, option) => {
@@ -662,6 +663,7 @@ export const GroupsEditorViewer = (props: Props) => {
                         multiple
                         options={proxyProviderList}
                         disableCloseOnSelect
+                        value={field.value ?? []}
                         onChange={(_, value) => value && field.onChange(value)}
                         renderInput={(params) => <TextField {...params} />}
                       />
@@ -919,9 +921,13 @@ export const GroupsEditorViewer = (props: Props) => {
                         size="small"
                         disableCloseOnSelect
                         sx={{ width: 'calc(100% - 150px)' }}
-                        value={field.value?.split('|')}
+                        value={
+                          field.value
+                            ? field.value.split('|').filter(Boolean)
+                            : []
+                        }
                         onChange={(_, value) => {
-                          field.onChange(value.join('|'))
+                          field.onChange(value.filter(Boolean).join('|'))
                         }}
                         renderInput={(params) => <TextField {...params} />}
                       />

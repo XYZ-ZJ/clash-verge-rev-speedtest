@@ -221,7 +221,7 @@ export const LayoutSidebar = (props: LayoutSidebarProps) => {
 
       {/* Traffic */}
       <div className="the-traffic">
-        <LayoutTraffic />
+        <LayoutTraffic isCollapsed={isCollapsed} />
       </div>
     </div>
   )

@@ -116,12 +116,15 @@ const Layout = () => {
           borderTopRightRadius: '0px',
         }}
         onContextMenu={(e) => {
+          const target = e.target
           if (
             OS === 'windows' &&
-            !['input', 'textarea'].includes(
-              e.currentTarget.tagName.toLowerCase(),
-            ) &&
-            !e.currentTarget.isContentEditable
+            !(
+              target instanceof HTMLElement &&
+              (['input', 'textarea'].includes(target.tagName.toLowerCase()) ||
+                target.isContentEditable ||
+                Boolean(target.closest('.monaco-editor')))
+            )
           ) {
             e.preventDefault()
           }

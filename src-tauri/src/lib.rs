@@ -160,6 +160,11 @@ pub fn run() -> std::process::ExitCode {
         return std::process::ExitCode::SUCCESS;
     }
 
+    #[cfg(target_os = "linux")]
+    utils::linux::workarounds::apply_nvidia_dmabuf_renderer_workaround();
+    #[cfg(target_os = "linux")]
+    utils::linux::workarounds::apply_wayland_webkit_fix();
+
     // Runs before the singleton check, which is the first thing to open a file in that directory.
     #[cfg(windows)]
     if let Err(error) =
@@ -175,11 +180,6 @@ pub fn run() -> std::process::ExitCode {
         StartupAction::ExitSuccess => return std::process::ExitCode::SUCCESS,
         StartupAction::ExitFailure => return std::process::ExitCode::FAILURE,
     }
-
-    #[cfg(target_os = "linux")]
-    utils::linux::workarounds::apply_nvidia_dmabuf_renderer_workaround();
-    #[cfg(target_os = "linux")]
-    utils::linux::workarounds::apply_wayland_webkit_fix();
 
     let builder = app_init::setup_plugins(tauri::Builder::default())
         .setup(|app| {

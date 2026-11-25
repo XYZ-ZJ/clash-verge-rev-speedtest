@@ -432,6 +432,19 @@ export function ProxyGroupsChain(props: ProxyGroupsChainProps) {
     (_group: ProxyGroupView, member: ResolvedProxyMember) => {
       if (!isInteractableMember(member) || member.kind !== 'node') return
       const { node } = member
+      if (
+        currentProxyChain.some(
+          (item) =>
+            item.recordId !== undefined && item.recordId === node.recordId,
+        )
+      ) {
+        setDuplicateWarning({
+          open: true,
+          message: t('proxies.page.chain.duplicateNode'),
+        })
+        return
+      }
+
       setProxyChain((prev) => {
         const current = proxyView
           ? rebindProxyChainItems(prev, candidateNodes, proxyView)
@@ -442,12 +455,7 @@ export function ProxyGroupsChain(props: ProxyGroupsChainProps) {
               item.recordId !== undefined && item.recordId === node.recordId,
           )
         ) {
-          const warningMessage = t('proxies.page.chain.duplicateNode')
-          setDuplicateWarning({
-            open: true,
-            message: warningMessage,
-          })
-          return prev // 返回原来的状态，不做任何更改
+          return prev
         }
 
         // 安全获取延迟数据，如果没有延迟数据则设为 undefined
@@ -468,7 +476,7 @@ export function ProxyGroupsChain(props: ProxyGroupsChainProps) {
         return [...current, chainItem]
       })
     },
-    [candidateNodes, proxyView, t],
+    [candidateNodes, currentProxyChain, proxyView, t],
   )
 
   // Render virtual list for chain mode

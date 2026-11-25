@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
@@ -60,7 +60,7 @@ const { platform, arch } = target
 
 const SIDECAR_HOST = target
   ? target
-  : execSync('rustc -vV')
+  : execFileSync('rustc', ['-vV'])
       .toString()
       .match(/(?<=host: ).+(?=\s*)/g)[0]
 
@@ -229,7 +229,7 @@ async function getLatestAlphaVersion() {
     await setCachedVersion('META_ALPHA_VERSION', META_ALPHA_VERSION)
   } catch (err) {
     log_error('Error fetching latest alpha version:', err.message)
-    process.exit(1)
+    throw err
   }
 }
 
@@ -261,7 +261,7 @@ async function getLatestReleaseVersion() {
     await setCachedVersion('META_VERSION', META_VERSION)
   } catch (err) {
     log_error('Error fetching latest release version:', err.message)
-    process.exit(1)
+    throw err
   }
 }
 
@@ -313,32 +313,37 @@ async function downloadFile(url, outPath) {
     headers: { 'Content-Type': 'application/octet-stream' },
   })
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    await fsp.mkdir(path.dirname(outPath), { recursive: true })
-    await fsp.writeFile(outPath, body)
     throw new Error(`Failed to download ${url}: status ${response.status}`)
   }
 
   const buf = Buffer.from(await response.arrayBuffer())
-  await fsp.mkdir(path.dirname(outPath), { recursive: true })
+  if (buf.length === 0) {
+    throw new Error(`Downloaded empty payload for ${url}`)
+  }
 
   if (url.endsWith('.gz') || url.endsWith('.tgz')) {
     if (!(buf[0] === 0x1f && buf[1] === 0x8b)) {
-      await fsp.writeFile(outPath, buf)
       throw new Error(
         `Downloaded file for ${url} is not a valid gzip (magic mismatch).`,
       )
     }
   } else if (url.endsWith('.zip')) {
     if (!(buf[0] === 0x50 && buf[1] === 0x4b)) {
-      await fsp.writeFile(outPath, buf)
       throw new Error(
         `Downloaded file for ${url} is not a valid zip (magic mismatch).`,
       )
     }
   }
 
-  await fsp.writeFile(outPath, buf)
+  await fsp.mkdir(path.dirname(outPath), { recursive: true })
+  const tmpPath = `${outPath}.download.${process.pid}`
+  try {
+    await fsp.writeFile(tmpPath, buf)
+    await fsp.rename(tmpPath, outPath)
+  } catch (err) {
+    await fsp.rm(tmpPath, { force: true }).catch(() => {})
+    throw err
+  }
   log_success(`download finished: ${url}`)
 }
 
@@ -528,7 +533,7 @@ const resolveServicePermission = async () => {
           continue
         }
         try {
-          execSync(`chmod 755 ${filePath}`)
+          await fsp.chmod(filePath, 0o755)
           log_success(`chmod finished: "${filePath}"`)
         } catch (e) {
           log_error(`chmod failed for ${filePath}:`, e.message)
@@ -759,7 +764,7 @@ const tasks = [
     name: 'service_chmod',
     func: resolveServicePermission,
     retry: 5,
-    unixOnly: platform === 'linux' || platform === 'darwin',
+    unixOnly: true,
   },
   {
     name: 'set_dns_script',

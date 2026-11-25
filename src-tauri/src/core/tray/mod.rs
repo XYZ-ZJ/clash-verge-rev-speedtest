@@ -468,6 +468,30 @@ fn create_profile_menu_item(
         .collect()
 }
 
+fn encode_tray_id_segment(input: &str) -> std::string::String {
+    input.replace('%', "%25").replace('_', "%5F")
+}
+
+fn decode_tray_id_segment(mut input: &str) -> std::string::String {
+    let mut out = std::string::String::with_capacity(input.len());
+    while let Some((idx, _)) = input.match_indices('%').next() {
+        out.push_str(&input[..idx]);
+        let after = &input[idx..];
+        if let Some(rest) = after.strip_prefix("%5F") {
+            out.push('_');
+            input = rest;
+        } else if let Some(rest) = after.strip_prefix("%25") {
+            out.push('%');
+            input = rest;
+        } else {
+            out.push('%');
+            input = &after[1..];
+        }
+    }
+    out.push_str(input);
+    out
+}
+
 fn create_subcreate_proxy_menu_item(
     app_handle: &AppHandle,
     proxy_mode: &str,
@@ -499,7 +523,11 @@ fn create_subcreate_proxy_menu_item(
                     .iter()
                     .filter_map(|proxy_str| {
                         let is_selected = *proxy_str == now_proxy;
-                        let item_id = format!("proxy_{}_{}", group_name, proxy_str);
+                        let item_id = format!(
+                            "proxy_{}_{}",
+                            encode_tray_id_segment(group_name),
+                            encode_tray_id_segment(proxy_str)
+                        );
 
                         let delay_text = proxy_nodes_data
                             .proxies
@@ -1008,11 +1036,13 @@ fn on_menu_event(_: &AppHandle, event: MenuEvent) {
                     Some(r) => r,
                     None => return,
                 };
-                let (group_name, proxy_name) = match rest.split_once('_') {
+                let (group_raw, proxy_raw) = match rest.split_once('_') {
                     Some((g, p)) => (g, p),
                     None => return,
                 };
-                feat::switch_proxy_node(group_name, proxy_name).await;
+                let group_name = decode_tray_id_segment(group_raw);
+                let proxy_name = decode_tray_id_segment(proxy_raw);
+                feat::switch_proxy_node(&group_name, &proxy_name).await;
             }
             _ => {
                 logging!(debug, Type::Tray, "Unhandled tray menu event: {:?}", event.id);

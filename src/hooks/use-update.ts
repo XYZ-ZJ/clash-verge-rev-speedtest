@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+
 import { fetchCacheData, setCacheData, useQuery } from '@/services/query-client'
 import { checkUpdateSafe } from '@/services/update'
 
@@ -25,11 +27,11 @@ export const useUpdate = (enabled: boolean = true) => {
 
   const shouldCheck = enabled && auto_check_update !== false
 
-  const fetchUpdate = async () => {
+  const fetchUpdate = useCallback(async () => {
     const result = await checkUpdateSafe()
     updateLastCheckTime()
     return result
-  }
+  }, [])
 
   const { data: updateInfo, isFetching: isValidating } = useQuery({
     queryKey: ['checkUpdate'],
@@ -42,10 +44,10 @@ export const useUpdate = (enabled: boolean = true) => {
     refetchOnWindowFocus: false,
   })
 
-  const checkUpdate = async () => {
+  const checkUpdate = useCallback(async () => {
     const data = await fetchCacheData(['checkUpdate'], fetchUpdate)
     return { data }
-  }
+  }, [fetchUpdate])
 
   const { data: lastCheckUpdate } = useQuery({
     queryKey: [LAST_CHECK_KEY],

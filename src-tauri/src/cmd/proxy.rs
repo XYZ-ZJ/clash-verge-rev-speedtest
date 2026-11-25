@@ -4,7 +4,10 @@ use crate::{
     config::Config,
     core::{
         handle::Handle,
-        proxy_view::{GroupScope, NodeFeature, ProxyViewBuilder, ProxyViewInput, ProxyViewV1},
+        proxy_view::{
+            GroupScope, NodeFeature, NodeFeatureScopes, ProxyViewBuilder, ProxyViewInput,
+            ProxyViewV1,
+        },
         tray::Tray,
     },
     process::AsyncHandler,
@@ -106,6 +109,23 @@ fn runtime_group_scopes(config: Option<&Mapping>) -> BTreeMap<String, GroupScope
         .collect()
 }
 
+fn has_non_empty_reuse_settings(mapping: &Mapping) -> bool {
+    for key in ["reuse-settings", "xmux"] {
+        if let Some(val) = mapping.get(key) {
+            let non_empty = match val {
+                Value::Mapping(m) => !m.is_empty(),
+                Value::Sequence(s) => !s.is_empty(),
+                Value::Bool(b) => *b,
+                _ => false,
+            };
+            if non_empty {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn detect_node_feature(map: &Mapping) -> Option<NodeFeature> {
     let network = map.get("network").and_then(|v| v.as_str())?;
     if !network.eq_ignore_ascii_case("xhttp") {
@@ -113,9 +133,13 @@ fn detect_node_feature(map: &Mapping) -> Option<NodeFeature> {
     }
 
     let xmux = if let Some(opts) = map.get("xhttp-opts").and_then(|v| v.as_mapping()) {
-        opts.contains_key("reuse-settings") || opts.contains_key("xmux")
+        has_non_empty_reuse_settings(opts)
+            || opts
+                .get("download-settings")
+                .and_then(|v| v.as_mapping())
+                .is_some_and(has_non_empty_reuse_settings)
     } else {
-        map.contains_key("reuse-settings") || map.contains_key("xmux")
+        has_non_empty_reuse_settings(map)
     };
 
     Some(NodeFeature { xhttp: true, xmux })
@@ -183,15 +207,25 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     features.extend(file_feats);
 }
 
-fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeature>) {
+fn scan_providers(
+    providers: &Mapping,
+    provider_features: &mut BTreeMap<String, BTreeMap<String, NodeFeature>>,
+) {
     let app_dir = crate::utils::dirs::app_home_dir().ok();
-    for (_key, val) in providers {
+    for (key, val) in providers {
+        let Some(provider_name) = key.as_str() else {
+            continue;
+        };
         let Some(provider_map) = val.as_mapping() else {
             continue;
         };
 
+        let entry = provider_features
+            .entry(provider_name.to_owned())
+            .or_default();
+
         if let Some(payload) = provider_map.get("payload").and_then(|v| v.as_sequence()) {
-            scan_proxies_slice(payload, features);
+            scan_proxies_slice(payload, entry);
         }
 
         if let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) {
@@ -199,17 +233,35 @@ fn scan_providers(providers: &Mapping, features: &mut BTreeMap<String, NodeFeatu
                 continue;
             }
             let path = std::path::Path::new(raw_path);
-            let full_path = if path.is_absolute() {
-                if !path.is_file() {
-                    continue;
-                }
-                path.to_path_buf()
-            } else if let Some(ref dir) = app_dir {
-                dir.join(path)
-            } else {
-                path.to_path_buf()
+            let is_unc_or_non_disk = matches!(
+                path.components().next(),
+                Some(std::path::Component::Prefix(prefix))
+                    if !matches!(
+                        prefix.kind(),
+                        std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)
+                    )
+            );
+            if is_unc_or_non_disk {
+                continue;
+            }
+            let Some(ref dir) = app_dir else {
+                continue;
             };
-            scan_provider_file(&full_path, features);
+            let Ok(canonical_dir) = std::fs::canonicalize(dir) else {
+                continue;
+            };
+            let candidate = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                dir.join(path)
+            };
+            let Ok(canonical_path) = std::fs::canonicalize(&candidate) else {
+                continue;
+            };
+            if !canonical_path.starts_with(&canonical_dir) || !canonical_path.is_file() {
+                continue;
+            }
+            scan_provider_file(&canonical_path, entry);
         }
     }
 }
@@ -246,27 +298,36 @@ fn scan_current_profile(features: &mut BTreeMap<String, NodeFeature>) {
         return;
     };
 
+    if file_name.is_empty()
+        || file_name.contains("..")
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.contains('\0')
+    {
+        return;
+    }
+
     let profile_path = profiles_dir.join(file_name);
     scan_provider_file(&profile_path, features);
 }
 
-fn collect_node_features(config: Option<&Mapping>) -> BTreeMap<String, NodeFeature> {
-    let mut features = BTreeMap::new();
+fn collect_node_features(config: Option<&Mapping>) -> NodeFeatureScopes {
+    let mut scopes = NodeFeatureScopes::default();
     let Some(config) = config else {
-        return features;
+        return scopes;
     };
 
     if let Some(proxies) = config.get("proxies").and_then(|v| v.as_sequence()) {
-        scan_proxies_slice(proxies, &mut features);
+        scan_proxies_slice(proxies, &mut scopes.core);
     }
 
     if let Some(providers) = config.get("proxy-providers").and_then(|v| v.as_mapping()) {
-        scan_providers(providers, &mut features);
+        scan_providers(providers, &mut scopes.providers);
     }
 
-    scan_current_profile(&mut features);
+    scan_current_profile(&mut scopes.core);
 
-    features
+    scopes
 }
 
 #[tauri::command]
@@ -276,10 +337,10 @@ pub async fn get_proxy_view() -> CmdResult<ProxyViewV1> {
     let latest_runtime = runtime.latest_arc();
     let runtime_group_order = runtime_group_order(latest_runtime.config.as_ref());
     let group_scopes = runtime_group_scopes(latest_runtime.config.as_ref());
-    let config_clone = latest_runtime.config.clone();
+    let runtime_for_scan = std::sync::Arc::clone(&latest_runtime);
 
     let (node_features, (proxies, providers)) = tokio::join!(
-        tokio::task::spawn_blocking(move || collect_node_features(config_clone.as_ref())),
+        tokio::task::spawn_blocking(move || collect_node_features(runtime_for_scan.config.as_ref())),
         async {
             let mihomo = Handle::mihomo();
             tokio::join!(mihomo.get_proxies(), mihomo.get_proxy_providers())
@@ -339,5 +400,54 @@ async fn run_tray_sync_loop() {
 
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_yaml_ng::Mapping;
+
+    use super::{detect_node_feature, scan_providers};
+
+    #[test]
+    fn detects_xhttp_xmux_and_nested_download_reuse_settings() -> anyhow::Result<()> {
+        let plain: Mapping = serde_yaml_ng::from_str(
+            "name: Plain\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings: {}\n",
+        )?;
+        let feat = detect_node_feature(&plain);
+        assert!(feat.as_ref().is_some_and(|f| f.xhttp && !f.xmux));
+
+        let valid_xmux: Mapping = serde_yaml_ng::from_str(
+            "name: Mux\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings:\n    max-concurrency: \"16-32\"\n",
+        )?;
+        let feat = detect_node_feature(&valid_xmux);
+        assert!(feat.as_ref().is_some_and(|f| f.xhttp && f.xmux));
+
+        let nested_dl: Mapping = serde_yaml_ng::from_str(
+            "name: NestedMux\nnetwork: xhttp\nxhttp-opts:\n  download-settings:\n    reuse-settings:\n      max-connections: \"4\"\n",
+        )?;
+        let feat = detect_node_feature(&nested_dl);
+        assert!(feat.as_ref().is_some_and(|f| f.xhttp && f.xmux));
+
+        let ws: Mapping = serde_yaml_ng::from_str("name: Ws\nnetwork: ws\n")?;
+        assert!(detect_node_feature(&ws).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn provider_scan_isolates_duplicate_node_names_by_provider() -> anyhow::Result<()> {
+        let providers: Mapping = serde_yaml_ng::from_str(
+            "providerA:\n  payload:\n    - name: Relay\n      network: xhttp\n      xhttp-opts:\n        reuse-settings:\n          max-concurrency: \"8\"\nproviderB:\n  payload:\n    - name: Relay\n      network: xhttp\n",
+        )?;
+        let mut scoped = BTreeMap::new();
+        scan_providers(&providers, &mut scoped);
+
+        let a_feat = scoped.get("providerA").and_then(|m| m.get("Relay"));
+        let b_feat = scoped.get("providerB").and_then(|m| m.get("Relay"));
+        assert!(a_feat.is_some_and(|f| f.xhttp && f.xmux));
+        assert!(b_feat.is_some_and(|f| f.xhttp && !f.xmux));
+        Ok(())
     }
 }

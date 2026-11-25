@@ -49,7 +49,8 @@ fn validate_backup_name(filename: &str) -> Result<()> {
     }
 }
 
-/// Reloads restored configs into memory while preserving WebDAV credentials.
+/// Reloads restored configs into memory while preserving WebDAV credentials
+/// and stripping executable startup/CSS injection fields from untrusted archives.
 async fn finalize_restored_verge_config(
     webdav_url: Option<String>,
     webdav_username: Option<String>,
@@ -62,7 +63,50 @@ async fn finalize_restored_verge_config(
     restored.webdav_url = webdav_url;
     restored.webdav_username = webdav_username;
     restored.webdav_password = webdav_password;
+    if restored.startup_script.take().is_some() {
+        logging!(
+            warn,
+            Type::Backup,
+            "Stripped startup_script from restored backup for safety"
+        );
+    }
+    if let Some(theme_setting) = restored.theme_setting.as_mut()
+        && theme_setting.css_injection.take().is_some()
+    {
+        logging!(
+            warn,
+            Type::Backup,
+            "Stripped theme_setting.css_injection from restored backup for safety"
+        );
+    }
+    if let Some(core) = restored.clash_core.as_deref()
+        && !IVerge::VALID_CLASH_CORES.contains(&core.trim())
+    {
+        logging!(
+            warn,
+            Type::Backup,
+            "Reset invalid clash_core '{core}' from restored backup to default"
+        );
+        restored.clash_core = Some("verge-mihomo".into());
+    }
     restored.save_file().await?;
+
+    let mut restored_profiles = IProfiles::new().await;
+    if let Some(items) = restored_profiles.items.as_mut() {
+        for item in items.iter_mut() {
+            if let Some(file) = item.file.as_deref()
+                && validate_backup_name(file).is_err()
+            {
+                logging!(
+                    warn,
+                    Type::Backup,
+                    "Cleared unsafe profile file reference '{file}' from restored backup"
+                );
+                item.file = None;
+            }
+        }
+    }
+    restored_profiles.save_file().await?;
 
     let restored_clash = IClashTemp::new().await;
     let clash_draft = Config::clash().await;
@@ -71,7 +115,6 @@ async fn finalize_restored_verge_config(
     });
     clash_draft.apply();
 
-    let restored_profiles = IProfiles::new().await;
     let profiles_draft = Config::profiles().await;
     profiles_draft.edit_draft(|d| {
         *d = restored_profiles;
@@ -126,6 +169,7 @@ pub async fn create_backup_and_upload_webdav() -> Result<()> {
         .await
     {
         logging!(error, Type::Backup, "Failed to upload to WebDAV: {err:#}");
+        let _ = temp_file_path.remove_if_exists().await;
         backup::WebDavClient::global().reset();
         return Err(err);
     }
@@ -157,6 +201,39 @@ pub async fn delete_webdav_backup(filename: String) -> Result<()> {
     })
 }
 
+const MAX_BACKUP_ENTRIES: usize = 2048;
+const MAX_BACKUP_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+
+fn is_allowed_backup_rel_path(rel_path: &std::path::Path, is_dir: bool) -> bool {
+    use crate::utils::dirs;
+    use std::path::Component;
+
+    let parts: Vec<&str> = rel_path
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(os) => os.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    if parts.len() != rel_path.components().count() || parts.is_empty() {
+        return false;
+    }
+
+    match (parts.as_slice(), is_dir) {
+        (["profiles"] | ["icons"], true) => true,
+        ([single], false) => matches!(
+            *single,
+            dirs::CLASH_CONFIG
+                | dirs::VERGE_CONFIG
+                | dirs::PROFILE_YAML
+                | crate::constants::files::DNS_CONFIG
+        ),
+        (["profiles" | "icons", file_name], false) => validate_backup_name(file_name).is_ok(),
+        _ => false,
+    }
+}
+
 /// Backup creation strips the WebDAV credentials, so the live ones are kept.
 async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     let (webdav_url, webdav_username, webdav_password) = {
@@ -171,9 +248,75 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
 
     let home_dir = app_home_dir()?;
     AsyncHandler::spawn_blocking(move || -> Result<()> {
+        use std::io::Read as _;
+
         let file = std::fs::File::open(&path)?;
         let mut zip = zip::ZipArchive::new(file)?;
-        zip.extract(&home_dir)?;
+        if zip.len() > MAX_BACKUP_ENTRIES {
+            return Err(anyhow!(
+                "backup archive exceeds entry limit ({} > {MAX_BACKUP_ENTRIES})",
+                zip.len()
+            ));
+        }
+
+        let staging_dir = home_dir.join(format!(".restore-staging-{}", nanoid::nanoid!(8)));
+        std::fs::create_dir_all(&staging_dir)?;
+        let cleanup_staging = scopeguard::guard(&staging_dir, |dir| {
+            let _ = std::fs::remove_dir_all(dir);
+        });
+
+        let mut total_bytes: u64 = 0;
+        let mut files_to_apply: Vec<(PathBuf, PathBuf)> = Vec::new();
+
+        for i in 0..zip.len() {
+            let entry = zip.by_index(i)?;
+            if entry
+                .unix_mode()
+                .is_some_and(|mode| (mode & 0o170000) == 0o120000)
+            {
+                return Err(anyhow!("backup archive contains disallowed symlink entry"));
+            }
+
+            let rel_path = entry
+                .enclosed_name()
+                .ok_or_else(|| anyhow!("backup archive contains unsafe path"))?
+                .to_path_buf();
+            let is_dir = entry.is_dir();
+
+            if !is_allowed_backup_rel_path(&rel_path, is_dir) {
+                return Err(anyhow!(
+                    "backup archive contains disallowed path: {}",
+                    rel_path.display()
+                ));
+            }
+            if is_dir {
+                continue;
+            }
+
+            let staged_file = cleanup_staging.join(&rel_path);
+            if let Some(parent) = staged_file.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let remaining = MAX_BACKUP_TOTAL_BYTES.saturating_sub(total_bytes);
+            let mut limited = entry.take(remaining.saturating_add(1));
+            let mut out = std::fs::File::create(&staged_file)?;
+            let copied = std::io::copy(&mut limited, &mut out)?;
+            total_bytes = total_bytes
+                .checked_add(copied)
+                .filter(|&sum| sum <= MAX_BACKUP_TOTAL_BYTES)
+                .ok_or_else(|| anyhow!("backup archive exceeds maximum uncompressed size limit"))?;
+
+            files_to_apply.push((staged_file, home_dir.join(&rel_path)));
+        }
+
+        for (staged, target) in files_to_apply {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&staged, &target)?;
+        }
+
         Ok(())
     })
     .await
@@ -386,6 +529,17 @@ pub async fn export_local_backup(filename: String, destination: String) -> Resul
     }
 
     let dest_path = PathBuf::from(destination.as_str());
+    if !dest_path.is_absolute()
+        || dest_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        || !dest_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
+        return Err(anyhow!("invalid backup export destination path: {destination:?}"));
+    }
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent).await?;
     }
@@ -395,4 +549,40 @@ pub async fn export_local_backup(filename: String, destination: String) -> Resul
         .map(|_| ())
         .map_err(|err| anyhow!("Failed to export backup file: {err:#}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{is_allowed_backup_rel_path, validate_backup_name};
+
+    #[test]
+    fn backup_filename_validation_blocks_traversal_and_separators() {
+        assert!(validate_backup_name("backup-2026.zip").is_ok());
+        assert!(validate_backup_name("").is_err());
+        assert!(validate_backup_name(".").is_err());
+        assert!(validate_backup_name("../escape.zip").is_err());
+        assert!(validate_backup_name("dir/backup.zip").is_err());
+        assert!(validate_backup_name("dir\\backup.zip").is_err());
+        assert!(validate_backup_name("bad\0.zip").is_err());
+    }
+
+    #[test]
+    fn backup_restore_whitelist_accepts_only_expected_config_paths() {
+        assert!(is_allowed_backup_rel_path(Path::new("config.yaml"), false));
+        assert!(is_allowed_backup_rel_path(Path::new("verge.yaml"), false));
+        assert!(is_allowed_backup_rel_path(Path::new("profiles.yaml"), false));
+        assert!(is_allowed_backup_rel_path(Path::new("dns_config.yaml"), false));
+        assert!(is_allowed_backup_rel_path(Path::new("profiles"), true));
+        assert!(is_allowed_backup_rel_path(Path::new("icons"), true));
+        assert!(is_allowed_backup_rel_path(Path::new("profiles/sub.yaml"), false));
+        assert!(is_allowed_backup_rel_path(Path::new("icons/tray.png"), false));
+
+        assert!(!is_allowed_backup_rel_path(Path::new("../evil.yaml"), false));
+        assert!(!is_allowed_backup_rel_path(Path::new("profiles/../evil.yaml"), false));
+        assert!(!is_allowed_backup_rel_path(Path::new("profiles/sub/nested.yaml"), false));
+        assert!(!is_allowed_backup_rel_path(Path::new("random.exe"), false));
+        assert!(!is_allowed_backup_rel_path(Path::new("etc"), true));
+    }
 }

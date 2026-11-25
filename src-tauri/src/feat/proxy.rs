@@ -99,9 +99,18 @@ pub async fn toggle_tun_mode(not_save_file: Option<bool>) -> bool {
 pub async fn copy_clash_env() -> anyhow::Result<()> {
     let env_ip = env::var("CLASH_VERGE_REV_IP").ok();
     let verge_cfg = Config::verge().await.latest_arc();
-    let ip = env_ip
+    let raw_ip = env_ip
         .as_deref()
-        .unwrap_or_else(|| verge_cfg.proxy_host.as_deref().unwrap_or("127.0.0.1"));
+        .unwrap_or_else(|| verge_cfg.proxy_host.as_deref().unwrap_or("127.0.0.1"))
+        .trim();
+    if raw_ip.is_empty()
+        || !raw_ip
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '-' | '[' | ']'))
+    {
+        anyhow::bail!("Invalid proxy host format");
+    }
+    let ip = raw_ip;
 
     let app_handle = handle::Handle::app_handle();
     // Clipboard output must use the core's live port, including merge-config overrides.

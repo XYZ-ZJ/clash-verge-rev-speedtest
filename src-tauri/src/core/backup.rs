@@ -101,19 +101,30 @@ impl WebDavClient {
             }
         };
 
+        let parsed_base_url = tauri::Url::parse(config.url.as_str())
+            .map_err(|e| anyhow::Error::msg(format!("Invalid WebDAV URL: {e}")))?;
+        let base_scheme = parsed_base_url.scheme().to_ascii_lowercase();
+        let base_host = parsed_base_url.host_str().map(|h| h.to_ascii_lowercase());
+        let base_port = parsed_base_url.port_or_known_default();
+
         let client = reqwest_dav::ClientBuilder::new()
             .set_agent(
                 reqwest::Client::builder()
                     .use_rustls_tls()
-                    .danger_accept_invalid_certs(true)
                     .timeout(Duration::from_secs(op.timeout()))
                     .user_agent(format!("clash-verge/{APP_VERSION} ({OS} WebDAV-Client)"))
-                    .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                    .redirect(reqwest::redirect::Policy::custom(move |attempt| {
                         if attempt.previous().len() >= 5 {
-                            attempt.error("重定向次数过多")
-                        } else {
-                            attempt.follow()
+                            return attempt.error("重定向次数过多");
                         }
+                        let target = attempt.url();
+                        let same_scheme = target.scheme().eq_ignore_ascii_case(&base_scheme);
+                        let same_host = target.host_str().map(|h| h.to_ascii_lowercase()) == base_host;
+                        let same_port = target.port_or_known_default() == base_port;
+                        if !same_scheme || !same_host || !same_port {
+                            return attempt.error("Refusing cross-origin or scheme-downgrade WebDAV redirect");
+                        }
+                        attempt.follow()
                     }))
                     .build()?,
             )
@@ -270,11 +281,30 @@ fn parse_webdav_list(xml: &str) -> Result<Vec<ListEntity>, reqwest_dav::Error> {
 
 pub async fn create_backup() -> Result<(String, PathBuf), Error> {
     let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let zip_file_name: String = format!("{OS}-backup-{now}.zip").into();
+    let suffix = nanoid::nanoid!(8);
+    let zip_file_name: String = format!("{OS}-backup-{now}-{suffix}.zip").into();
     let zip_path = temp_dir().join(zip_file_name.as_str());
 
     let value = zip_path.clone();
-    let file = AsyncHandler::spawn_blocking(move || std::fs::File::create(&value)).await??;
+    let file = AsyncHandler::spawn_blocking(move || -> Result<std::fs::File, std::io::Error> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&value)
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&value)
+        }
+    })
+    .await??;
     let mut zip = zip::ZipWriter::new(file);
     zip.add_directory("profiles/", SimpleFileOptions::default())?;
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);

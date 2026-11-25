@@ -121,9 +121,13 @@ const PortRow = ({
           size="small"
           sx={{ width: 80, mr: 0.5, fontSize: 12 }}
           value={port}
-          onChange={(e) =>
-            onPortChange(+e.target.value?.replace(/\D+/, '').slice(0, 5))
-          }
+          onChange={(e) => {
+            const cleaned = e.target.value?.replace(/\D+/g, '').slice(0, 5)
+            const parsed = cleaned ? Number.parseInt(cleaned, 10) : 0
+            onPortChange(
+              Number.isSafeInteger(parsed) ? Math.min(65535, parsed) : 0,
+            )
+          }}
           disabled={!enabled}
           slotProps={{ htmlInput: { style: { fontSize: 12 } } }}
         />

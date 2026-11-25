@@ -262,7 +262,7 @@ fn next_chunk_size(current_mb_s: f64, streams: usize, lo: usize, hi: usize) -> u
     } else {
         lo
     };
-    want.div_ceil(65536) * 65536
+    want.div_ceil(32768) * 32768
 }
 
 fn generate_random_payload_block(size: usize) -> Vec<u8> {
@@ -489,16 +489,21 @@ async fn run_download_test(
         let current_rate = calculate_rate_now(&dl_samples, 1.5);
 
         if last_dl_progress.elapsed() >= Duration::from_millis(200) {
-            let _ = on_progress.send(SpeedTestProgress {
-                stage: "download".to_string(),
-                latency: Some(median_latency),
-                loss_rate: Some(rounded_loss_rate),
-                download_speed: Some(current_rate),
-                upload_speed: None,
-                location: location.map(str::to_string),
-                timestamp: None,
-                error: None,
-            });
+            if on_progress
+                .send(SpeedTestProgress {
+                    stage: "download".to_string(),
+                    latency: Some(median_latency),
+                    loss_rate: Some(rounded_loss_rate),
+                    download_speed: Some(current_rate),
+                    upload_speed: None,
+                    location: location.map(str::to_string),
+                    timestamp: None,
+                    error: None,
+                })
+                .is_err()
+            {
+                break;
+            }
             last_dl_progress = Instant::now();
         }
 
@@ -536,7 +541,7 @@ async fn run_upload_test(
     use std::time::{Duration, Instant};
 
     const UPLOAD_STREAMS: usize = 6;
-    const UPLOAD_MIN_CHUNK: usize = 256 * 1024;
+    const UPLOAD_MIN_CHUNK: usize = 32 * 1024;
     const UPLOAD_MAX_CHUNK: usize = 8 * 1024 * 1024;
     const UPLOAD_MAX_BYTES: u64 = 100 * 1024 * 1024;
     const UPLOAD_MIN_CAP_DURATION: Duration = Duration::from_secs(3);
@@ -565,7 +570,7 @@ async fn run_upload_test(
                 let payload = random_payload.slice(..chunk_size);
 
                 let resp_res = tokio::time::timeout(
-                    Duration::from_secs(8),
+                    Duration::from_secs(12),
                     client
                         .post("https://speed.cloudflare.com/__up")
                         .body(payload)
@@ -616,16 +621,21 @@ async fn run_upload_test(
         current_ul_chunk.store(next_chunk, Ordering::Relaxed);
 
         if last_ul_progress.elapsed() >= Duration::from_millis(200) {
-            let _ = on_progress.send(SpeedTestProgress {
-                stage: "upload".to_string(),
-                latency: Some(median_latency),
-                loss_rate: Some(rounded_loss_rate),
-                download_speed: Some(final_dl_speed),
-                upload_speed: Some(current_rate),
-                location: location.map(str::to_string),
-                timestamp: None,
-                error: None,
-            });
+            if on_progress
+                .send(SpeedTestProgress {
+                    stage: "upload".to_string(),
+                    latency: Some(median_latency),
+                    loss_rate: Some(rounded_loss_rate),
+                    download_speed: Some(final_dl_speed),
+                    upload_speed: Some(current_rate),
+                    location: location.map(str::to_string),
+                    timestamp: None,
+                    error: None,
+                })
+                .is_err()
+            {
+                break;
+            }
             last_ul_progress = Instant::now();
         }
 

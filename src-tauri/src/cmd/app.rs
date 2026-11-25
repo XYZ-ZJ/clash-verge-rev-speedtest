@@ -36,6 +36,7 @@ pub async fn open_logs_dir() -> CmdResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub fn open_devtools(app_handle: AppHandle) {
+    #[cfg(debug_assertions)]
     if let Some(window) = app_handle.get_webview_window("main") {
         if !window.is_devtools_open() {
             window.open_devtools();
@@ -43,6 +44,8 @@ pub fn open_devtools(app_handle: AppHandle) {
             window.close_devtools();
         }
     }
+    #[cfg(not(debug_assertions))]
+    let _ = app_handle;
 }
 
 #[tauri::command]

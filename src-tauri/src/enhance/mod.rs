@@ -533,18 +533,25 @@ fn ensure_lan_bind_address(mut config: Mapping) -> Mapping {
 
 fn sanitize_dns_servers(mut config: Mapping) -> Mapping {
     if let Some(Value::Mapping(dns)) = config.get_mut("dns") {
-        for key in ["default-nameserver", "direct-nameserver"] {
+        for key in [
+            "default-nameserver",
+            "direct-nameserver",
+            "nameserver",
+            "fallback",
+            "proxy-server-nameserver",
+        ] {
             if let Some(Value::Sequence(seq)) = dns.get_mut(key) {
                 seq.retain(|item| {
                     if let Value::String(s) = item {
-                        s.trim().to_lowercase() != "system"
+                        let lower = s.trim().to_ascii_lowercase();
+                        lower != "system" && !lower.starts_with("dhcp://")
                     } else {
                         true
                     }
                 });
-                if key == "default-nameserver" && seq.is_empty() {
-                    seq.push(Value::String("8.8.8.8".into()));
+                if (key == "default-nameserver" || key == "nameserver") && seq.is_empty() {
                     seq.push(Value::String("1.1.1.1".into()));
+                    seq.push(Value::String("8.8.8.8".into()));
                 }
             }
         }

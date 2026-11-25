@@ -264,11 +264,16 @@ impl CoreConfigValidator {
         let has_main =
             content.contains("function main") || content.contains("const main") || content.contains("let main");
 
-        // Boa parsing is pure CPU; keep it off the async worker, with a timeout.
+        // Boa parsing is pure CPU; keep it off the async worker, with a timeout and loop bound.
         let syntax = crate::process::AsyncHandler::spawn_blocking(move || {
             use boa_engine::{Context, Source};
 
+            const MAX_VALIDATE_LOOP_ITERATIONS: u64 = 10_000_000;
+
             let mut context = Context::default();
+            context
+                .runtime_limits_mut()
+                .set_loop_iteration_limit(MAX_VALIDATE_LOOP_ITERATIONS);
             let _ = context.eval(Source::from_bytes(
                 "var console = Object.freeze({log(...data){},info(...data){},error(...data){},debug(...data){}});",
             ));

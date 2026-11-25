@@ -250,7 +250,7 @@ export const SysproxyViewer = forwardRef<DialogRef>((props, ref) => {
   }
 
   const onSave = useLockFn(async () => {
-    if (value.duration < 1) {
+    if (!Number.isFinite(value.duration) || value.duration < 1) {
       showNotice.error('settings.modals.sysproxy.messages.durationTooShort')
       return
     }
@@ -305,15 +305,9 @@ export const SysproxyViewer = forwardRef<DialogRef>((props, ref) => {
       patch.use_default_bypass = value.use_default
     }
 
-    let pacContent = value.pac_content
-    if (pacContent) {
-      pacContent = pacContent.replace(/%proxy_host%/g, value.proxy_host)
-      const mixedPortStr = displayedMixedPort.toString()
-      pacContent = pacContent.replace(/%mixed-port%/g, mixedPortStr)
-    }
-
-    if (pacContent !== pac_file_content) {
-      patch.pac_file_content = pacContent
+    // Preserve %proxy_host% and %mixed-port% placeholders so /commands/pac expands them dynamically.
+    if (value.pac_content !== pac_file_content) {
+      patch.pac_file_content = value.pac_content
     }
 
     let proxyHost = value.proxy_host
@@ -469,9 +463,11 @@ export const SysproxyViewer = forwardRef<DialogRef>((props, ref) => {
               },
             }}
             onChange={(e) => {
+              const cleaned = e.target.value.replace(/\D+/g, '')
+              const parsed = cleaned === '' ? 0 : Number.parseInt(cleaned, 10)
               setValue((v) => ({
                 ...v,
-                duration: +e.target.value.replace(/\D/, ''),
+                duration: Number.isFinite(parsed) ? parsed : 0,
               }))
             }}
           />

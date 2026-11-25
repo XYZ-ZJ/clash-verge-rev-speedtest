@@ -5,6 +5,14 @@
 name: Check Formatting
 
 on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "src-tauri/**"
+      - "**/*.rs"
+      - "rustfmt.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rustfmt.yml"
   pull_request:
     paths:
       - "src-tauri/**"
@@ -12,6 +20,7 @@ on:
       - "rustfmt.toml"
       - "rust-toolchain.toml"
       - ".github/workflows/rustfmt.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read

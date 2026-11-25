@@ -255,28 +255,57 @@ async fn download_from(
     floor: u64,
     on_event: &(impl Fn(DownloadEvent) + Sync),
 ) -> Result<Vec<u8>> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use tokio::sync::Notify;
+
     let mut source = update.clone();
     source.download_url = url.clone();
     let received = AtomicU64::new(0);
+    let exceeded = AtomicBool::new(false);
+    let overflow_notify = Arc::new(Notify::new());
+    let overflow_signal = Arc::clone(&overflow_notify);
     let mut started = false;
     let fetch = source.download(
         |chunk_length, content_length| {
             if !std::mem::replace(&mut started, true) {
                 on_event(DownloadEvent::Started { content_length });
             }
-            received.fetch_add(chunk_length as u64, Ordering::Relaxed);
+            let total = received
+                .fetch_add(chunk_length as u64, Ordering::Relaxed)
+                .saturating_add(chunk_length as u64);
+            if total > MAX_DOWNLOAD_BYTES && !exceeded.swap(true, Ordering::AcqRel) {
+                overflow_signal.notify_waiters();
+            }
             on_event(DownloadEvent::Progress { chunk_length });
         },
         || {},
     );
     tokio::pin!(fetch);
-    let mut seen = 0;
+    let mut seen = 0u64;
     loop {
+        if exceeded.load(Ordering::Acquire) {
+            anyhow::bail!("download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
+        }
         tokio::select! {
-            result = &mut fetch => return Ok(result?),
+            result = &mut fetch => {
+                if exceeded.load(Ordering::Acquire) {
+                    anyhow::bail!("download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
+                }
+                return Ok(result?);
+            }
+            () = overflow_notify.notified() => {
+                anyhow::bail!("download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
+            }
             () = tokio::time::sleep(PROGRESS_WINDOW) => {
                 let total = received.load(Ordering::Relaxed);
-                anyhow::ensure!(total - seen >= floor, "only {} bytes in {PROGRESS_WINDOW:?}", total - seen);
+                anyhow::ensure!(
+                    total.saturating_sub(seen) >= floor,
+                    "only {} bytes in {PROGRESS_WINDOW:?}",
+                    total.saturating_sub(seen)
+                );
                 anyhow::ensure!(total <= MAX_DOWNLOAD_BYTES, "download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
                 seen = total;
             }

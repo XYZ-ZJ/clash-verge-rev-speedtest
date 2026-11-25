@@ -236,7 +236,7 @@ impl Logger {
                 WRITE_FLUSH_INTERVAL,
             ))
             .rotate(
-                Criterion::Size(log_max_size * 1024),
+                Criterion::Size(log_max_size.saturating_mul(1024)),
                 ROTATE_NAMING,
                 Cleanup::KeepLogFiles(log_max_count),
             );

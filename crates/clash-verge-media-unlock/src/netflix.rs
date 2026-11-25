@@ -71,6 +71,18 @@ async fn check_title(client: &Client, id: &str) -> reqwest::Result<StatusCode> {
         .map(|res| res.status())
 }
 
+fn parse_country_segment(candidate: &str) -> Option<&str> {
+    let code = candidate.split('-').next()?;
+    if code.len() == 2
+        && code.chars().all(|c| c.is_ascii_alphabetic())
+        && rust_iso3166::from_alpha2(&code.to_ascii_uppercase()).is_some()
+    {
+        Some(code)
+    } else {
+        None
+    }
+}
+
 async fn check_region(client: &Client) -> UnlockItem {
     let response = match client
         .get("https://www.netflix.com/title/80018499")
@@ -89,9 +101,21 @@ async fn check_region(client: &Client) -> UnlockItem {
         .headers()
         .get("location")
         .and_then(|v| v.to_str().ok())
-        .and_then(|location| location.split('/').nth(3))
-        .and_then(|region| region.split('-').next())
-        .filter(|region| !region.is_empty())
+        .and_then(|location| {
+            location
+                .split('/')
+                .nth(3)
+                .and_then(parse_country_segment)
+                .or_else(|| location.split('/').nth(1).and_then(parse_country_segment))
+        })
+        .or_else(|| {
+            response
+                .url()
+                .path()
+                .split('/')
+                .nth(1)
+                .and_then(parse_country_segment)
+        })
         .unwrap_or("us");
 
     UnlockItem::checked_region(NETFLIX_NAME, "Yes", region)

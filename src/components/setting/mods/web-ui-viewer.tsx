@@ -51,21 +51,36 @@ export function WebUIViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const handleAdd = useLockFn(async (value: string) => {
     const newList = [...webUIList, value]
     mutateVerge((old) => (old ? { ...old, web_ui_list: newList } : old))
-    await patchVerge({ web_ui_list: newList })
+    try {
+      await patchVerge({ web_ui_list: newList })
+    } catch (err) {
+      mutateVerge((old) => (old ? { ...old, web_ui_list: webUIList } : old))
+      throw err
+    }
   })
 
   const handleChange = useLockFn(async (index: number, value?: string) => {
     const newList = [...webUIList]
     newList[index] = value ?? ''
     mutateVerge((old) => (old ? { ...old, web_ui_list: newList } : old))
-    await patchVerge({ web_ui_list: newList })
+    try {
+      await patchVerge({ web_ui_list: newList })
+    } catch (err) {
+      mutateVerge((old) => (old ? { ...old, web_ui_list: webUIList } : old))
+      throw err
+    }
   })
 
   const handleDelete = useLockFn(async (index: number) => {
     const newList = [...webUIList]
     newList.splice(index, 1)
     mutateVerge((old) => (old ? { ...old, web_ui_list: newList } : old))
-    await patchVerge({ web_ui_list: newList })
+    try {
+      await patchVerge({ web_ui_list: newList })
+    } catch (err) {
+      mutateVerge((old) => (old ? { ...old, web_ui_list: webUIList } : old))
+      throw err
+    }
   })
 
   const handleOpenUrl = useLockFn(async (value?: string) => {
@@ -79,17 +94,16 @@ export function WebUIViewer({ ref }: { ref?: Ref<DialogRef> }) {
             t('settings.modals.webUI.errors.clashInfoUnavailable'),
           )
         }
-        if (!clashInfo.server?.includes(':')) {
+        const serverStr = clashInfo.server?.trim() ?? ''
+        const lastColon = serverStr.lastIndexOf(':')
+        const port = lastColon !== -1 ? serverStr.slice(lastColon + 1).trim() : ''
+        if (!/^\d+$/.test(port)) {
           throw new Error(
             t('settings.modals.webUI.errors.invalidServer', {
               server: clashInfo.server,
             }),
           )
         }
-
-        const port = clashInfo.server
-          .slice(clashInfo.server.indexOf(':') + 1)
-          .trim()
 
         url = url.replaceAll('%port', port || '9097')
         url = url.replaceAll(

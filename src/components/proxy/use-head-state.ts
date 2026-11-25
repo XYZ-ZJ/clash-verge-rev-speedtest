@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 
 import { useProfiles } from '@/hooks/use-profiles'
 
@@ -59,14 +59,18 @@ export function useHeadStateNew() {
   const current = profiles?.current || ''
 
   const [state, dispatch] = useReducer(headStateReducer, {})
+  const hydratedProfileRef = useRef<string | null>(null)
 
   useEffect(() => {
+    if (!current) {
+      hydratedProfileRef.current = null
+      dispatch({ type: 'reset' })
+      return
+    }
     try {
-      const data = JSON.parse(
-        localStorage.getItem(HEAD_STATE_KEY)!,
-      ) as HeadStateStorage
-
-      const value = data[current] || {}
+      const raw = localStorage.getItem(HEAD_STATE_KEY)
+      const data = (raw ? JSON.parse(raw) : {}) as HeadStateStorage
+      const value = data?.[current]
 
       if (value && typeof value === 'object') {
         dispatch({ type: 'replace', payload: value })
@@ -75,10 +79,13 @@ export function useHeadStateNew() {
       }
     } catch {
       dispatch({ type: 'reset' })
+    } finally {
+      hydratedProfileRef.current = current
     }
   }, [current])
 
   useEffect(() => {
+    if (!current || hydratedProfileRef.current !== current) return
     const timer = setTimeout(() => {
       try {
         const item = localStorage.getItem(HEAD_STATE_KEY)
@@ -91,7 +98,7 @@ export function useHeadStateNew() {
 
         localStorage.setItem(HEAD_STATE_KEY, JSON.stringify(data))
       } catch {}
-    })
+    }, 150)
 
     return () => clearTimeout(timer)
   }, [state, current])

@@ -393,12 +393,14 @@ export const MiscViewer = forwardRef<DialogRef>((props, ref) => {
             sx={{ width: 250 }}
             value={values.defaultLatencyTimeout}
             placeholder="10000"
-            onChange={(e) =>
+            onChange={(e) => {
+              const parsed = Number.parseInt(e.target.value, 10)
               setValues((v) => ({
                 ...v,
-                defaultLatencyTimeout: parseInt(e.target.value),
+                defaultLatencyTimeout:
+                  Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0,
               }))
-            }
+            }}
             slotProps={{
               input: {
                 endAdornment: (

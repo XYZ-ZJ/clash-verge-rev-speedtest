@@ -181,12 +181,15 @@ const rules: {
   {
     name: 'NETWORK',
     example: 'udp',
-    validator: (value) => ['tcp', 'udp'].includes(value),
+    validator: (value) => ['TCP', 'UDP'].includes(value.trim().toUpperCase()),
   },
   {
     name: 'UID',
     example: '1001',
-    validator: (value) => (+value ? true : false),
+    validator: (value) => {
+      const trimmed = value.trim()
+      return /^\d+$/.test(trimmed) && Number.isSafeInteger(Number(trimmed))
+    },
   },
   {
     name: 'IN-TYPE',
@@ -424,30 +427,31 @@ export const RulesEditorViewer = (props: Props) => {
     setVisualization(true)
   }
 
+  const serializeVisualConfig = useCallback((): string | null => {
+    if (!hasLoadedSeqConfigRef.current || !(prependSeq && appendSeq && deleteSeq)) {
+      return null
+    }
+    try {
+      return yaml.dump(
+        { prepend: prependSeq, append: appendSeq, delete: deleteSeq },
+        { forceQuotes: true },
+      )
+    } catch (error) {
+      showNotice.error(error ?? 'YAML dump error')
+      return null
+    }
+  }, [prependSeq, appendSeq, deleteSeq])
+
   // 优化：异步处理大数据yaml.dump，避免UI卡死
   useEffect(() => {
-    if (!hasLoadedSeqConfigRef.current) {
-      return
-    }
-
-    if (!(prependSeq && appendSeq && deleteSeq)) {
+    if (!hasLoadedSeqConfigRef.current || !(prependSeq && appendSeq && deleteSeq)) {
       return
     }
 
     const serialize = () => {
-      if (!hasLoadedSeqConfigRef.current) {
-        return
-      }
-
-      try {
-        setCurrData(
-          yaml.dump(
-            { prepend: prependSeq, append: appendSeq, delete: deleteSeq },
-            { forceQuotes: true },
-          ),
-        )
-      } catch (error) {
-        showNotice.error(error ?? 'YAML dump error')
+      const serialized = serializeVisualConfig()
+      if (serialized !== null) {
+        setCurrData(serialized)
       }
     }
     let idleId: number | undefined
@@ -465,7 +469,7 @@ export const RulesEditorViewer = (props: Props) => {
         clearTimeout(timeoutId)
       }
     }
-  }, [prependSeq, appendSeq, deleteSeq])
+  }, [prependSeq, appendSeq, deleteSeq, serializeVisualConfig])
 
   const fetchProfile = useCallback(async () => {
     const data = await readProfileFile(profileUid) // 原配置文件
@@ -571,7 +575,14 @@ export const RulesEditorViewer = (props: Props) => {
 
   const handleSave = useLockFn(async () => {
     try {
-      const result = await mutate(() => saveProfileFile(property, currData), {
+      let dataToSave = currData
+      if (visualization && hasLoadedSeqConfigRef.current) {
+        const serialized = serializeVisualConfig()
+        if (serialized === null) return
+        dataToSave = serialized
+        setCurrData(serialized)
+      }
+      const result = await mutate(() => saveProfileFile(property, dataToSave), {
         id: `save-profile-file:${property}`,
         errorNotice: false,
       })
@@ -581,7 +592,7 @@ export const RulesEditorViewer = (props: Props) => {
         return
       }
       showNotice.success('shared.feedback.notifications.saved')
-      onSave?.(prevData, currData)
+      onSave?.(prevData, dataToSave)
       onClose()
     } catch (err: any) {
       showNotice.error(err)

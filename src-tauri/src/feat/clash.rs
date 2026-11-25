@@ -97,6 +97,9 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     use tokio::time::Instant;
 
     let parsed = tauri::Url::parse(&url)?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        anyhow::bail!("Unsupported URL scheme for delay test");
+    }
     let is_https = parsed.scheme() == "https";
     let host = parsed
         .host_str()
@@ -111,6 +114,36 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     } else {
         None
     };
+
+    if proxy_port.is_none() {
+        let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+        if lower_host == "localhost"
+            || lower_host.ends_with(".localhost")
+            || lower_host.ends_with(".local")
+            || lower_host.ends_with(".internal")
+        {
+            anyhow::bail!("Refusing direct delay probe to local/internal host without proxy");
+        }
+        if let Ok(ip) = lower_host.parse::<std::net::IpAddr>() {
+            let blocked = match ip {
+                std::net::IpAddr::V4(v4) => {
+                    v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+                }
+                std::net::IpAddr::V6(v6) => {
+                    v6.is_loopback()
+                        || v6.is_unspecified()
+                        || v6.is_unique_local()
+                        || v6.is_unicast_link_local()
+                        || v6.to_ipv4_mapped().is_some_and(|v4| {
+                            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+                        })
+                }
+            };
+            if blocked {
+                anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
+            }
+        }
+    }
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let start = Instant::now();

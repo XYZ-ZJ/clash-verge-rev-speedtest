@@ -50,7 +50,7 @@ impl<C: Clock> Limiter<C> {
         let now = self.clock.now_ms();
         let last = self.last_run_ms.load(Ordering::Relaxed);
 
-        if now < last + self.period_ms && now >= last {
+        if now < last.saturating_add(self.period_ms) && now >= last {
             return false;
         }
 

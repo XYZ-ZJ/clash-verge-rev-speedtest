@@ -1,6 +1,10 @@
 import {
   decodeAndTrim,
+  getIfNotBlank,
   parseBoolOrPresence,
+  parseCommaList,
+  parseEchParam,
+  parseInsecureParam,
   parseInteger,
   parsePortOrDefault,
   parseQueryStringNormalized,
@@ -48,33 +52,49 @@ export function URI_AnyTLS(line: string): IProxyAnyTLSConfig {
   if (params.sni) {
     proxy.sni = params.sni
   }
-  if (params.alpn) {
-    const alpn = params.alpn
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-    if (alpn.length > 0) {
-      proxy.alpn = alpn
-    }
+  const alpn = parseCommaList(params.alpn)
+  if (alpn) {
+    proxy.alpn = alpn
   }
 
-  const fingerprint = params.fingerprint ?? params.hpkp
+  const fingerprint = getIfNotBlank(
+    params.fingerprint ?? params.hpkp ?? params.pinSHA256,
+  )
   if (fingerprint) {
     proxy.fingerprint = fingerprint
   }
-  const clientFingerprint = params['client-fingerprint'] ?? params.fp
+  const clientFingerprint = getIfNotBlank(
+    params['client-fingerprint'] ?? params.fp,
+  )
   if (clientFingerprint) {
     proxy['client-fingerprint'] = clientFingerprint as ClientFingerprint
   }
 
-  if (Object.prototype.hasOwnProperty.call(params, 'skip-cert-verify')) {
-    proxy['skip-cert-verify'] = parseBoolOrPresence(params['skip-cert-verify'])
-  } else if (Object.prototype.hasOwnProperty.call(params, 'insecure')) {
-    proxy['skip-cert-verify'] = parseBoolOrPresence(params.insecure)
+  const nameCertVerify = getIfNotBlank(
+    params['name-cert-verify'] ?? params.nameCertVerify,
+  )
+  if (nameCertVerify) {
+    proxy['name-cert-verify'] = nameCertVerify
+  }
+
+  const insecure = parseInsecureParam(params)
+  if (insecure !== undefined) {
+    proxy['skip-cert-verify'] = insecure
+  }
+
+  const echOpts = parseEchParam(
+    params.ech ?? params['ech-config'],
+    params['ech-query-server-name'] ?? params.echQueryServerName,
+  )
+  if (echOpts) {
+    proxy['ech-opts'] = echOpts
   }
 
   if (Object.prototype.hasOwnProperty.call(params, 'udp')) {
     proxy.udp = parseBoolOrPresence(params.udp)
+  }
+  if (Object.prototype.hasOwnProperty.call(params, 'disable-reuse')) {
+    proxy['disable-reuse'] = parseBoolOrPresence(params['disable-reuse'])
   }
 
   const idleCheck = parseInteger(params['idle-session-check-interval'])

@@ -161,7 +161,7 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
         // which let other local users decrypt the stored WebDAV credentials.
         #[cfg(unix)]
         {
-            use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+            use std::os::unix::fs::PermissionsExt as _;
             let metadata = fs::metadata(&key_path)
                 .map_err(|e| anyhow::anyhow!("Failed to stat encryption key: {}", e))?;
             if metadata.permissions().mode() & 0o777 != 0o600 {
@@ -178,7 +178,7 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
         }
         #[cfg(unix)]
         {
-            use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+            use std::os::unix::fs::OpenOptionsExt as _;
             if let Err(e) = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)

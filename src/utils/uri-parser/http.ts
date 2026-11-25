@@ -1,6 +1,11 @@
 import {
   decodeAndTrim,
+  getIfNotBlank,
+  normalizeUriAndGetScheme,
   parseBoolOrPresence,
+  parseCommaList,
+  parseEchParam,
+  parseInsecureParam,
   parseIpVersion,
   parsePortOrDefault,
   parseQueryStringNormalized,
@@ -11,6 +16,7 @@ import {
 } from './helpers'
 
 export function URI_HTTP(line: string): IProxyHttpConfig {
+  const { scheme } = normalizeUriAndGetScheme(line)
   const afterScheme = stripUriScheme(
     line,
     ['http', 'https'],
@@ -26,7 +32,8 @@ export function URI_HTTP(line: string): IProxyHttpConfig {
     query: addons,
     fragment: nameRaw,
   } = parseUrlLike(afterScheme, { errorMessage: 'Invalid http uri' })
-  const portNum = parsePortOrDefault(port, 443)
+  const isHttps = scheme === 'https'
+  const portNum = parsePortOrDefault(port, isHttps ? 443 : 80)
   const auth = safeDecodeURIComponent(authRaw) ?? authRaw
   const decodedName = decodeAndTrim(nameRaw)
 
@@ -36,6 +43,7 @@ export function URI_HTTP(line: string): IProxyHttpConfig {
     name,
     server,
     port: portNum,
+    ...(isHttps ? { tls: true } : {}),
   }
   if (auth) {
     const [username, password] = splitOnce(auth, ':')
@@ -49,11 +57,20 @@ export function URI_HTTP(line: string): IProxyHttpConfig {
       case 'tls':
         proxy.tls = parseBoolOrPresence(value)
         break
-      case 'fingerprint':
-        proxy.fingerprint = value
+      case 'sni':
+      case 'peer':
+        if (value) proxy.sni = value
         break
-      case 'skip-cert-verify':
-        proxy['skip-cert-verify'] = parseBoolOrPresence(value)
+      case 'alpn':
+        proxy.alpn = parseCommaList(value)
+        break
+      case 'fingerprint':
+      case 'hpkp':
+      case 'pinSHA256':
+        if (value) proxy.fingerprint = value
+        break
+      case 'name-cert-verify':
+        if (value) proxy['name-cert-verify'] = value
         break
       case 'ip-version':
         proxy['ip-version'] = parseIpVersion(value)
@@ -61,6 +78,19 @@ export function URI_HTTP(line: string): IProxyHttpConfig {
       default:
         break
     }
+  }
+
+  const insecure = parseInsecureParam(params)
+  if (insecure !== undefined) {
+    proxy['skip-cert-verify'] = insecure
+  }
+
+  const echOpts = parseEchParam(
+    getIfNotBlank(params.ech ?? params['ech-config']),
+    params['ech-query-server-name'] ?? params.echQueryServerName,
+  )
+  if (echOpts) {
+    proxy['ech-opts'] = echOpts
   }
 
   return proxy

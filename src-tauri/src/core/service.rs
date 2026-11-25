@@ -334,11 +334,21 @@ pub(crate) fn service_stop_reason() -> Result<Option<&'static str>> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn trusted_service_evidence() -> Result<bool> {
+    if !Path::new("/run/systemd/system").exists() {
+        let slug = clash_verge_service_ipc::SERVICE_SLUG;
+        return Ok(Path::new(&format!("/etc/systemd/system/{slug}.service")).exists()
+            || Path::new(&format!("/usr/lib/systemd/system/{slug}.service")).exists()
+            || Path::new(&format!("/etc/init.d/{slug}")).exists());
+    }
     let unit = format!("{}.service", clash_verge_service_ipc::SERVICE_SLUG);
-    let output = StdCommand::new("systemctl")
+    let output = match StdCommand::new("systemctl")
         .args(["show", "--property=LoadState", "--value", &unit])
         .output()
-        .context("failed to inspect systemd service registration")?;
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error).context("failed to inspect systemd service registration"),
+    };
     if !output.status.success() {
         bail!(
             "systemd service registration probe failed with status {}",
@@ -671,14 +681,14 @@ fn uninstall_service() -> Result<()> {
     let elevator = crate::utils::help::linux_elevator();
     let status = if linux_running_as_root() {
         StdCommand::new(&uninstall_path).status()?
-    } else {
+    } else if elevator.contains("pkexec") {
         let result = StdCommand::new(&elevator)
             .arg("--disable-internal-agent")
             .arg(&uninstall_path)
             .status()?;
 
         // 如果 pkexec 执行失败，回退到 sudo
-        if !result.success() && elevator.contains("pkexec") {
+        if !result.success() {
             logging!(
                 warn,
                 Type::Service,
@@ -689,6 +699,8 @@ fn uninstall_service() -> Result<()> {
         } else {
             result
         }
+    } else {
+        StdCommand::new(&elevator).arg(&uninstall_path).status()?
     };
     logging!(
         info,

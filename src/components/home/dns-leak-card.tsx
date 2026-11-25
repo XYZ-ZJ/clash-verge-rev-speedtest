@@ -114,7 +114,7 @@ export const DnsLeakCard = () => {
   const [showIp, setShowIp] = useState(false)
   const [autoRefresh, setAutoRefresh] = useLocalStorage(
     'dns-leak-auto-refresh',
-    true,
+    false,
   )
   const appWindow = useMemo(() => getCurrentWebviewWindow(), [])
 
@@ -127,7 +127,13 @@ export const DnsLeakCard = () => {
     remainingSeconds: DNS_REFRESH_SECONDS,
   })
 
-  const { data: dnsData, error, isLoading, refetch: mutate } = useDnsLeakInfo()
+  const {
+    data: dnsData,
+    error,
+    isLoading,
+    isFetching,
+    refetch: mutate,
+  } = useDnsLeakInfo(autoRefresh)
 
   const onCountdownTick = useEffectEvent(async () => {
     const now = Date.now()
@@ -199,7 +205,7 @@ export const DnsLeakCard = () => {
   let mainElement: React.ReactElement
 
   switch (true) {
-    case isLoading:
+    case isLoading || (isFetching && !dnsData):
       mainElement = (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Skeleton variant="text" width="60%" height={30} />
@@ -229,6 +235,61 @@ export const DnsLeakCard = () => {
           <Button onClick={() => mutate()} sx={{ mt: 2 }}>
             {t('shared.actions.retry')}
           </Button>
+        </Box>
+      )
+      break
+    case !dnsData:
+      mainElement = (
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+            }}
+          >
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<SecurityOutlined fontSize="small" />}
+              onClick={() => mutate()}
+              disabled={isFetching}
+            >
+              {t('shared.actions.check')}
+            </Button>
+          </Box>
+          <Box
+            sx={{
+              mt: 'auto',
+              pt: 0.5,
+              borderTop: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              opacity: 0.7,
+              fontSize: '0.7rem',
+            }}
+          >
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Switch
+                  size="small"
+                  checked={autoRefresh}
+                  onChange={(_, checked) => setAutoRefresh(checked)}
+                />
+              }
+              label={
+                <Typography variant="caption">
+                  {t('home.components.dnsLeak.labels.autoRefresh')}
+                </Typography>
+              }
+            />
+          </Box>
         </Box>
       )
       break
@@ -459,11 +520,13 @@ export const DnsLeakCard = () => {
   )
 }
 
-function useDnsLeakInfo() {
+function useDnsLeakInfo(autoRefresh = false) {
   return useQuery({
     queryKey: [DNS_LEAK_CACHE_KEY],
     queryFn: getDnsLeakInfo,
     staleTime: Infinity,
+    revalidateOnMount: autoRefresh,
+    revalidateIfStale: autoRefresh,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: 1,

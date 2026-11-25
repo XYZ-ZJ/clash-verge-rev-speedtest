@@ -24,12 +24,31 @@ const compareVersions = (a: string | null, b: string | null): number | null => {
 }
 
 const localVersionNormalized = normalizeVersion(appVersion)
+let activeUpdate: Update | null = null
+
+const closeUpdateResource = async (
+  update: Update | null,
+  reason: string,
+): Promise<void> => {
+  if (!update) return
+  try {
+    await update.close()
+  } catch (err) {
+    console.warn(`[updater] failed to close ${reason} update resource`, err)
+  }
+}
 
 export const checkUpdateSafe = async (
   options?: CheckOptions,
 ): Promise<Update | null> => {
   const result = await check(options ?? {})
-  if (!result) return null
+  if (!result) {
+    if (activeUpdate) {
+      await closeUpdateResource(activeUpdate, 'stale')
+      activeUpdate = null
+    }
+    return null
+  }
 
   const remoteVersion = result.version
   const comparison = compareVersions(remoteVersion, localVersionNormalized)
@@ -39,14 +58,18 @@ export const checkUpdateSafe = async (
     remoteVersion === localVersionNormalized?.split('+')[0]
 
   if (comparison !== null && comparison <= 0 && !isBuildToStable) {
-    try {
-      await result.close()
-    } catch (err) {
-      console.warn('[updater] failed to close stale update resource', err)
+    await closeUpdateResource(result, 'stale')
+    if (activeUpdate && activeUpdate !== result) {
+      await closeUpdateResource(activeUpdate, 'stale')
     }
+    activeUpdate = null
     return null
   }
 
+  if (activeUpdate && activeUpdate !== result) {
+    await closeUpdateResource(activeUpdate, 'superseded')
+  }
+  activeUpdate = result
   return result
 }
 

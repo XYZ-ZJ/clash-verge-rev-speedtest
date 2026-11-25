@@ -187,36 +187,52 @@ impl CoreManager {
         #[cfg(unix)]
         discard_unwritable_core_cache(&config_dir);
 
-        #[cfg(unix)]
-        let previous_mask = unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(0o077) };
-        let command = app_handle
-            .shell()
-            .sidecar(clash_core.as_str())
-            .map_err(|error| anyhow::anyhow!("failed to build sidecar command for core {clash_core:?}: {error:#}"))?;
-        let command = command.args([
-            "-d",
-            dirs::path_to_str(&config_dir)?,
-            "-f",
-            dirs::path_to_str(&config_file)?,
-            if cfg!(windows) {
-                "-ext-ctl-pipe"
-            } else {
-                "-ext-ctl-unix"
-            },
-            dirs::path_to_str(&sidecar_ipc)?,
-        ]);
-        #[cfg(windows)]
-        let command = command.env(
-            "LISTEN_NAMEDPIPE_SDDL",
-            crate::core::owner_identity::current_user_pipe_sddl()?,
-        );
-        let (mut rx, child) = command.spawn().map_err(|error| {
-            anyhow::anyhow!(
-                "failed to start sidecar core {clash_core:?} with config {} and data directory {}: {error:#}",
-                config_file.display(),
-                config_dir.display()
-            )
-        })?;
+        let (mut rx, child) = {
+            #[cfg(unix)]
+            struct UmaskGuard(tauri_plugin_clash_verge_sysinfo::libc::mode_t);
+
+            #[cfg(unix)]
+            impl Drop for UmaskGuard {
+                fn drop(&mut self) {
+                    unsafe {
+                        tauri_plugin_clash_verge_sysinfo::libc::umask(self.0);
+                    }
+                }
+            }
+
+            #[cfg(unix)]
+            let _umask_guard =
+                UmaskGuard(unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(0o077) });
+
+            let command = app_handle
+                .shell()
+                .sidecar(clash_core.as_str())
+                .map_err(|error| anyhow::anyhow!("failed to build sidecar command for core {clash_core:?}: {error:#}"))?;
+            let command = command.args([
+                "-d",
+                dirs::path_to_str(&config_dir)?,
+                "-f",
+                dirs::path_to_str(&config_file)?,
+                if cfg!(windows) {
+                    "-ext-ctl-pipe"
+                } else {
+                    "-ext-ctl-unix"
+                },
+                dirs::path_to_str(&sidecar_ipc)?,
+            ]);
+            #[cfg(windows)]
+            let command = command.env(
+                "LISTEN_NAMEDPIPE_SDDL",
+                crate::core::owner_identity::current_user_pipe_sddl()?,
+            );
+            command.spawn().map_err(|error| {
+                anyhow::anyhow!(
+                    "failed to start sidecar core {clash_core:?} with config {} and data directory {}: {error:#}",
+                    config_file.display(),
+                    config_dir.display()
+                )
+            })?
+        };
         let (terminated, termination) = tokio::sync::oneshot::channel();
         *self.sidecar_exit.lock().await = Some(execution.release_after_exit(child.pid(), termination));
         #[cfg(target_os = "windows")]
@@ -238,11 +254,6 @@ impl CoreManager {
                     return Err(error);
                 }
             }
-        };
-
-        #[cfg(unix)]
-        unsafe {
-            tauri_plugin_clash_verge_sysinfo::libc::umask(previous_mask)
         };
 
         let pid = child.pid();

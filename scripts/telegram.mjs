@@ -4,14 +4,16 @@ import axios from 'axios'
 
 import { log_error, log_info, log_success } from './utils.mjs'
 
-const CHAT_ID_RELEASE = '@clash_verge_re' // 正式发布频道
-const CHAT_ID_TEST = '@vergetest' // 测试频道
+const CHAT_ID_RELEASE = process.env.TELEGRAM_CHAT_ID || '@clash_verge_re' // 正式发布频道
+const CHAT_ID_TEST = process.env.TELEGRAM_TEST_CHAT_ID || '@vergetest' // 测试频道
 
 async function sendTelegramNotification() {
   if (!process.env.TELEGRAM_BOT_TOKEN) {
     throw new Error('TELEGRAM_BOT_TOKEN is required')
   }
 
+  const repository =
+    process.env.GITHUB_REPOSITORY || 'XYZ-ZJ/clash-verge-rev-speedtest'
   const version =
     process.env.VERSION ||
     (() => {
@@ -21,7 +23,7 @@ async function sendTelegramNotification() {
 
   const downloadUrl =
     process.env.DOWNLOAD_URL ||
-    `https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v${version}`
+    `https://github.com/${repository}/releases/download/v${version}`
 
   const isAutobuild =
     process.env.BUILD_TYPE === 'autobuild' || version.includes('autobuild')
@@ -107,7 +109,7 @@ async function sendTelegramNotification() {
   const releaseTitle = isAutobuild ? '滚动更新版发布' : '正式发布'
   const encodedVersion = encodeURIComponent(version)
   const releaseTag = isAutobuild ? 'autobuild' : `v${version}`
-  const content = `<b>🎉 <a href="https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/${releaseTag}">Clash Verge Rev v${version}</a> ${releaseTitle}</b>\n\n${formattedContent}`
+  const content = `<b>🎉 <a href="https://github.com/${repository}/releases/tag/${releaseTag}">Clash Verge Rev v${version}</a> ${releaseTitle}</b>\n\n${formattedContent}`
 
   try {
     await axios.post(
@@ -117,7 +119,7 @@ async function sendTelegramNotification() {
         text: content,
         link_preview_options: {
           is_disabled: false,
-          url: `https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/v${encodedVersion}`,
+          url: `https://github.com/${repository}/releases/tag/v${encodedVersion}`,
           prefer_large_media: true,
         },
         parse_mode: 'HTML',
@@ -128,13 +130,12 @@ async function sendTelegramNotification() {
     log_error(
       `❌ Telegram 通知发送失败到 ${chatId}:`,
       error.response?.data || error.message,
-      error,
     )
     process.exit(1)
   }
 }
 
 sendTelegramNotification().catch((error) => {
-  log_error('脚本执行失败:', error)
+  log_error('脚本执行失败:', error?.message || 'unknown error')
   process.exit(1)
 })

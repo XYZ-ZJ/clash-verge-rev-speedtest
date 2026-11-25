@@ -58,7 +58,22 @@ fn determine_status(status: StatusCode, body: &str) -> &'static str {
 }
 
 fn extract_region(body: &str) -> Option<String> {
-    let region = extract_quoted_field(body, "region")?;
+    if let Some(code) = body
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("loc="))
+        .and_then(|val| val.trim().split('-').next())
+        .map(str::to_ascii_uppercase)
+        .filter(|code| !code.is_empty())
+    {
+        return Some(UnlockItem::region_label(&code));
+    }
+
+    let region = extract_quoted_field(body, "region").or_else(|| {
+        let (_, rest) = body.split_once(r#"\"region\""#)?;
+        let value = rest.split_once(':')?.1.trim_start();
+        let value = value.strip_prefix(r#"\""#)?;
+        Some(value.split_once(r#"\""#)?.0)
+    })?;
 
     let code = region.split('-').next()?.to_ascii_uppercase();
 

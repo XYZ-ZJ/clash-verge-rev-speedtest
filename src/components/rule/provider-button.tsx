@@ -51,10 +51,13 @@ export const ProviderButton = () => {
     try {
       setUpdating((prev) => ({ ...prev, [name]: true }))
 
-      await mutate(() => updateRuleProvider(name), {
+      const result = await mutate(() => updateRuleProvider(name), {
         id: `update-rule-provider-${name}`,
         errorNotice: false,
       })
+      if (!result.ok) {
+        return
+      }
 
       await refreshRules()
       await refreshRuleProviders()
@@ -96,15 +99,21 @@ export const ProviderButton = () => {
       )
       setUpdating(newUpdating)
 
+      const failedProviders: string[] = []
       for (const name of allProviders) {
         try {
-          await mutate(() => updateRuleProvider(name), {
+          const result = await mutate(() => updateRuleProvider(name), {
             id: `update-rule-provider-${name}`,
             errorNotice: false,
           })
-          setUpdating((prev) => ({ ...prev, [name]: false }))
+          if (!result.ok) {
+            failedProviders.push(name)
+          }
         } catch (err) {
           console.error(`更新 ${name} 失败`, err)
+          failedProviders.push(name)
+        } finally {
+          setUpdating((prev) => ({ ...prev, [name]: false }))
         }
       }
 
@@ -115,7 +124,13 @@ export const ProviderButton = () => {
         errorNotice: false,
       })
 
-      showNotice.success('rules.feedback.notifications.provider.allUpdated')
+      if (failedProviders.length > 0) {
+        showNotice.error('rules.feedback.notifications.provider.genericError', {
+          message: failedProviders.join(', '),
+        })
+      } else {
+        showNotice.success('rules.feedback.notifications.provider.allUpdated')
+      }
     } catch (err) {
       showNotice.error('rules.feedback.notifications.provider.genericError', {
         message: String(err),

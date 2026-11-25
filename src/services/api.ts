@@ -1,4 +1,3 @@
-import { testDnsLeak } from '@/services/cmds'
 import { getName, getVersion } from '@tauri-apps/api/app'
 import { fetch } from '@tauri-apps/plugin-http'
 import { asyncRetry } from 'foxts/async-retry'
@@ -6,6 +5,7 @@ import { extractErrorMessage } from 'foxts/extract-error-message'
 import { once } from 'foxts/once'
 import i18n from 'i18next'
 
+import { testDnsLeak } from '@/services/cmds'
 import { debugLog } from '@/utils/debug'
 
 const getUserAgentPromise = once(async () => {
@@ -841,6 +841,26 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
       }
     }
   } catch (err) {
+    const errObj = err as
+      | { code?: unknown; detail?: unknown; message?: unknown }
+      | undefined
+    const errCode = typeof errObj?.code === 'string' ? errObj.code : undefined
+    const errMessage = extractErrorMessage(err) ?? ''
+    if (
+      errCode === 'dnsleak.portUnavailable' ||
+      errCode === 'dnsleak.proxyConfigFailed' ||
+      errCode === 'dnsleak.clientSetupFailed' ||
+      errMessage.includes('dnsleak.portUnavailable') ||
+      errMessage.includes('proxy port is unavailable')
+    ) {
+      throw err instanceof Error
+        ? err
+        : new Error(
+            (typeof errObj?.detail === 'string' && errObj.detail) ||
+              errMessage ||
+              'Proxy port is unavailable for DNS leak check',
+          )
+    }
     debugLog('testDnsLeak IPC error, fallback to direct test', err)
   }
 

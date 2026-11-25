@@ -4,7 +4,7 @@
 Linux, distributed from
 <https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases>.
 
-**Last updated:** 2026-11-23
+**Last updated:** 2026-11-25
 
 Clash Verge Rev is a free and open-source graphical client for the
 [mihomo](https://github.com/MetaCubeX/mihomo) proxy core, maintained by
@@ -18,15 +18,17 @@ server of its own that the application talks to.
   No data of any kind is sent to the maintainers or to infrastructure operated
   by this project.
 - Your configuration, credentials and logs are stored **only on your own
-  device**, in plain files you can read, back up or delete at any time
+  device**, in local files you can inspect, back up or delete at any time
   (Section 3).
 - The application connects only to endpoints that you configure (proxy servers,
   subscription URLs, backup server) or to the third-party services listed in
   Section 4. None of them are operated by this project.
-- Two connections are enabled by default and are not part of your own proxy
-  configuration: the **application update check** (Section 4.3) and the **IP
-  information card** on the Home page (Section 4.5). Both are described below,
-  and Section 6 explains how to turn them off.
+- By default, only the **application update check** (Section 4.3) connects
+  automatically on startup unless disabled. The homepage **IP information card**
+  and **DNS leak card** (Section 4.5) are **user-initiated by default** and do
+  not query external endpoints automatically unless you explicitly turn on
+  auto-refresh for those cards. Both are described below, and Section 6 explains
+  how to control them.
 
 ## 2. Who is responsible
 
@@ -47,8 +49,10 @@ All application data lives in a single directory:
 
 It contains:
 
-- `verge.yaml` — application settings. If you configure WebDAV backup, the
-  server URL, user name and password are stored here **in plain text**.
+- `verge.yaml` — application settings. If you configure WebDAV backup,
+  `webdav_username` and `webdav_password` are stored locally encrypted with
+  AES-256-GCM (`aes-gcm`), while `webdav_url` and general settings remain
+  local configuration fields.
 - `config.yaml`, `profiles.yaml` and `profiles/` — your proxy configuration and
   downloaded subscriptions. These normally contain **subscription URLs (which
   often embed a personal token), proxy server addresses, ports, passwords and
@@ -111,31 +115,36 @@ Updating the mihomo core downloads it from GitHub Releases
 (`https://github.com/MetaCubeX/mihomo/releases/…`) only when you start the
 update.
 
-### 4.5 IP information card and network diagnostic services — *enabled by default or user-initiated*
+### 4.5 IP information card and network diagnostic services — *user-initiated by default*
 
-The Home page shows your apparent public IP address and its geolocation. To do
-this it queries one randomly chosen service from:
-`api.ip.sb`, `ipapi.co`, `api.ipapi.is`, `ipwho.is`, `ip.api.skk.moe`,
-`get.geojs.io`, `api.ipquery.io`, `ipinfo.io/widget/demo`, `ipinfo.check.place`.
-The query is refreshed about every 5 minutes while the card is visible and the
-window is shown; it is not sent while the window is hidden or the Home page is
-not in view.
+On startup, the Home page IP information and DNS leak cards do **not** query
+external endpoints automatically. Queries are sent when you click refresh on a
+card, or about every 5 minutes only if you explicitly enable the card's
+auto-refresh switch while the card is visible and the window is shown.
 
-When opening the detailed IP Info, Egress Analysis, or DNS Leak diagnostics,
-the application queries specialised analysis endpoints to inspect outbound routing,
-fraud/risk scoring, and DNS resolvers:
-- **Direct & proxy egress detection:** `https://4.ipw.cn` (domestic direct probe),
-  `https://api.bilibili.com/x/web-interface/zone`, `https://speed.cloudflare.com/meta`.
-- **IP fraud & threat risk scoring (user-initiated):** `https://proxycheck.io/v2/`,
-  `https://scamalytics.com/ip/`.
-- **DNS Leak test (user-initiated):** queries `https://{test_id}.bash.ws` and
-  `https://bash.ws/dnsleak/test/{test_id}?json`, `https://edns.ip-api.com/json`.
+To look up your apparent public IP address and geolocation, the card queries
+one randomly chosen service from:
+`api.ipquery.io`, `ipwho.is`, `api.ipapi.is`, `ip.api.skk.moe`,
+`get.geojs.io`, `ipapi.co`, `api.ip.sb`.
+
+When opening detailed IP Info, Egress Analysis, or triggering the DNS Leak
+card, the application queries specialised analysis endpoints on demand:
+- **Detailed IP lookup & fraud/risk scoring:** `https://ipinfo.io/widget/demo/…`,
+  `https://ipinfo.check.place/…`, `https://api.ipquery.io/…`,
+  `https://proxycheck.io/v2/…`, `https://scamalytics.com/ip/…`.
+- **Direct & proxy egress detection:** `https://4.ipw.cn`,
+  `https://api.bilibili.com/x/web-interface/zone`, `https://api.ip.sb/geoip`,
+  `https://1.1.1.1/cdn-cgi/trace`, `https://speed.cloudflare.com/meta`.
+- **DNS Leak test (user-initiated unless auto-refresh enabled):** queries
+  `https://{test_id}.bash.ws` and `https://bash.ws/dnsleak/test/{test_id}?json`
+  from the mihomo process, and may inspect EDNS details via
+  `https://edns.ip-api.com/json`.
 
 By design these services see and return the IP address the request came from —
 that is the feature. If a proxy is active, they see the proxy's address.
 Each service is operated by an independent third party under its own privacy
-policy; the project has no agreement with any of them. Keep the Home page
-closed (or the application minimised) if you do not want these requests.
+policy; the project has no agreement with any of them. Leave auto-refresh off if
+you only want manual checks.
 
 ### 4.6 Latency tests — *user-initiated*
 
@@ -151,10 +160,11 @@ selected.
 
 ### 4.8 DNS
 
-The generated core configuration uses public DoH resolvers by default
-(`doh.pub`, `dns.alidns.com`), and your proxy configuration may define others.
-Resolvers see the domain names being resolved. You can change or replace them in
-the DNS settings and in your own configuration.
+The default generated DNS settings use public overseas resolvers (`1.1.1.1`,
+`8.8.4.4`, `9.9.9.9`, `8.8.8.8`, `https://1.1.1.1/dns-query`,
+`https://dns.google/dns-query`), and your proxy configuration may define
+others. Resolvers see the domain names being resolved. You can change or replace
+them in the DNS settings and in your own configuration.
 
 ### 4.9 WebDAV backup — *disabled until you configure it*
 
@@ -197,7 +207,8 @@ policies:
 - Per-profile update interval — turn off automatic subscription refresh.
 - WebDAV backup is inactive until you enter server details, and can be cleared
   at any time.
-- The IP information card only queries while the Home page is visible
+- The IP information and DNS leak cards are manual by default and only query
+  automatically when you turn on their auto-refresh toggle while visible
   (Section 4.5).
 - Everything else is a plain file on your disk: delete the application data
   directory to remove all stored data.

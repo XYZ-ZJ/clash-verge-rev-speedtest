@@ -84,9 +84,15 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
     }
   }, [open, report, loading, handleDetect])
 
-  const cfState = report?.cfStatus.state || 'pass'
+  const cfState = report?.cfStatus.state || 'fail'
   const isCfPass = cfState === 'pass'
   const isCfWarn = cfState === 'interactive'
+  const cfHintText =
+    cfState === 'pass'
+      ? 'Cloudflare 边缘节点实测直接放行，该出口信誉良好。'
+      : cfState === 'interactive'
+        ? '检测到可能会触发 Cloudflare 质询，访问受保护站点时可能需要完成人机验证。'
+        : 'Cloudflare 边缘探测未通过或连接受阻，建议检查当前节点连通性或切换节点后重试。'
 
   return (
     <Dialog
@@ -253,14 +259,14 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                       sx={{ mt: 0.5, lineHeight: 1.5 }}
                     >
                       {report?.cfStatus.description ||
-                        '大多数用 Cloudflare 防护的网站会直接放行你，不弹验证。'}
+                        '暂无有效的 Cloudflare 探测结果。'}
                     </Typography>
                     <Typography
                       variant="caption"
                       color="text.secondary"
                       sx={{ display: 'block', mt: 0.3 }}
                     >
-                      和上面按 IP 的推测一致：这个 IP 的信誉不错。
+                      {cfHintText}
                     </Typography>
                   </>
                 )}
@@ -382,9 +388,9 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2 }}>
                 {loading && !report ? (
-                  Array.from({ length: 3 }).map((_, idx) => (
+                  EXIT_SKELETON_KEYS.map((key) => (
                     <Skeleton
-                      key={idx}
+                      key={key}
                       variant="rounded"
                       height={68}
                       sx={{ borderRadius: 2 }}
@@ -436,8 +442,8 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                 }}
               >
                 {loading && !report ? (
-                  Array.from({ length: 5 }).map((_, idx) => (
-                    <Skeleton key={idx} variant="text" height={32} />
+                  FINDING_SKELETON_KEYS.map((key) => (
+                    <Skeleton key={key} variant="text" height={32} />
                   ))
                 ) : report?.findings && report.findings.length > 0 ? (
                   report.findings.map((item, idx) => (
@@ -460,6 +466,15 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
     </Dialog>
   )
 })
+
+const EXIT_SKELETON_KEYS = ['exit-skel-0', 'exit-skel-1', 'exit-skel-2'] as const
+const FINDING_SKELETON_KEYS = [
+  'finding-skel-0',
+  'finding-skel-1',
+  'finding-skel-2',
+  'finding-skel-3',
+  'finding-skel-4',
+] as const
 
 interface ExitCardProps {
   item: EgressItem

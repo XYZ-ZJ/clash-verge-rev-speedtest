@@ -117,11 +117,80 @@ export function parseBool(value: string | undefined): boolean | undefined {
   return /^(?:true|1)$/i.test(value)
 }
 
-export function parseBoolOrPresence(value: string | undefined): boolean {
-  if (value === undefined) return true
-  const trimmed = value.trim()
-  if (trimmed === '') return true
-  return /^(?:true|1)$/i.test(trimmed)
+const INSECURE_QUERY_KEYS = [
+  'skip-cert-verify',
+  'allowInsecure',
+  'allow-insecure',
+  'insecure',
+] as const
+
+export function parseInsecureParam(
+  params: Record<string, string | undefined>,
+): boolean | undefined {
+  for (const key of INSECURE_QUERY_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) {
+      return parseBoolOrPresence(params[key])
+    }
+  }
+  return undefined
+}
+
+export function parseCommaList(value: string | undefined): string[] | undefined {
+  if (!value) return undefined
+  const items = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return items.length > 0 ? items : undefined
+}
+
+export function parseJsonObjectSafe(
+  value: string | undefined,
+): Record<string, any> | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed || !trimmed.startsWith('{')) return undefined
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function parseEchParam(
+  echValue: string | undefined,
+  queryServerName?: string,
+): EchOptions | undefined {
+  const trimmed = echValue?.trim()
+  const serverName = getIfNotBlank(queryServerName)
+  if (!trimmed) {
+    return serverName
+      ? { enable: true, 'query-server-name': serverName }
+      : undefined
+  }
+  if (/^(?:false|0)$/i.test(trimmed)) return undefined
+  if (/^(?:true|1)$/i.test(trimmed)) {
+    const opts: EchOptions = { enable: true }
+    if (serverName) opts['query-server-name'] = serverName
+    return opts
+  }
+  // Xray ECH format may encode "<sni>+https://<doh-server>" instead of base64 config
+  const xrayDohMatch = /^([^+]+)\+(https?:\/\/.+)$/i.exec(trimmed)
+  if (xrayDohMatch) {
+    const opts: EchOptions = {
+      enable: true,
+      'query-server-name': serverName ?? xrayDohMatch[1].trim(),
+    }
+    return opts
+  }
+  const opts: EchOptions = {
+    enable: true,
+    config: trimmed,
+  }
+  if (serverName) opts['query-server-name'] = serverName
+  return opts
 }
 
 export function parseVlessFlow(value: string | undefined): string | undefined {
@@ -197,8 +266,55 @@ export function normalizeHost(host: string): string {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
 }
 
-const URLLIKE_RE =
-  /^(?:(?<auth>.*?)@)?(?<host>.*?)(?::(?<port>\d+))?\/?(?:\?(?<query>.*?))?(?:#(?<fragment>.*?))?$/
+export function splitAuthorityAndPath(input: string): {
+  auth?: string
+  host: string
+  port?: string
+  query?: string
+  fragment?: string
+} {
+  const [beforeHash, fragment] = splitOnce(input, '#')
+  const [authorityAndPath, query] = splitOnce(beforeHash, '?')
+  const atIdx = authorityAndPath.lastIndexOf('@')
+  const auth = atIdx === -1 ? undefined : authorityAndPath.slice(0, atIdx)
+  const hostSection =
+    atIdx === -1 ? authorityAndPath : authorityAndPath.slice(atIdx + 1)
+  const [hostPort] = splitOnce(hostSection, '/')
+
+  let host = hostPort
+  let port: string | undefined
+
+  if (hostPort.startsWith('[')) {
+    const closeIdx = hostPort.indexOf(']')
+    if (closeIdx === -1) {
+      throw new Error('Invalid host: unclosed IPv6 bracket')
+    }
+    host = hostPort.slice(1, closeIdx)
+    const remainder = hostPort.slice(closeIdx + 1)
+    if (remainder.startsWith(':')) {
+      const candidate = remainder.slice(1)
+      if (candidate) port = candidate
+    } else if (remainder.length > 0) {
+      throw new Error('Invalid authority suffix after IPv6 host')
+    }
+  } else {
+    const firstColon = hostPort.indexOf(':')
+    const lastColon = hostPort.lastIndexOf(':')
+    if (firstColon !== -1 && firstColon === lastColon) {
+      host = hostPort.slice(0, lastColon)
+      const candidate = hostPort.slice(lastColon + 1)
+      if (candidate) port = candidate
+    }
+  }
+
+  return {
+    auth,
+    host: normalizeHost(host),
+    port,
+    query,
+    fragment,
+  }
+}
 
 export function parseUrlLike(
   input: string,
@@ -212,29 +328,24 @@ export function parseUrlLike(
   input: string,
   options: { requireAuth?: boolean; errorMessage: string },
 ): UrlLikeParts {
-  const match = URLLIKE_RE.exec(input)
-  const groups = (match?.groups ?? {}) as {
-    auth?: string
-    host?: string
-    port?: string
-    query?: string
-    fragment?: string
-  }
-  if (!match || groups.host === undefined) {
+  let parsed: ReturnType<typeof splitAuthorityAndPath>
+  try {
+    parsed = splitAuthorityAndPath(input)
+  } catch {
     throw new Error(options.errorMessage)
   }
 
-  const auth = getIfNotBlank(groups.auth)
+  const auth = getIfNotBlank(parsed.auth)
   if (options.requireAuth && !auth) {
     throw new Error(options.errorMessage)
   }
 
   const result: UrlLikeParts = {
     auth,
-    host: normalizeHost(groups.host),
-    port: groups.port,
-    query: groups.query,
-    fragment: groups.fragment,
+    host: parsed.host,
+    port: parsed.port,
+    query: parsed.query,
+    fragment: parsed.fragment,
   }
   return options.requireAuth
     ? ({ ...result, auth } as UrlLikeParts & { auth: string })
@@ -254,24 +365,35 @@ export function isIPv6(address: string): boolean {
   return ipv6Regex.test(address)
 }
 
-export function decodeBase64OrOriginal(str: string): string {
+export function decodeBase64ToBytes(str: string): Uint8Array {
   const normalized = str
     .replace(/[\r\n\s]/g, '')
     .replace(/-/g, '+')
     .replace(/_/g, '/')
 
   const padLen = normalized.length % 4
+  if (padLen === 1) {
+    throw new Error('Invalid base64 length')
+  }
   const padded = padLen === 0 ? normalized : normalized + '='.repeat(4 - padLen)
 
+  const binary = atob(padded)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+export function decodeBase64Utf8(str: string): string {
+  return new TextDecoder('utf-8', { fatal: true }).decode(
+    decodeBase64ToBytes(str),
+  )
+}
+
+export function decodeBase64OrOriginal(str: string): string {
   try {
-    const decodedArray = new Uint8Array(
-      atob(padded)
-        .split('')
-        .map((c) => c.charCodeAt(0)),
-    )
-    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(
-      decodedArray,
-    )
+    const decoded = decodeBase64Utf8(str)
     // Heuristic: only accept "text-like" results to avoid accidentally decoding
     // non-base64 strings that happen to be decodable.
     for (let i = 0; i < decoded.length; i++) {
@@ -285,6 +407,30 @@ export function decodeBase64OrOriginal(str: string): string {
   } catch {
     return str
   }
+}
+
+export function applyWsEarlyData(
+  wsOpts: WsOptions,
+  rawPath: string | undefined,
+  headerName?: string,
+): void {
+  if (!rawPath) return
+  const [cleanPath, rawQuery] = splitOnce(rawPath, '?')
+  if (rawQuery) {
+    const pathQuery = parseQueryString(rawQuery)
+    const ed = parseInteger(pathQuery.ed)
+    if (ed !== undefined && ed > 0) {
+      wsOpts['max-early-data'] = ed
+      wsOpts['early-data-header-name'] =
+        getIfNotBlank(headerName ?? pathQuery.eh) ?? 'Sec-WebSocket-Protocol'
+      const remaining = Object.entries(pathQuery).filter(([k]) => k !== 'ed')
+      if (remaining.length === 0) {
+        wsOpts.path = cleanPath || '/'
+        return
+      }
+    }
+  }
+  wsOpts.path = rawPath
 }
 
 const CIPHER_ALIASES: Record<string, CipherType> = {

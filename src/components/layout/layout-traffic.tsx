@@ -45,7 +45,11 @@ const TrafficUnavailableFallback = () => {
   )
 }
 
-export const LayoutTraffic = () => {
+export const LayoutTraffic = ({
+  isCollapsed = false,
+}: {
+  isCollapsed?: boolean
+}) => {
   const { t } = useTranslation()
   const { verge } = useVerge()
 
@@ -64,7 +68,9 @@ export const LayoutTraffic = () => {
   } = useConnectionData({ enabled: true })
   const {
     response: { data: memory },
-  } = useMemoryData({ enabled: displayMemory && pageVisible })
+  } = useMemoryData({
+    enabled: displayMemory && pageVisible && !isCollapsed,
+  })
 
   // 常驻后台累加统计：即便切页或最小化，连接数据仍持续更新至 globalTrafficTracker
   useEffect(() => {
@@ -119,10 +125,10 @@ export const LayoutTraffic = () => {
       }
     >
       <Box sx={{ position: 'relative' }}>
-        {trafficGraph && pageVisible && (
+        {trafficGraph && pageVisible && !isCollapsed && (
           <div
             style={{ width: '100%', height: 60, marginBottom: 6 }}
-            onClick={trafficRef.current?.toggleStyle}
+            onClick={() => trafficRef.current?.toggleStyle()}
           >
             <TrafficGraph ref={trafficRef} />
           </div>

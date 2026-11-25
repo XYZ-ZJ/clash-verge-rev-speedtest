@@ -180,12 +180,14 @@ const ProfilePage = () => {
   }, [profiles])
 
   useEffect(() => {
+    const MAX_DROP_YAML_CHARS = 10 * 1024 * 1024
     const unlisten = getCurrentWindow().onDragDropEvent(async (event) => {
       if (event.payload.type !== 'drop') return
       const paths = event.payload.paths
 
+      let importedAny = false
       for (const file of paths) {
-        if (!file.endsWith('.yaml') && !file.endsWith('.yml')) {
+        if (!/\.(ya?ml)$/i.test(file)) {
           showNotice.error('profiles.page.feedback.errors.onlyYaml')
           continue
         }
@@ -199,17 +201,34 @@ const ProfilePage = () => {
             self_proxy: false,
           },
         } as IProfileItem
-        const data = await readTextFile(file)
-        await mutate(() => createProfile(item, data), {
-          id: 'create-profile',
-          errorNotice: false,
-          revalidate: [['getProfiles']],
-        })
+        try {
+          const data = await readTextFile(file)
+          if (data.length > MAX_DROP_YAML_CHARS) {
+            showNotice.error('profiles.page.feedback.errors.importFailed')
+            continue
+          }
+          const result = await mutate(() => createProfile(item, data), {
+            id: 'create-profile',
+            errorNotice: false,
+            revalidate: [['getProfiles']],
+          })
+          if (result.ok) {
+            importedAny = true
+          }
+        } catch (err) {
+          showNotice.error('profiles.page.feedback.errors.importFailed', err)
+        }
       }
-      await mutate(() => enhanceProfiles(), {
-        id: 'enhance-profiles',
-        errorNotice: false,
-      })
+      if (importedAny) {
+        try {
+          await mutate(() => enhanceProfiles(), {
+            id: 'enhance-profiles',
+            errorNotice: false,
+          })
+        } catch (err) {
+          showNotice.error('profiles.page.feedback.errors.enhanceFailed', err)
+        }
+      }
     })
 
     return () => {
@@ -362,7 +381,7 @@ const ProfilePage = () => {
     } catch (finalError) {
       console.error(`[导入刷新] 最终刷新尝试失败:`, finalError)
       showNotice.error(
-        'profiles.page.feedback.notifications.importSuccess',
+        'profiles.page.feedback.notifications.importNeedsRefresh',
         5000,
       )
     }

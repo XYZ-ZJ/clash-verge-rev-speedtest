@@ -20,19 +20,17 @@ pub enum ServiceInstallOutcome {
 
 async fn execute_service_operation_sync(status: ServiceStatus, error_code: &str) -> CmdResult<ServiceInstallOutcome> {
     let manager = CoreManager::global();
-    let result = {
+    if matches!(
+        &status,
+        ServiceStatus::ReinstallRequired | ServiceStatus::ForceReinstallRequired
+    ) {
         let _lifecycle = manager.lifecycle_lock.lock().await;
-        if matches!(
-            &status,
-            ServiceStatus::ReinstallRequired | ServiceStatus::ForceReinstallRequired
-        ) {
-            manager
-                .controlled_stop_core_inner()
-                .await
-                .map_err(|error| proxy_aware_coded_error(&error, error_code))?;
-        }
-        SERVICE_MANAGER.handle_service_status(status).await
-    };
+        manager
+            .controlled_stop_core_inner()
+            .await
+            .map_err(|error| proxy_aware_coded_error(&error, error_code))?;
+    }
+    let result = SERVICE_MANAGER.handle_service_status(status).await;
     #[cfg(windows)]
     return finish_service_installation(result, error_code, |reason| async move {
         manager.continue_with_sidecar(Some(&reason)).await

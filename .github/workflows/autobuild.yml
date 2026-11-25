@@ -5,7 +5,8 @@ on:
   schedule:
     # UTC+8 06:00, 18:00 -> UTC 22:00, 10:00
     - cron: '0 10,22 * * *'
-permissions: write-all
+permissions:
+  contents: write
 env:
   TAG_NAME: autobuild
   TAG_CHANNEL: AutoBuild
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   check_commit:
     name: Check Commit Needs Build
-    uses: clash-verge-rev/clash-verge-rev/.github/workflows/check-commit-needs-build.yml@dev
+    uses: ./.github/workflows/check-commit-needs-build.yml
     with:
       tag_name: autobuild
       force_build: ${{ github.event_name == 'workflow_dispatch' }}
@@ -57,7 +58,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Release AutoBuild Version
-        run: pnpm release-version autobuild-latest
+        env:
+          AUTOBUILD_VERSION: ${{ needs.check_commit.outputs.autobuild_version }}
+        run: pnpm release-version "$AUTOBUILD_VERSION"
 
       - name: Set Env
         run: |
@@ -117,13 +120,20 @@ jobs:
 
   clean_old_assets:
     name: Clean Old Release Assets
-    needs: [check_commit, update_tag]
-    if: ${{ needs.check_commit.outputs.should_run == 'true' && needs.update_tag.result == 'success' }}
-
-    uses: clash-verge-rev/clash-verge-rev/.github/workflows/clean-old-assets.yml@dev
+    needs:
+      [
+        check_commit,
+        update_tag,
+        autobuild-x86-windows-macos-linux,
+        autobuild-arm-linux,
+        autobuild-x86-arm-windows_webview2,
+      ]
+    if: ${{ !cancelled() && needs.check_commit.outputs.should_run == 'true' && needs.update_tag.result == 'success' }}
+    uses: ./.github/workflows/clean-old-assets.yml
     with:
       tag_name: autobuild
       dry_run: false
+      autobuild_version: ${{ needs.check_commit.outputs.autobuild_version }}
 
   autobuild-x86-windows-macos-linux:
     name: Autobuild x86 Windows, MacOS and Linux
@@ -188,7 +198,9 @@ jobs:
           pnpm run prebuild ${{ matrix.target }}
 
       - name: Release ${{ env.TAG_CHANNEL }} Version
-        run: pnpm release-version autobuild-latest
+        env:
+          AUTOBUILD_VERSION: ${{ needs.check_commit.outputs.autobuild_version }}
+        run: pnpm release-version "$AUTOBUILD_VERSION"
 
       - name: Tauri build for Windows-macOS-Linux
         uses: tauri-apps/tauri-action@v1
@@ -207,7 +219,6 @@ jobs:
           releaseId: ${{ needs.update_tag.outputs.release_id }}
           tagName: ${{ env.TAG_NAME }}
           releaseName: 'Clash Verge Rev ${{ env.TAG_CHANNEL }}'
-          releaseBody: 'More new features are now supported.'
           releaseDraft: false
           prerelease: true
           tauriScript: pnpm
@@ -268,7 +279,9 @@ jobs:
           pnpm run prebuild ${{ matrix.target }}
 
       - name: Release ${{ env.TAG_CHANNEL }} Version
-        run: pnpm release-version autobuild-latest
+        env:
+          AUTOBUILD_VERSION: ${{ needs.check_commit.outputs.autobuild_version }}
+        run: pnpm release-version "$AUTOBUILD_VERSION"
 
       - name: 'Setup for linux'
         run: |-
@@ -401,7 +414,9 @@ jobs:
           pnpm run prebuild ${{ matrix.target }}
 
       - name: Release ${{ env.TAG_CHANNEL }} Version
-        run: pnpm release-version autobuild-latest
+        env:
+          AUTOBUILD_VERSION: ${{ needs.check_commit.outputs.autobuild_version }}
+        run: pnpm release-version "$AUTOBUILD_VERSION"
 
       - name: Download WebView2 Runtime
         run: |
@@ -487,7 +502,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Release AutoBuild Version
-        run: pnpm release-version autobuild-latest
+        env:
+          AUTOBUILD_VERSION: ${{ needs.check_commit.outputs.autobuild_version }}
+        run: pnpm release-version "$AUTOBUILD_VERSION"
 
       - name: Get Version and Release Info
         run: |

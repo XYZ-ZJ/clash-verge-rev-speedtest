@@ -48,7 +48,7 @@ const InfoItem = memo(({ label, value }: { label: string; value?: string }) => (
     <Typography
       variant="body2"
       color="text.secondary"
-      sx={{ minwidth: 60, mr: 0.5, flexShrink: 0, textAlign: 'right' }}
+      sx={{ minWidth: 60, mr: 0.5, flexShrink: 0, textAlign: 'right' }}
     >
       {label}:
     </Typography>
@@ -159,7 +159,7 @@ export const IpInfoCard = () => {
   const [detailOpen, setDetailOpen] = useState(false)
   const [autoRefresh, setAutoRefresh] = useLocalStorage(
     'ip-info-auto-refresh',
-    true,
+    false,
   )
   const appWindow = useMemo(() => getCurrentWebviewWindow(), [])
 
@@ -173,7 +173,13 @@ export const IpInfoCard = () => {
     remainingSeconds: IP_REFRESH_SECONDS,
   })
 
-  const { data: ipInfo, error, isLoading, refetch: mutate } = useIPInfo()
+  const {
+    data: ipInfo,
+    error,
+    isLoading,
+    isFetching,
+    refetch: mutate,
+  } = useIPInfo(autoRefresh)
 
   const onCountdownTick = useEffectEvent(async () => {
     const now = Date.now()
@@ -263,7 +269,7 @@ export const IpInfoCard = () => {
   let mainElement: React.ReactElement
 
   switch (true) {
-    case isLoading:
+    case isLoading || (isFetching && !ipInfo):
       mainElement = (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Skeleton variant="text" width="60%" height={30} />
@@ -293,6 +299,61 @@ export const IpInfoCard = () => {
           <Button onClick={() => mutate()} sx={{ mt: 2 }}>
             {t('shared.actions.retry')}
           </Button>
+        </Box>
+      )
+      break
+    case !ipInfo:
+      mainElement = (
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+            }}
+          >
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RefreshOutlined fontSize="small" />}
+              onClick={() => mutate()}
+              disabled={isFetching}
+            >
+              {t('home.components.ipInfo.detailModal.startDetect')}
+            </Button>
+          </Box>
+          <Box
+            sx={{
+              mt: 'auto',
+              pt: 0.5,
+              borderTop: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              opacity: 0.7,
+              fontSize: '0.7rem',
+            }}
+          >
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Switch
+                  size="small"
+                  checked={autoRefresh}
+                  onChange={(_, checked) => setAutoRefresh(checked)}
+                />
+              }
+              label={
+                <Typography variant="caption">
+                  {t('home.components.ipInfo.labels.autoRefresh')}
+                </Typography>
+              }
+            />
+          </Box>
         </Box>
       )
       break
@@ -591,11 +652,13 @@ export const IpInfoCard = () => {
   )
 }
 
-function useIPInfo() {
+function useIPInfo(autoRefresh = false) {
   return useQuery({
     queryKey: [IP_INFO_CACHE_KEY],
     queryFn: getIpInfo,
     staleTime: Infinity,
+    revalidateOnMount: autoRefresh,
+    revalidateIfStale: autoRefresh,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: 1,

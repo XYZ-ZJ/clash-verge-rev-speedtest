@@ -3,7 +3,10 @@ use crate::process::AsyncHandler;
 use crate::utils::{connections_stream, tray_speed};
 use crate::{Type, logging};
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 use tauri_plugin_mihomo::models::WsConnectionId;
@@ -14,7 +17,8 @@ const TRAY_SPEED_STALE_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Clone)]
 pub struct TraySpeedController {
     speed_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    speed_connection_id: Arc<Mutex<Option<WsConnectionId>>>,
+    speed_connection_id: Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+    generation: Arc<AtomicU64>,
 }
 
 impl Default for TraySpeedController {
@@ -22,6 +26,7 @@ impl Default for TraySpeedController {
         Self {
             speed_task: Arc::new(Mutex::new(None)),
             speed_connection_id: Arc::new(Mutex::new(None)),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -54,10 +59,14 @@ impl TraySpeedController {
             return;
         }
 
+        let task_generation = self.generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        let generation = Arc::clone(&self.generation);
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
         let task = AsyncHandler::spawn(move || async move {
             loop {
-                if handle::Handle::global().is_exiting() {
+                if handle::Handle::global().is_exiting()
+                    || generation.load(Ordering::Acquire) != task_generation
+                {
                     break;
                 }
 
@@ -77,11 +86,22 @@ impl TraySpeedController {
                     }
                 };
 
-                Self::set_speed_connection_id(&speed_connection_id, Some(speed_stream.connection_id));
+                if generation.load(Ordering::Acquire) != task_generation {
+                    let _ = connections_stream::disconnect_stream(speed_stream.connection_id).await;
+                    break;
+                }
+
+                Self::set_speed_connection_id(
+                    &speed_connection_id,
+                    Some((task_generation, speed_stream.connection_id)),
+                );
 
                 loop {
                     let next_state = speed_stream
-                        .next_event(TRAY_SPEED_STALE_TIMEOUT, || handle::Handle::global().is_exiting())
+                        .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
+                            handle::Handle::global().is_exiting()
+                                || generation.load(Ordering::Acquire) != task_generation
+                        })
                         .await;
 
                     match next_state {
@@ -100,9 +120,12 @@ impl TraySpeedController {
                     }
                 }
 
-                Self::disconnect_speed_connection(&speed_connection_id).await;
+                Self::disconnect_speed_connection(&speed_connection_id, Some(task_generation)).await;
 
-                if handle::Handle::global().is_exiting() || !Self::has_main_tray() {
+                if handle::Handle::global().is_exiting()
+                    || !Self::has_main_tray()
+                    || generation.load(Ordering::Acquire) != task_generation
+                {
                     break;
                 }
 
@@ -111,13 +134,14 @@ impl TraySpeedController {
                 tokio::time::sleep(TRAY_SPEED_RETRY_DELAY).await;
             }
 
-            Self::set_speed_connection_id(&speed_connection_id, None);
+            Self::clear_connection_for_generation(&speed_connection_id, task_generation);
         });
 
         *guard = Some(task);
     }
 
     fn stop_task(&self) {
+        let stop_generation = self.generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
         let task = self.speed_task.lock().take();
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
 
@@ -127,7 +151,7 @@ impl TraySpeedController {
                 task.abort();
                 let _ = task.await;
             }
-            Self::disconnect_speed_connection(&speed_connection_id).await;
+            Self::disconnect_speed_connection(&speed_connection_id, Some(stop_generation)).await;
         });
 
         let app_handle = handle::Handle::app_handle();
@@ -148,14 +172,37 @@ impl TraySpeedController {
     }
 
     fn set_speed_connection_id(
-        speed_connection_id: &Arc<Mutex<Option<WsConnectionId>>>,
-        connection_id: Option<WsConnectionId>,
+        speed_connection_id: &Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+        entry: Option<(u64, WsConnectionId)>,
     ) {
-        *speed_connection_id.lock() = connection_id;
+        *speed_connection_id.lock() = entry;
     }
 
-    fn take_speed_connection_id(speed_connection_id: &Arc<Mutex<Option<WsConnectionId>>>) -> Option<WsConnectionId> {
-        speed_connection_id.lock().take()
+    fn clear_connection_for_generation(
+        speed_connection_id: &Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+        target_generation: u64,
+    ) {
+        let mut guard = speed_connection_id.lock();
+        if guard.is_some_and(|(gen_id, _)| gen_id <= target_generation) {
+            *guard = None;
+        }
+    }
+
+    fn take_speed_connection_id(
+        speed_connection_id: &Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+        max_generation: Option<u64>,
+    ) -> Option<WsConnectionId> {
+        let mut guard = speed_connection_id.lock();
+        let should_take = match (*guard, max_generation) {
+            (Some((gen_id, _)), Some(limit)) => gen_id <= limit,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if should_take {
+            guard.take().map(|(_, connection_id)| connection_id)
+        } else {
+            None
+        }
     }
 
     async fn disconnect_speed_connection(speed_connection_id: &Arc<Mutex<Option<WsConnectionId>>>) {
