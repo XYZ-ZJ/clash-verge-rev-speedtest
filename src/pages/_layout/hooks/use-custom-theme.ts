@@ -48,14 +48,21 @@ const sanitizeBackgroundImageUrl = (rawUrl: string): string => {
   return ''
 }
 
-const stripUnsafeCssAtRules = (css: string) =>
-  css
+const stripUnsafeCssAtRules = (css: string) => {
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  return withoutComments
     .split(/\r?\n/)
-    .filter((line) => {
-      const trimmed = line.trim().toLowerCase()
-      return !TOP_LEVEL_AT_RULES.some((rule) => trimmed.startsWith(rule))
-    })
+    .map((line) =>
+      line
+        .split(';')
+        .filter((stmt) => {
+          const trimmed = stmt.trim().toLowerCase()
+          return !TOP_LEVEL_AT_RULES.some((rule) => trimmed.startsWith(rule))
+        })
+        .join(';'),
+    )
     .join('\n')
+}
 
 const wrapCssInjectionWithScope = (css?: string) => {
   if (!css?.trim()) {

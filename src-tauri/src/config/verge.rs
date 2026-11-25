@@ -513,12 +513,20 @@ impl IVerge {
         patch_opt_field!(self, patch, auto_backup_interval_hours);
         patch_opt_field!(self, patch, auto_backup_on_change);
 
-        let url_changed = patch
-            .webdav_url
-            .as_ref()
-            .is_some_and(|next| self.webdav_url.as_deref().map(str::trim) != Some(next.trim()));
+        let origin_changed = patch.webdav_url.as_ref().is_some_and(|next| {
+            let prev = self.webdav_url.as_deref().map(str::trim).unwrap_or_default();
+            let next_trimmed = next.trim();
+            match (tauri::Url::parse(prev), tauri::Url::parse(next_trimmed)) {
+                (Ok(a), Ok(b)) => {
+                    !a.scheme().eq_ignore_ascii_case(b.scheme())
+                        || a.host_str().map(str::to_ascii_lowercase) != b.host_str().map(str::to_ascii_lowercase)
+                        || a.port_or_known_default() != b.port_or_known_default()
+                }
+                _ => prev != next_trimmed,
+            }
+        });
         patch_opt_field!(self, patch, webdav_url);
-        if url_changed && patch.webdav_username.is_none() && patch.webdav_password.is_none() {
+        if origin_changed && patch.webdav_username.is_none() && patch.webdav_password.is_none() {
             self.webdav_username = None;
             self.webdav_password = None;
         }

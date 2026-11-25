@@ -245,7 +245,7 @@ async function processRelease(github, options, tag, isAlpha) {
       }
     })
 
-    await Promise.allSettled(promises)
+    await Promise.all(promises)
     console.log(updateData)
 
     Object.entries(updateData.platforms).forEach(([key, value]) => {
@@ -289,19 +289,28 @@ async function processRelease(github, options, tag, isAlpha) {
           console.log(
             `Release with tag ${releaseTag} not found, creating new release...`,
           )
-          const createResponse = await github.rest.repos.createRelease({
-            ...options,
-            tag_name: releaseTag,
-            name: isAlpha
-              ? 'Auto-update Alpha Channel'
-              : 'Auto-update Stable Channel',
-            body: `This release contains the update information for ${isAlpha ? 'alpha' : 'stable'} channel.`,
-            prerelease: isAlpha,
-          })
-          updateRelease = createResponse.data
-          console.log(
-            `Created new ${releaseTag} release with ID: ${updateRelease.id}`,
-          )
+          try {
+            const createResponse = await github.rest.repos.createRelease({
+              ...options,
+              tag_name: releaseTag,
+              name: isAlpha
+                ? 'Auto-update Alpha Channel'
+                : 'Auto-update Stable Channel',
+              body: `This release contains the update information for ${isAlpha ? 'alpha' : 'stable'} channel.`,
+              prerelease: isAlpha,
+            })
+            updateRelease = createResponse.data
+            console.log(
+              `Created new ${releaseTag} release with ID: ${updateRelease.id}`,
+            )
+          } catch (createError) {
+            if (createError.status !== 422) throw createError
+            const response = await github.rest.repos.getReleaseByTag({
+              ...options,
+              tag: releaseTag,
+            })
+            updateRelease = response.data
+          }
         } else {
           throw error
         }
@@ -347,12 +356,14 @@ async function processRelease(github, options, tag, isAlpha) {
         `Failed to process ${isAlpha ? 'alpha' : 'stable'} release:`,
         error.message,
       )
+      process.exitCode = 1
     }
   } catch (error) {
     if (error.status === 404) {
       console.log(`Release not found for tag: ${tag.name}, skipping...`)
     } else {
       console.error(`Failed to get release for tag: ${tag.name}`, error.message)
+      process.exitCode = 1
     }
   }
 }

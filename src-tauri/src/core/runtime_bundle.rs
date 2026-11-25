@@ -236,14 +236,12 @@ fn collect_local_provider(
     if !is_local_path(raw_path) {
         bail!("local provider {name:?} uses disallowed UNC or device path: {raw_path:?}");
     }
+    let _ = provider_destination(config_root, raw_path)?;
     let Ok(source) = local_provider_source(config_root, raw_path) else {
-        if std::path::Path::new(raw_path).is_absolute() || provider_destination(config_root, raw_path).is_err() {
-            bail!("local provider {name:?} path is outside the config root: {raw_path:?}");
-        }
         logging!(
             warn,
             Type::Config,
-            "local provider {name:?} is unavailable at {raw_path:?}; leaving its path to the core"
+            "local provider {name:?} inside config root is not yet available at {raw_path:?}; skipping asset copy"
         );
         return Ok(None);
     };
@@ -381,7 +379,7 @@ fn collect_ssh_private_keys(
             logging!(
                 warn,
                 Type::Config,
-                "ssh proxy {name:?} private key is unavailable below the config root; stripping"
+                "ssh proxy {name:?} private key is unavailable or outside config root; stripping"
             );
             proxy.remove("private-key");
             continue;

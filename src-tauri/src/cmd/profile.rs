@@ -546,6 +546,82 @@ pub async fn read_profile_file(index: std::string::String) -> CmdResult<std::str
 
 #[tauri::command]
 #[specta::specta]
+pub async fn import_dropped_profile_file(path: std::string::String) -> CmdResult {
+    use std::path::{Component, Path, Prefix};
+
+    const MAX_DROPPED_PROFILE_BYTES: u64 = 10 * 1024 * 1024;
+
+    let file_path = Path::new(&path);
+    if let Some(Component::Prefix(prefix)) = file_path.components().next()
+        && matches!(
+            prefix.kind(),
+            Prefix::UNC(_, _) | Prefix::VerbatimUNC(_, _) | Prefix::DeviceNS(_)
+        )
+    {
+        return Err(coded_error(
+            "PROFILE_READ_FAILED",
+            "refusing UNC or device profile path",
+        ));
+    }
+
+    let is_yaml = file_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"));
+    if !is_yaml {
+        return Err(coded_error(
+            "PROFILE_READ_FAILED",
+            "only yaml profile files are allowed",
+        ));
+    }
+
+    let meta = tokio::fs::metadata(file_path)
+        .await
+        .with_error_code("PROFILE_READ_FAILED")?;
+    if !meta.is_file() || meta.len() > MAX_DROPPED_PROFILE_BYTES {
+        return Err(coded_error(
+            "PROFILE_READ_FAILED",
+            "dropped profile file is missing or exceeds size limit",
+        ));
+    }
+
+    let raw_data = tokio::fs::read_to_string(file_path)
+        .await
+        .with_error_code("PROFILE_READ_FAILED")?;
+    let data = raw_data.trim_start_matches('\u{feff}');
+    serde_yaml_ng::from_str::<serde_yaml_ng::Mapping>(data).with_error_code("PROFILE_READ_FAILED")?;
+
+    let file_name = file_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("New Profile");
+
+    let item: PrfItem = ProfileCreate {
+        itype: Some("local".into()),
+        name: Some(file_name.into()),
+        desc: Some(String::new()),
+        url: Some(String::new()),
+        option: Some(PrfOption {
+            with_proxy: Some(false),
+            self_proxy: Some(false),
+            ..PrfOption::default()
+        }),
+    }
+    .into();
+
+    profiles_append_item_with_filedata_safe(&item, Some(String::from(data)))
+        .await
+        .map_err(|err| coded_error("PROFILE_CREATE_FAILED", err))?;
+    profiles_save_file_safe()
+        .await
+        .with_error_code("PROFILE_CREATE_FAILED")?;
+    logging_error!(Type::Timer, Timer::global().refresh().await);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn get_next_update_time(uid: std::string::String) -> CmdResult<Option<i64>> {
     let timer = Timer::global();
     let next_time = timer.get_next_update_time(&uid).await;

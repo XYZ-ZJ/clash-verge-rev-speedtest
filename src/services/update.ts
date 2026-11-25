@@ -25,6 +25,11 @@ const compareVersions = (a: string | null, b: string | null): number | null => {
 
 const localVersionNormalized = normalizeVersion(appVersion)
 let activeUpdate: Update | null = null
+let activeUpdateInUse = false
+
+export const setUpdateResourceInUse = (inUse: boolean): void => {
+  activeUpdateInUse = inUse
+}
 
 const closeUpdateResource = async (
   update: Update | null,
@@ -41,9 +46,12 @@ const closeUpdateResource = async (
 export const checkUpdateSafe = async (
   options?: CheckOptions,
 ): Promise<Update | null> => {
+  if (activeUpdateInUse) {
+    return activeUpdate
+  }
   const result = await check(options ?? {})
   if (!result) {
-    if (activeUpdate) {
+    if (activeUpdate && !activeUpdateInUse) {
       await closeUpdateResource(activeUpdate, 'stale')
       activeUpdate = null
     }
@@ -59,17 +67,19 @@ export const checkUpdateSafe = async (
 
   if (comparison !== null && comparison <= 0 && !isBuildToStable) {
     await closeUpdateResource(result, 'stale')
-    if (activeUpdate && activeUpdate !== result) {
+    if (activeUpdate && activeUpdate !== result && !activeUpdateInUse) {
       await closeUpdateResource(activeUpdate, 'stale')
+      activeUpdate = null
     }
-    activeUpdate = null
     return null
   }
 
-  if (activeUpdate && activeUpdate !== result) {
+  if (activeUpdate && activeUpdate !== result && !activeUpdateInUse) {
     await closeUpdateResource(activeUpdate, 'superseded')
   }
-  activeUpdate = result
+  if (!activeUpdateInUse) {
+    activeUpdate = result
+  }
   return result
 }
 

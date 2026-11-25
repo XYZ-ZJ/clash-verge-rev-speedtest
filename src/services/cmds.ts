@@ -73,6 +73,10 @@ export async function readProfileFile(index: string) {
   return commands.readProfileFile(index)
 }
 
+export async function importDroppedProfileFile(path: string) {
+  return commands.importDroppedProfileFile(path)
+}
+
 export async function saveProfileFile(index: string, fileData: string) {
   return (await commands.saveProfileFile(index, fileData)).status === 'valid'
 }

@@ -19,7 +19,6 @@ import {
 import { Box, Button, Divider, Grid, IconButton, Stack } from '@mui/material'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
-import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useLockFn } from 'ahooks'
 import { throttle } from 'lodash-es'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -41,11 +40,11 @@ import {
 import { ConfigViewer } from '@/components/setting/mods/config-viewer'
 import { fetchProfilesIntoCache, useProfiles } from '@/hooks/use-profiles'
 import {
-  createProfile,
   deleteProfile,
   enhanceProfiles,
   getRuntimeLogs,
   importProfile,
+  importDroppedProfileFile,
   reorderProfile,
   updateProfile,
 } from '@/services/cmds'
@@ -180,7 +179,6 @@ const ProfilePage = () => {
   }, [profiles])
 
   useEffect(() => {
-    const MAX_DROP_YAML_CHARS = 10 * 1024 * 1024
     const unlisten = getCurrentWindow().onDragDropEvent(async (event) => {
       if (event.payload.type !== 'drop') return
       const paths = event.payload.paths
@@ -191,23 +189,8 @@ const ProfilePage = () => {
           showNotice.error('profiles.page.feedback.errors.onlyYaml')
           continue
         }
-        const item = {
-          type: 'local',
-          name: file.split(/\/|\\/).pop() ?? 'New Profile',
-          desc: '',
-          url: '',
-          option: {
-            with_proxy: false,
-            self_proxy: false,
-          },
-        } as IProfileItem
         try {
-          const data = await readTextFile(file)
-          if (data.length > MAX_DROP_YAML_CHARS) {
-            showNotice.error('profiles.page.feedback.errors.importFailed')
-            continue
-          }
-          const result = await mutate(() => createProfile(item, data), {
+          const result = await mutate(() => importDroppedProfileFile(file), {
             id: 'create-profile',
             errorNotice: false,
             revalidate: [['getProfiles']],

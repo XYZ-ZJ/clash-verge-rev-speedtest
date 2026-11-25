@@ -51,15 +51,20 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const { t } = useTranslation()
   const [report, setReport] = useState<EgressReport | null>(null)
   const [loading, setLoading] = useState(false)
+  const [detectFailed, setDetectFailed] = useState(false)
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
 
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
     setLoading(true)
+    setDetectFailed(false)
     try {
       const res = await runFullEgressDetection()
       setReport(res)
+    } catch (err) {
+      console.error('[IpDetailModal] egress detection failed:', err)
+      setDetectFailed(true)
     } finally {
       setLoading(false)
     }
@@ -78,10 +83,10 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
 
   // 弹窗打开且未有数据时，自动触发首次真实探测
   useEffect(() => {
-    if (open && !report && !loading) {
+    if (open && !report && !loading && !detectFailed) {
       handleDetect()
     }
-  }, [open, report, loading, handleDetect])
+  }, [open, report, loading, detectFailed, handleDetect])
 
   const cfState = report?.cfStatus.state || 'fail'
   const isCfPass = cfState === 'pass'

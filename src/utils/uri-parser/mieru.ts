@@ -66,8 +66,12 @@ export function URI_Mieru(line: string): IProxyMieruConfig {
   }
 
   const isRange = portValue.includes('-')
-  const decodedAuth = safeDecodeURIComponent(authRaw) ?? authRaw
-  const [username, password] = splitOnce(decodedAuth, ':')
+  const [rawUser, rawPass] = splitOnce(authRaw, ':')
+  const username = safeDecodeURIComponent(rawUser) ?? rawUser
+  const password =
+    rawPass !== undefined
+      ? (safeDecodeURIComponent(rawPass) ?? rawPass)
+      : undefined
   if (!username || password === undefined) {
     throw new Error('Invalid mieru uri: missing credentials')
   }

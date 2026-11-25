@@ -3,7 +3,6 @@ import {
   decodeBase64OrOriginal,
   getCipher,
   getIfNotBlank,
-  getIfPresent,
   normalizeHost,
   parseBool,
   parseBoolOrPresence,
@@ -111,10 +110,35 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
     password: userInfo?.[2],
   }
 
+  function splitSip002PluginParts(pluginParam: string): string[] {
+    const parts: string[] = []
+    let current = ''
+    let escaped = false
+    for (const ch of pluginParam) {
+      if (escaped) {
+        current += ch
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === ';') {
+        parts.push(current)
+        current = ''
+        continue
+      }
+      current += ch
+    }
+    if (escaped) current += '\\'
+    parts.push(current)
+    return parts
+  }
   // plugin from `plugin=...`
   const pluginParam = queryParams.plugin
   if (pluginParam) {
-    const pluginParts = pluginParam.split(';')
+    const pluginParts = splitSip002PluginParts(pluginParam)
     const pluginName = pluginParts[0]?.trim()
     const pluginOptions: Record<string, any> = { plugin: pluginName }
     for (const raw of pluginParts.slice(1)) {
@@ -141,7 +165,7 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
           mode: getIfNotBlank(pluginOptions.mode) ?? 'websocket',
           host: getIfNotBlank(pluginOptions['obfs-host'] ?? pluginOptions.host),
           path: getIfNotBlank(pluginOptions.path),
-          tls: getIfPresent(pluginOptions.tls),
+          tls: parsePluginBool(pluginOptions.tls),
         }
         const skipCert = parsePluginBool(
           pluginOptions['skip-cert-verify'] ??
@@ -225,7 +249,7 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
         const path = getIfNotBlank(pluginOptions.path)
         if (path) opts.path = path
         if (pluginOptions.tls !== undefined) {
-          opts.tls = getIfPresent(pluginOptions.tls)
+          opts.tls = parsePluginBool(pluginOptions.tls)
         }
         const fp = getIfNotBlank(pluginOptions.fingerprint)
         if (fp) opts.fingerprint = fp

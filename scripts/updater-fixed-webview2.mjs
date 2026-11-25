@@ -63,7 +63,7 @@ async function resolveUpdater() {
     }
   })
 
-  await Promise.allSettled(promises)
+  await Promise.all(promises)
   console.log(updateData)
 
   Object.entries(updateData.platforms).forEach(([key, value]) => {
@@ -83,10 +83,31 @@ async function resolveUpdater() {
     }
   })
 
-  const { data: updateRelease } = await github.rest.repos.getReleaseByTag({
-    ...options,
-    tag: UPDATE_TAG_NAME,
-  })
+  let updateRelease
+  try {
+    const res = await github.rest.repos.getReleaseByTag({
+      ...options,
+      tag: UPDATE_TAG_NAME,
+    })
+    updateRelease = res.data
+  } catch (error) {
+    if (error.status !== 404) throw error
+    try {
+      const res = await github.rest.repos.createRelease({
+        ...options,
+        tag_name: UPDATE_TAG_NAME,
+        name: UPDATE_TAG_NAME,
+      })
+      updateRelease = res.data
+    } catch (createError) {
+      if (createError.status !== 422) throw createError
+      const res = await github.rest.repos.getReleaseByTag({
+        ...options,
+        tag: UPDATE_TAG_NAME,
+      })
+      updateRelease = res.data
+    }
+  }
 
   for (const asset of updateRelease.assets) {
     if (asset.name === UPDATE_JSON_FILE) {

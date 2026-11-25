@@ -272,14 +272,24 @@ fn is_unc_or_non_disk_prefix(path: &std::path::Path) -> bool {
 }
 
 fn scan_current_profile(features: &mut BTreeMap<String, NodeFeature>) {
+    let Ok(profiles_yaml) = crate::utils::dirs::profiles_path() else {
+        return;
+    };
     let Ok(profiles_dir) = crate::utils::dirs::app_profiles_dir() else {
         return;
     };
-    let profiles_yaml = profiles_dir.join(crate::utils::dirs::PROFILE_YAML);
+    scan_current_profile_from(&profiles_yaml, &profiles_dir, features);
+}
+
+fn scan_current_profile_from(
+    profiles_yaml: &std::path::Path,
+    profiles_dir: &std::path::Path,
+    features: &mut BTreeMap<String, NodeFeature>,
+) {
     if !profiles_yaml.is_file() {
         return;
     }
-    let Ok(content) = std::fs::read_to_string(&profiles_yaml) else {
+    let Ok(content) = std::fs::read_to_string(profiles_yaml) else {
         return;
     };
     let Ok(serde_yaml_ng::Value::Mapping(profiles_cfg)) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
@@ -474,6 +484,34 @@ mod tests {
         let b_feat = scoped.get("providerB").and_then(|m| m.get("Relay"));
         assert!(a_feat.is_some_and(|f| f.xhttp && f.xmux));
         assert!(b_feat.is_some_and(|f| f.xhttp && !f.xmux));
+        Ok(())
+    }
+
+    #[test]
+    fn current_profile_scan_reads_root_profiles_yaml_and_profile_dir_file() -> anyhow::Result<()> {
+        struct TempDirGuard(std::path::PathBuf);
+        impl Drop for TempDirGuard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let base = std::env::temp_dir().join(format!("clash-verge-proxy-scan-{}", std::process::id()));
+        let _guard = TempDirGuard(base.clone());
+        let profiles_dir = base.join("profiles");
+        std::fs::create_dir_all(&profiles_dir)?;
+        let profiles_yaml = base.join("profiles.yaml");
+        std::fs::write(&profiles_yaml, "current: p1\nitems:\n  - uid: p1\n    file: p1.yaml\n")?;
+        std::fs::write(
+            profiles_dir.join("p1.yaml"),
+            "proxies:\n  - name: XhttpNode\n    network: xhttp\n    xhttp-opts:\n      reuse-settings:\n        max-concurrency: \"4\"\n",
+        )?;
+
+        let mut features = BTreeMap::new();
+        super::scan_current_profile_from(&profiles_yaml, &profiles_dir, &mut features);
+
+        let feat = features.get("XhttpNode");
+        assert!(feat.is_some_and(|f| f.xhttp && f.xmux));
         Ok(())
     }
 }

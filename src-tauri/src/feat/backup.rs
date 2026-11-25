@@ -307,6 +307,13 @@ fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> 
         files_to_apply.push((staged_file, home_dir.join(&rel_path)));
     }
 
+    let staged_verge = staging_dir.join(crate::utils::dirs::VERGE_CONFIG);
+    if staged_verge.is_file() {
+        let reader = std::fs::File::open(&staged_verge)?;
+        let _: IVerge =
+            serde_yaml_ng::from_reader(reader).map_err(|err| anyhow!("restored verge.yaml is invalid: {err}"))?;
+    }
+
     for (staged, target) in files_to_apply {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;

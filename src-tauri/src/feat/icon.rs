@@ -126,10 +126,72 @@ fn is_safe_svg(content: &[u8]) -> bool {
         || text.contains("<iframe")
         || text.contains("<object")
         || text.contains("<embed")
-        || text.contains("onload=")
-        || text.contains("onerror=")
-        || text.contains("onclick=")
-        || text.contains("onmouseover="))
+        || has_svg_event_handler(&text))
+}
+
+fn has_svg_event_handler(lower_svg: &str) -> bool {
+    let bytes = lower_svg.as_bytes();
+    let mut i = 0;
+    let mut in_tag = false;
+    let mut quote: Option<u8> = None;
+
+    while i < bytes.len() {
+        if !in_tag {
+            if bytes[i..].starts_with(b"<!--") {
+                if let Some(end) = lower_svg[i + 4..].find("-->") {
+                    i += 4 + end + 3;
+                    continue;
+                }
+                return false;
+            }
+            if bytes[i] == b'<' {
+                in_tag = true;
+            }
+            i += 1;
+            continue;
+        }
+
+        if let Some(q) = quote {
+            if bytes[i] == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        match bytes[i] {
+            b'\'' | b'"' => {
+                quote = Some(bytes[i]);
+                i += 1;
+            }
+            b'>' => {
+                in_tag = false;
+                i += 1;
+            }
+            _ => {
+                let is_attr_boundary = i > 0 && bytes[i - 1].is_ascii_whitespace();
+                if is_attr_boundary
+                    && i + 3 < bytes.len()
+                    && bytes[i] == b'o'
+                    && bytes[i + 1] == b'n'
+                    && bytes[i + 2].is_ascii_alphabetic()
+                {
+                    let mut j = i + 3;
+                    while j < bytes.len() && bytes[j].is_ascii_alphabetic() {
+                        j += 1;
+                    }
+                    while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if j < bytes.len() && bytes[j] == b'=' {
+                        return true;
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+    false
 }
 
 fn is_supported_icon_content(content: &[u8]) -> bool {
@@ -160,7 +222,15 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
     let client = reqwest::Client::builder()
         .use_rustls_tls()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::limited(3))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 3 {
+                return attempt.error("too many icon redirects");
+            }
+            if let Err(err) = validate_external_icon_url(attempt.url().as_str()) {
+                return attempt.error(err.to_string());
+            }
+            attempt.follow()
+        }))
         .build()
         .stringify_err()?;
     let response = client.get(parsed_url).send().await.stringify_err()?;

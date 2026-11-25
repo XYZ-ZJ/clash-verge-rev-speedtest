@@ -125,11 +125,12 @@ class TrafficTrackerStore {
     const globalDownTotal = traffic?.downTotal || 0
     const globalUpTotal = traffic?.upTotal || 0
     const isTransientZeroFallback =
-      globalDownTotal === 0 &&
-      globalUpTotal === 0 &&
-      (traffic?.up || 0) === 0 &&
-      (traffic?.down || 0) === 0 &&
-      allConns.some((c) => this.seen.has(c.id))
+      Boolean((traffic as { isFallback?: boolean } | undefined)?.isFallback) ||
+      (globalDownTotal === 0 &&
+        globalUpTotal === 0 &&
+        (traffic?.up || 0) === 0 &&
+        (traffic?.down || 0) === 0 &&
+        allConns.some((c) => this.seen.has(c.id)))
 
     // 仅在真实内核计数回落且非瞬断 FALLBACK_TRAFFIC 心跳时重置累计值
     if (

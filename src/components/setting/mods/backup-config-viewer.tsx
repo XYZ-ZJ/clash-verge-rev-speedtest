@@ -12,7 +12,7 @@ import {
   buildWebdavSignature,
   getWebdavStatus,
   setWebdavStatus,
-  useWebdavSignature,
+  useWebdavSignatureState,
 } from '@/services/webdav-status'
 import { isValidUrl } from '@/utils/network'
 
@@ -55,9 +55,10 @@ export const BackupConfigViewer = memo(
       (webdav_username ?? '') !== username ||
       (webdav_password ?? '') !== password
 
-    const webdavSignature = useWebdavSignature(verge)
+    const { signature: webdavSignature, ready: webdavSignatureReady } =
+      useWebdavSignatureState(verge)
     const webdavStatus = getWebdavStatus(webdavSignature)
-    const shouldAutoInit = webdavStatus !== 'failed'
+    const shouldAutoInit = webdavSignatureReady && webdavStatus !== 'failed'
 
     useEffect(() => {
       if (!webdav_url || !webdav_username || !webdav_password) {

@@ -48,16 +48,20 @@ export const buildWebdavSignature = async (
   ).join('')
 }
 
-export const useWebdavSignature = (
+export const useWebdavSignatureState = (
   verge?: Pick<
     IVergeConfig,
     'webdav_url' | 'webdav_username' | 'webdav_password'
   > | null,
-): string => {
-  const [signature, setSignature] = useState('')
+): { signature: string; ready: boolean } => {
   const url = verge?.webdav_url?.trim() ?? ''
   const username = verge?.webdav_username?.trim() ?? ''
   const password = verge?.webdav_password ?? ''
+  const currentKey = `${url}\0${username}\0${password}`
+  const [resolved, setResolved] = useState<{ key: string; signature: string }>({
+    key: '',
+    signature: '',
+  })
 
   useEffect(() => {
     let active = true
@@ -67,16 +71,27 @@ export const useWebdavSignature = (
       webdav_password: password,
     }).then((nextSignature) => {
       if (active) {
-        setSignature(nextSignature)
+        setResolved({ key: currentKey, signature: nextSignature })
       }
     })
     return () => {
       active = false
     }
-  }, [url, username, password])
+  }, [currentKey, url, username, password])
 
-  return signature
+  const ready = resolved.key === currentKey
+  return {
+    signature: ready ? resolved.signature : '',
+    ready,
+  }
 }
+
+export const useWebdavSignature = (
+  verge?: Pick<
+    IVergeConfig,
+    'webdav_url' | 'webdav_username' | 'webdav_password'
+  > | null,
+): string => useWebdavSignatureState(verge).signature
 
 const canUseStorage = () => typeof localStorage !== 'undefined'
 

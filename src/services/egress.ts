@@ -163,10 +163,7 @@ export const extractCandidateIp = (cand: string): string | null => {
     parts[7] === 'srflx' &&
     parts[4]
   ) {
-    if (isValidIpAddress(parts[4])) return parts[4]
-  }
-  for (const token of parts) {
-    if (isValidIpAddress(token)) return token
+    return isValidIpAddress(parts[4]) ? parts[4] : null
   }
   return null
 }

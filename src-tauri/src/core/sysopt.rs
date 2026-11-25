@@ -8,13 +8,7 @@ use anyhow::Result;
 use clash_verge_logging::{Type, logging};
 use parking_lot::RwLock;
 use smartstring::alias::String;
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use sysproxy::{Autoproxy, GuardMonitor, GuardType, Sysproxy};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -243,7 +237,6 @@ pub(crate) struct Sysopt {
     // Owns the proxy target pair; every reader and writer goes through this lock.
     proxy_state_lock: TokioMutex<(Sysproxy, Autoproxy)>,
     guard_operation_lock: TokioMutex<()>,
-    proxy_reset_clean: AtomicBool,
     guard: Arc<RwLock<GuardMonitor>>,
 }
 
@@ -252,7 +245,6 @@ impl Default for Sysopt {
         Self {
             proxy_state_lock: TokioMutex::new((Sysproxy::default(), Autoproxy::default())),
             guard_operation_lock: TokioMutex::new(()),
-            proxy_reset_clean: AtomicBool::new(false),
             guard: Arc::new(RwLock::new(GuardMonitor::new(GuardType::None, Duration::from_secs(30)))),
         }
     }
@@ -430,7 +422,6 @@ impl Sysopt {
     )]
     pub(super) async fn update_sysproxy(&self) -> Result<()> {
         let mut proxy_state = self.proxy_state_lock.lock().await;
-        self.proxy_reset_clean.store(false, Ordering::Release);
         let verge = Config::verge().await.latest_arc();
         // Configured, not live: this runs while the Core is being started or restarted, and
         // asking a Core that is not up yet would only fall back here anyway.
@@ -549,9 +540,6 @@ impl Sysopt {
     )]
     pub(super) async fn reset_sysproxy(&self) -> Result<()> {
         let mut proxy_state = self.proxy_state_lock.lock().await;
-        if self.proxy_reset_clean.load(Ordering::Acquire) && !proxy_state.0.enable && !proxy_state.1.enable {
-            return Ok(());
-        }
         let _guard_operation = self.guard_operation_lock.lock().await;
         let drained = self.stop_proxy_guard_locked().await;
 
@@ -568,7 +556,6 @@ impl Sysopt {
             && drained
             && current_os_proxy_state(sys.clone(), auto.clone()).await == OsProxyState::AlreadyApplied
         {
-            self.proxy_reset_clean.store(true, Ordering::Release);
             return Ok(());
         }
 
@@ -578,7 +565,6 @@ impl Sysopt {
             || self.stop_proxy_guard_locked(),
         )
         .await?;
-        self.proxy_reset_clean.store(true, Ordering::Release);
         Ok(())
     }
 }

@@ -40,7 +40,7 @@ import { showNotice } from '@/services/notice-service'
 import {
   getWebdavStatus,
   setWebdavStatus,
-  useWebdavSignature,
+  useWebdavSignatureState,
 } from '@/services/webdav-status'
 
 dayjs.extend(customParseFormat)
@@ -94,7 +94,8 @@ export const BackupHistoryViewer = ({
   const isWebDavConfigured = Boolean(
     verge?.webdav_url && verge?.webdav_username && verge?.webdav_password,
   )
-  const webdavSignature = useWebdavSignature(verge)
+  const { signature: webdavSignature, ready: webdavSignatureReady } =
+    useWebdavSignatureState(verge)
   const webdavStatus = getWebdavStatus(webdavSignature)
   const shouldSkipWebDav = !isLocal && !isWebDavConfigured
   const pageSize = 8
@@ -146,6 +147,9 @@ export const BackupHistoryViewer = ({
         setRows([])
         return
       }
+      if (!isLocal && !webdavSignatureReady) {
+        return
+      }
       if (!isLocal && webdavStatus === 'failed' && !options?.force) {
         setRows([])
         return
@@ -156,7 +160,7 @@ export const BackupHistoryViewer = ({
         const list = isLocal
           ? await listLocalBackup()
           : await listWebDavBackup()
-        if (!isLocal) {
+        if (!isLocal && webdavSignatureReady) {
           setWebdavStatus(webdavSignature, 'ready')
         }
         setRows(
@@ -180,7 +184,15 @@ export const BackupHistoryViewer = ({
         setLoading(false)
       }
     },
-    [buildRow, isLocal, open, shouldSkipWebDav, webdavSignature, webdavStatus],
+    [
+      buildRow,
+      isLocal,
+      open,
+      shouldSkipWebDav,
+      webdavSignature,
+      webdavSignatureReady,
+      webdavStatus,
+    ],
   )
 
   useEffect(() => {

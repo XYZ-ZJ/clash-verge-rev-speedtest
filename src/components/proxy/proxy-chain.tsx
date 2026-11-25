@@ -536,7 +536,10 @@ export const ProxyChain = ({
           errorNotice: false,
         },
       )
-      if (!result.ok) return
+      if (!result.ok) {
+        showNotice.info('shared.feedback.notifications.common.busy')
+        return
+      }
       debugLog('Chain configuration saved successfully')
 
       // 第二步：连接到代理链的最后一个节点
@@ -550,13 +553,17 @@ export const ProxyChain = ({
 
       const targetGroup = mode === 'global' ? 'GLOBAL' : selectedGroup
 
-      await mutate(
+      const selectResult = await mutate(
         () => selectNodeForGroup(targetGroup || 'GLOBAL', lastNode.name),
         {
           id: `select-proxy-node:${targetGroup || 'GLOBAL'}`,
           errorNotice: false,
         },
       )
+      if (!selectResult.ok) {
+        showNotice.info('shared.feedback.notifications.common.busy')
+        return
+      }
       // The chain moves the group like any other selection, so the profile has to learn about
       // it: what the profile holds is what gets re-applied the next time the core starts.
       await recordSelection(targetGroup || 'GLOBAL', lastNode.name)

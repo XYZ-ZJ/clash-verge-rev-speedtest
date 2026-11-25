@@ -5,7 +5,13 @@ import { WS_ERROR_PREFIX } from '@/services/ws-protocol'
 import { useMihomoWsSubscription } from './use-mihomo-ws-subscription'
 import { useTrafficMonitorEnhanced } from './use-traffic-monitor'
 
-const FALLBACK_TRAFFIC: Traffic = { up: 0, down: 0, upTotal: 0, downTotal: 0 }
+const FALLBACK_TRAFFIC: Traffic & { isFallback?: boolean } = {
+  up: 0,
+  down: 0,
+  upTotal: 0,
+  downTotal: 0,
+  isFallback: true,
+}
 const DUPLICATE_TRAFFIC_WINDOW_MS = 50
 
 let lastTrafficSignature = ''

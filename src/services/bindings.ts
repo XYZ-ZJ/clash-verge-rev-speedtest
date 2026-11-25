@@ -158,6 +158,8 @@ export const commands = {
     __TAURI_INVOKE<null>('delete_profile', { index }),
   readProfileFile: (index: string) =>
     __TAURI_INVOKE<string>('read_profile_file', { index }),
+  importDroppedProfileFile: (path: string) =>
+    __TAURI_INVOKE<null>('import_dropped_profile_file', { path }),
   /**  保存profiles的配置 */
   saveProfileFile: (index: string, fileData: string | null) =>
     __TAURI_INVOKE<ValidationOutcome>('save_profile_file', { index, fileData }),

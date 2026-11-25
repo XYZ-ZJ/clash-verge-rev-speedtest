@@ -28,6 +28,7 @@ import {
   useCallback,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -220,6 +221,25 @@ export const IpInfoCard = () => {
     }
   })
 
+  const initialAutoTriggeredRef = useRef(false)
+
+  useEffect(() => {
+    if (!autoRefresh) {
+      initialAutoTriggeredRef.current = false
+      return
+    }
+    if (
+      hasIntersected &&
+      !ipInfo &&
+      !error &&
+      !isFetching &&
+      !initialAutoTriggeredRef.current
+    ) {
+      initialAutoTriggeredRef.current = true
+      void mutate()
+    }
+  }, [autoRefresh, hasIntersected, ipInfo, error, isFetching, mutate])
+
   useEffect(() => {
     if (!autoRefresh) return
 
@@ -283,24 +303,55 @@ export const IpInfoCard = () => {
       break
     case !!error:
       mainElement = (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: 'error.main',
-          }}
-        >
-          <Typography variant="body1" color="error">
-            {error instanceof Error
-              ? error.message
-              : t('home.components.ipInfo.errors.load')}
-          </Typography>
-          <Button onClick={() => mutate()} sx={{ mt: 2 }}>
-            {t('shared.actions.retry')}
-          </Button>
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'error.main',
+            }}
+          >
+            <Typography variant="body1" color="error">
+              {error instanceof Error
+                ? error.message
+                : t('home.components.ipInfo.errors.load')}
+            </Typography>
+            <Button onClick={() => mutate()} sx={{ mt: 2 }}>
+              {t('shared.actions.retry')}
+            </Button>
+          </Box>
+          <Box
+            sx={{
+              mt: 'auto',
+              pt: 0.5,
+              borderTop: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              opacity: 0.7,
+              fontSize: '0.7rem',
+            }}
+          >
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Switch
+                  size="small"
+                  checked={autoRefresh}
+                  onChange={(_, checked) => setAutoRefresh(checked)}
+                />
+              }
+              label={
+                <Typography variant="caption">
+                  {t('home.components.ipInfo.labels.autoRefresh')}
+                </Typography>
+              }
+            />
+          </Box>
         </Box>
       )
       break

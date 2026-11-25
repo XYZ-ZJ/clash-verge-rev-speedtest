@@ -326,6 +326,7 @@ export const useMihomoWsSubscription = <T>(
       const entry = sharedSubscriptions.get(subscriptionCacheKey)
       if (entry && !entry.closed && entry.refs > 1) {
         void entry.scheduleReconnect()
+        return
       }
     }
     setRefreshEpoch((epoch) => epoch + 1)

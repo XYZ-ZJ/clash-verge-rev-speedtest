@@ -53,11 +53,18 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/**", "$RESOURCE/**"],
+          "allow": [
+            "$APPDATA/**",
+            "$RESOURCE/**",
+            "$PICTURE/**",
+            "$DESKTOP/**",
+            "$DOWNLOAD/**"
+          ],
           "requireLiteralLeadingDot": false
         }
       },
-      "csp": "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data: blob: http: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost ws: wss: http: https:"
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "csp": "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: http: https:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost ws: wss: http: https:"
     }
   }
 }

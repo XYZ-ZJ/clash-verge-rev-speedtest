@@ -385,7 +385,12 @@ async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]
         .map(str::to_owned);
 
     let Some(published) = published else {
-        anyhow::bail!("core upgrade: release metadata for {tag} is missing sha256 digest for {asset}");
+        logging!(
+            warn,
+            Type::Core,
+            "core upgrade: release metadata for {tag} is missing sha256 digest for {asset}; skipping digest check"
+        );
+        return Ok(());
     };
     let Some(expected) = published.strip_prefix("sha256:") else {
         anyhow::bail!("core upgrade: unsupported digest format {published} for {asset}");

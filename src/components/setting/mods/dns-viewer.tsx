@@ -204,7 +204,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
 
   const [open, setOpen] = useState(false)
   const [visualization, setVisualization] = useState(true)
-  const skipYamlSyncRef = useRef(false)
+  const pendingFormSyncRef = useRef(false)
   const loadedConfigRef = useRef<Record<string, any> | null>(null)
   const editorRef = useRef<MonacoEditorInstance | null>(null)
   const [values, setValues] = useState<{
@@ -393,7 +393,8 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
 
   const resetToDefaults = useCallback(() => {
     loadedConfigRef.current = null
-    setValues({
+    pendingFormSyncRef.current = false
+    const defaults = {
       enable: DEFAULT_DNS_CONFIG.enable,
       listen: DEFAULT_DNS_CONFIG.listen,
       enhancedMode: DEFAULT_DNS_CONFIG['enhanced-mode'],
@@ -423,17 +424,20 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
         DEFAULT_DNS_CONFIG['fallback-filter'].domain?.join(', ') || '',
       nameserverPolicy: '',
       hosts: '',
-    })
-
-    updateYamlFromValues()
-  }, [updateYamlFromValues])
+    }
+    setValues(defaults)
+    const defaultYamlConfig: Record<string, any> = {
+      dns: { ...DEFAULT_DNS_CONFIG },
+      hosts: {},
+    }
+    setYamlContent(yaml.dump(defaultYamlConfig, { forceQuotes: true }))
+  }, [])
 
   const updateValuesFromYaml = useCallback(() => {
     try {
       const parsedYaml = yaml.load(yamlContent) as any
       if (!parsedYaml || parsedYaml.isInitValue) return
 
-      skipYamlSyncRef.current = true
       updateValuesFromConfig(parsedYaml)
     } catch {
       showNotice.error('settings.modals.dns.errors.invalidYaml')
@@ -441,10 +445,8 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
   }, [yamlContent, updateValuesFromConfig])
 
   useEffect(() => {
-    if (skipYamlSyncRef.current) {
-      skipYamlSyncRef.current = false
-      return
-    }
+    if (!pendingFormSyncRef.current) return
+    pendingFormSyncRef.current = false
     updateYamlFromValues()
   }, [updateYamlFromValues])
 
@@ -479,7 +481,6 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
         const config = yaml.load(dnsConfig) as any
         loadedConfigRef.current =
           config && typeof config === 'object' ? config : null
-        skipYamlSyncRef.current = true
         updateValuesFromConfig(config)
         setYamlContent(dnsConfig)
       } else {
@@ -599,6 +600,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
         ? event.target.checked
         : event.target.value
 
+    pendingFormSyncRef.current = true
     setValues((prev) => ({
       ...prev,
       [field]: value,

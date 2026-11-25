@@ -789,11 +789,15 @@ export const getIpInfo = async (): Promise<
 
   if (lastError) {
     console.error('[IP Info] All detection services failed:', lastError)
+    const detail =
+      extractErrorMessage(lastError) ||
+      (typeof lastError === 'string' && lastError.trim()
+        ? lastError.trim()
+        : null) ||
+      i18n.t(($) => $.shared.feedback.errors.unknown)
     throw new Error(
       i18n.t(($) => $.home.components.ipInfo.errors.loadWithDetails, {
-        message:
-          extractErrorMessage(lastError) ||
-          i18n.t(($) => $.shared.feedback.errors.unknown),
+        message: detail,
       }),
     )
   } else {
@@ -893,10 +897,8 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
     const errCode = typeof errObj?.code === 'string' ? errObj.code : undefined
     const errMessage = extractErrorMessage(err) ?? ''
     if (
-      errCode === 'dnsleak.portUnavailable' ||
-      errCode === 'dnsleak.proxyConfigFailed' ||
-      errCode === 'dnsleak.clientSetupFailed' ||
-      errMessage.includes('dnsleak.portUnavailable') ||
+      errCode?.startsWith('dnsleak.') ||
+      errMessage.includes('dnsleak.') ||
       errMessage.includes('proxy port is unavailable')
     ) {
       throw err instanceof Error

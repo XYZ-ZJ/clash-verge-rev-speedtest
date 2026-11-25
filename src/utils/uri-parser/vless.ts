@@ -377,12 +377,16 @@ export function URI_VLESS(line: string): IProxyVlessConfig {
   try {
     parsed = parseVlessRest(rest)
   } catch {
-    const shadowMatch = /^(.*?)(\?.*?$)/.exec(rest)
+    const shadowMatch = /^([^?#]+)(.*)$/.exec(rest)
     if (!shadowMatch) {
       throw new Error('Invalid vless uri')
     }
-    const [, base64Part, other] = shadowMatch
-    rest = `${decodeBase64OrOriginal(base64Part)}${other}`
+    const [, base64Part, other = ''] = shadowMatch
+    const decodedBase64 = decodeBase64OrOriginal(base64Part)
+    if (decodedBase64 === base64Part) {
+      throw new Error('Invalid vless uri')
+    }
+    rest = `${decodedBase64}${other}`
     parsed = parseVlessRest(rest)
     isShadowrocket = true
   }
@@ -410,12 +414,15 @@ export function URI_VLESS(line: string): IProxyVlessConfig {
     uuid,
   }
 
-  proxy.encryption = params.encryption === 'none' ? '' : params.encryption
+  proxy.encryption =
+    params.encryption && params.encryption !== 'none'
+      ? params.encryption
+      : undefined
 
-  proxy.tls = (params.security && params.security !== 'none') || undefined
+  const security = params.security?.toLowerCase()
+  proxy.tls = (security && security !== 'none') || undefined
   if (isShadowrocket && parseBool(params.tls) === true) {
     proxy.tls = true
-    params.security = params.security ?? 'reality'
   }
 
   proxy.servername = params.sni || params.peer
@@ -463,7 +470,8 @@ export function URI_VLESS(line: string): IProxyVlessConfig {
     proxy['ech-opts'] = echOpts
   }
 
-  if (params.security === 'reality' || (!params.security && params.pbk)) {
+  if (security === 'reality' || (!security && params.pbk)) {
+    proxy.tls = true
     const opts: IProxyVlessConfig['reality-opts'] = {}
     if (params.pbk) {
       opts['public-key'] = params.pbk
@@ -491,10 +499,10 @@ export function URI_VLESS(line: string): IProxyVlessConfig {
     parseBool(params['v2ray-http-upgrade'] ?? params.httpupgrade) ?? false
   let network: NetworkType
 
-  if (params.headerType === 'http') {
+  if (params.headerType?.toLowerCase() === 'http') {
     network = 'http'
   } else {
-    let type = params.type
+    let type = params.type?.toLowerCase()
     if (type === 'websocket') type = 'ws'
     if (isShadowrocket && type === 'sw') type = 'ws'
     if (type === 'splithttp') type = 'xhttp'

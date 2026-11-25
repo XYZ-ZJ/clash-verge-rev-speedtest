@@ -30,7 +30,10 @@ export function URI_SOCKS(line: string): IProxySocks5Config {
   let normalizedMain = mainRaw
   if (!mainRaw.includes('@')) {
     const decoded = decodeBase64OrOriginal(mainRaw)
-    if (decoded !== mainRaw) {
+    if (
+      decoded !== mainRaw &&
+      (decoded.includes('@') || decoded.includes(':'))
+    ) {
       normalizedMain = decoded
     }
   }

@@ -17,6 +17,7 @@ import {
 import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
 import { useSetUpdateState, useUpdateState } from '@/services/states'
+import { setUpdateResourceInUse } from '@/services/update'
 import { openExternalUrl } from '@/utils/open-external-url'
 
 type MarkdownNode = {
@@ -255,6 +256,7 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
       }
     }
 
+    setUpdateResourceInUse(true)
     try {
       const result = await mutate(
         () => installUpdate(updateInfo.version, onDownloadEvent),
@@ -263,7 +265,8 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
           errorNotice: false,
         },
       )
-      if (result.ok && result.value === 'update_changed') {
+      if (result.value === 'update_changed') {
+        setUpdateResourceInUse(false)
         const { data } = await checkUpdate()
         setRefreshedUpdate(data)
         if (data) {
@@ -274,7 +277,7 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
             'settings.components.verge.advanced.notifications.latestVersion',
           )
         }
-      } else if (result.ok && result.value === 'installed') {
+      } else if (result.value === 'installed') {
         await mutate(() => restartApp(), {
           id: 'restart-app',
           errorNotice: false,
@@ -283,6 +286,7 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
     } catch (err: any) {
       showNotice.error(err)
     } finally {
+      setUpdateResourceInUse(false)
       setUpdateState(false)
       setDownload({ downloaded: 0, total: 0 })
     }
@@ -320,7 +324,7 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
             sx={{ whiteSpace: 'nowrap' }}
             onClick={() => {
               openUrlWithNotice(
-                `https://github.com/clash-verge-rev/clash-verge-rev/releases/tag/v${updateInfo?.version}`,
+                `https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases/tag/v${updateInfo?.version}`,
               )
             }}
           >

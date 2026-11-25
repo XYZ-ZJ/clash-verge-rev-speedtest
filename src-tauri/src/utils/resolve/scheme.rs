@@ -3,6 +3,7 @@ use anyhow::Result;
 use percent_encoding::percent_decode_str;
 use smartstring::alias::String;
 use tauri::Url;
+use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 
 use crate::{
     config::{Config, PrfItem, profiles},
@@ -35,7 +36,7 @@ fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-fn validate_subscription_url(raw_url: &str) -> Result<Url> {
+fn validate_subscription_url(raw_url: &str) -> Result<(Url, bool)> {
     let parsed = Url::parse(raw_url)?;
     if !matches!(parsed.scheme(), "http" | "https") {
         anyhow::bail!("Unsupported subscription URL scheme: {}", parsed.scheme());
@@ -44,19 +45,12 @@ fn validate_subscription_url(raw_url: &str) -> Result<Url> {
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("Subscription URL missing host"))?;
     let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
-    if lower_host == "localhost"
+    let is_local_or_private = lower_host == "localhost"
         || lower_host.ends_with(".localhost")
         || lower_host.ends_with(".local")
         || lower_host.ends_with(".internal")
-    {
-        anyhow::bail!("Refusing private or local subscription host");
-    }
-    if let Ok(ip) = lower_host.parse::<std::net::IpAddr>()
-        && is_disallowed_ip(ip)
-    {
-        anyhow::bail!("Refusing private or loopback subscription IP");
-    }
-    Ok(parsed)
+        || lower_host.parse::<std::net::IpAddr>().is_ok_and(is_disallowed_ip);
+    Ok((parsed, is_local_or_private))
 }
 
 pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
@@ -83,15 +77,23 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
         return Ok(());
     };
 
-    if let Err(err) = validate_subscription_url(&url) {
-        logging!(warn, Type::Config, "rejected deep link url: {err:#}");
-        handle::Handle::notice(NoticeStatus::ImportSubUrlError, err.to_string());
-        return Ok(());
-    }
+    let is_local_or_private = match validate_subscription_url(&url) {
+        Ok((_, is_private)) => is_private,
+        Err(err) => {
+            logging!(warn, Type::Config, "rejected deep link url: {err:#}");
+            handle::Handle::notice(NoticeStatus::ImportSubUrlError, err.to_string());
+            return Ok(());
+        }
+    };
 
     let display_name = name.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or("(unnamed)");
+    let warning_prefix = if is_local_or_private {
+        "Warning: This URL points to a local or private network address.\n\n"
+    } else {
+        ""
+    };
     let description = format!(
-        "An external link requested to import a subscription profile:\n\n\
+        "{warning_prefix}An external link requested to import a subscription profile:\n\n\
          Name: {display_name}\n\
          URL: {url}\n\n\
          Do you want to import it?"
@@ -107,32 +109,25 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_deep_link_confirm_dialog(description: std::string::String) -> bool {
-    rfd::MessageDialog::new()
-        .set_level(rfd::MessageLevel::Info)
-        .set_title("Import Profile Confirmation")
-        .set_description(description)
-        .set_buttons(rfd::MessageButtons::YesNo)
-        .show()
-        == rfd::MessageDialogResult::Yes
-}
-
 async fn confirm_deep_link_import(description: std::string::String) -> bool {
     if let Some(app_handle) = crate::APP_HANDLE.get() {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if app_handle
-            .run_on_main_thread(move || {
-                let _ = tx.send(show_deep_link_confirm_dialog(description));
-            })
-            .is_err()
-        {
-            return false;
-        }
-        rx.await.unwrap_or(false)
-    } else {
-        crate::process::AsyncHandler::spawn_blocking(move || show_deep_link_confirm_dialog(description))
+        app_handle
+            .dialog()
+            .message(description)
+            .title("Import Profile Confirmation")
+            .buttons(MessageDialogButtons::YesNo)
+            .kind(MessageDialogKind::Info)
+            .show(move |confirmed| {
+                let _ = tx.send(confirmed);
+            });
+        tokio::time::timeout(std::time::Duration::from_secs(120), rx)
             .await
+            .ok()
+            .and_then(Result::ok)
             .unwrap_or(false)
+    } else {
+        false
     }
 }
 
@@ -150,10 +145,45 @@ fn extract_subscription_info(link_parsed: &Url) -> Option<(std::string::String, 
 }
 
 fn extract_subscription_url(link_parsed: &Url) -> Option<std::string::String> {
+    if let Some(query) = link_parsed.query() {
+        let start = if let Some(rest) = query.strip_prefix("url=") {
+            Some(rest)
+        } else {
+            query.find("&url=").map(|pos| &query[pos + 5..])
+        };
+        if let Some(start) = start {
+            let trimmed_start = start.trim_start();
+            // When the nested URL is unencoded (starts with http:// or https://),
+            // query_pairs() would truncate at the first '&' inside the nested URL.
+            if (trimmed_start.len() >= 7 && trimmed_start[..7].eq_ignore_ascii_case("http://"))
+                || (trimmed_start.len() >= 8 && trimmed_start[..8].eq_ignore_ascii_case("https://"))
+            {
+                let end = trimmed_start.find("&name=").unwrap_or(trimmed_start.len());
+                let raw_url = trimmed_start[..end].trim();
+                if !raw_url.is_empty() {
+                    return Some(decode_subscription_url(raw_url));
+                }
+            }
+        }
+    }
+    if let Some((_, value)) = link_parsed.query_pairs().find(|(key, _)| key == "url") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() && Url::parse(trimmed).is_ok() {
+            return Some(decode_subscription_url(trimmed));
+        }
+    }
     let query = link_parsed.query()?;
-    let prefix = "url=";
-    let pos = query.find(prefix)?;
-    let raw_url = query[pos + prefix.len()..].trim();
+    let start = if let Some(rest) = query.strip_prefix("url=") {
+        rest
+    } else {
+        let pos = query.find("&url=")?;
+        &query[pos + 5..]
+    };
+    let end = start.find("&name=").unwrap_or(start.len());
+    let raw_url = start[..end].trim();
+    if raw_url.is_empty() {
+        return None;
+    }
     Some(decode_subscription_url(raw_url))
 }
 
@@ -182,6 +212,7 @@ async fn import_subscription(url: &str, name: Option<&String>) {
         return;
     };
 
+    let had_current = Config::profiles().await.latest_arc().current.is_some();
     let uid = item.uid.clone().unwrap_or_default();
     if let Err(e) = profiles::profiles_append_item_safe(&mut item).await {
         logging!(error, Type::Config, "failed to import subscription url: {:?}", e);
@@ -194,6 +225,28 @@ async fn import_subscription(url: &str, name: Option<&String>) {
         logging!(error, Type::Config, "failed to save imported subscription: {e:#}");
         handle::Handle::notice(NoticeStatus::ImportSubUrlError, e.to_string());
         return;
+    }
+    if !had_current && !uid.is_empty() {
+        match crate::core::CoreManager::global().update_config_forced().await {
+            Ok(outcome) if outcome.is_valid() => handle::Handle::refresh_clash(),
+            Ok(outcome) => {
+                let message = outcome.to_string();
+                logging!(
+                    warn,
+                    Type::Config,
+                    "failed to activate initial deep-link profile: {message}"
+                );
+                handle::Handle::notice(NoticeStatus::ConfigValidateError, message);
+            }
+            Err(e) => {
+                logging!(
+                    warn,
+                    Type::Config,
+                    "failed to activate initial deep-link profile: {e:#}"
+                );
+                handle::Handle::notice(NoticeStatus::ConfigValidateError, e.to_string());
+            }
+        }
     }
     logging_error!(Type::Timer, Timer::global().refresh().await);
     handle::Handle::notice(

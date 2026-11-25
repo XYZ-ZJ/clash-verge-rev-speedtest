@@ -82,6 +82,7 @@ pub fn builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd::update_profile,
             cmd::delete_profile,
             cmd::read_profile_file,
+            cmd::import_dropped_profile_file,
             cmd::save_profile_file,
             cmd::get_next_update_time,
             cmd::create_local_backup,
