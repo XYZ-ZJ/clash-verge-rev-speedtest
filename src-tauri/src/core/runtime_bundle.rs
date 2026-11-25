@@ -170,7 +170,7 @@ fn collect_runtime_parts(mut config: Value, config_root: &Path) -> Result<Runtim
         &mut remote_providers,
     )?;
     collect_ssh_private_keys(&mut config, &config_root, &mut destinations, &mut assets);
-    let canonical_root = std::fs::canonicalize(config_root).unwrap_or_else(|_| config_root.to_path_buf());
+    let canonical_root = std::fs::canonicalize(&config_root).unwrap_or_else(|_| config_root.to_path_buf());
     for filename in GEO_ASSETS {
         let source = config_root.join(filename);
         if source.is_file() && destinations.insert((*filename).to_string()) {
