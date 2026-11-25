@@ -436,21 +436,6 @@ pub(crate) async fn profiles_append_item_safe(item: &mut PrfItem) -> Result<()> 
     profiles_append_item_to_safe(&profiles, item).await
 }
 
-/// Appends every item inside a single draft commit: either all companions
-/// land or none do, so a failed import cannot leave orphaned entries that a
-/// later unrelated `profiles_save_file_safe` would persist.
-pub(crate) async fn profiles_append_items_safe(items: Vec<&mut PrfItem>) -> Result<()> {
-    Config::profiles()
-        .await
-        .with_data_modify(|mut profiles| async move {
-            for item in items {
-                profiles.append_item(item).await?;
-            }
-            Ok((profiles, ()))
-        })
-        .await
-}
-
 pub(super) async fn profiles_append_item_to_safe(profiles: &Draft<IProfiles>, item: &mut PrfItem) -> Result<()> {
     profiles
         .with_data_modify(|mut profiles| async move {

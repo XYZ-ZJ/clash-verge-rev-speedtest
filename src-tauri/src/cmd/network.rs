@@ -128,7 +128,7 @@ fn parse_server_timing_dur(header_val: &str) -> Option<f64> {
         let part = part.trim();
         if let Some(idx) = part.find("dur=") {
             let val_str = &part[idx + 4..];
-            let end_idx = val_str.find(';').unwrap_or_else(|| val_str.len());
+            let end_idx = val_str.find(';').unwrap_or(val_str.len());
             if let Ok(dur) = val_str[..end_idx].trim().parse::<f64>() {
                 return Some(dur);
             }
@@ -265,7 +265,7 @@ fn next_chunk_size(current_mb_s: f64, streams: usize, lo: usize, hi: usize) -> u
 fn generate_random_payload_block(size: usize) -> Vec<u8> {
     let mut buf = vec![0u8; size];
     let mut state: u32 = 0x8a5b3c1d;
-    for chunk in buf.chunks_exact_mut(4) {
+    for chunk in buf.as_chunks_mut::<4>().0 {
         state ^= state << 13;
         state ^= state >> 17;
         state ^= state << 5;

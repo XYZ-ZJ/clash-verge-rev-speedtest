@@ -144,9 +144,10 @@ fn detect_node_feature(map: &Mapping) -> Option<NodeFeature> {
     Some(NodeFeature { xhttp: true, xmux })
 }
 
-static FILE_FEATURE_CACHE: OnceLock<
-    Mutex<HashMap<std::path::PathBuf, (Option<std::time::SystemTime>, BTreeMap<String, NodeFeature>)>>,
-> = OnceLock::new();
+type FileFeatureCacheEntry = (Option<std::time::SystemTime>, BTreeMap<String, NodeFeature>);
+type FileFeatureCache = Mutex<HashMap<std::path::PathBuf, FileFeatureCacheEntry>>;
+
+static FILE_FEATURE_CACHE: OnceLock<FileFeatureCache> = OnceLock::new();
 
 fn scan_proxies_slice(proxies: &[Value], features: &mut BTreeMap<String, NodeFeature>) {
     for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
