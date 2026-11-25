@@ -542,10 +542,7 @@ const ProfileItemBase = (props: ProfileItemProps) => {
   // 三个编辑器（主文件/Merge/Script）的保存流程完全相同，仅 uid 与文档
   // 不同；原先三份 useLockFn 逐字重复，改错误处理必须三处同改。
   const saveDocument = useLockFn(
-    async (
-      docUid: string,
-      doc: typeof profileDocument,
-    ) => {
+    async (docUid: string, doc: typeof profileDocument) => {
       const currentValue = doc.value
       const result = await mutate(() => saveProfileFile(docUid, currentValue), {
         id: `save-profile-file:${docUid}`,

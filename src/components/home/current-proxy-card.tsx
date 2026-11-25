@@ -57,7 +57,11 @@ import {
   type ResolvedProxyMember,
 } from '@/types/proxy-view'
 import { debugLog } from '@/utils/debug'
-import { compareByDelay, DEFAULT_DELAY_TIMEOUT, delayLevel } from '@/utils/delay'
+import {
+  compareByDelay,
+  DEFAULT_DELAY_TIMEOUT,
+  delayLevel,
+} from '@/utils/delay'
 
 const STORAGE_KEY_GROUP = 'clash-verge-selected-proxy-group'
 const STORAGE_KEY_SORT_TYPE = 'clash-verge-proxy-sort-type'

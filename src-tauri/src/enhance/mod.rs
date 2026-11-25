@@ -559,8 +559,6 @@ fn sanitize_dns_servers(mut config: Mapping) -> Mapping {
     config
 }
 
-
-
 /// Merges the app's clash config over the profile; switches are parameters to keep it pure.
 fn merge_default_config(
     mut config: Mapping,

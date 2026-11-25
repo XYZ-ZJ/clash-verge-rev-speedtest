@@ -58,7 +58,10 @@ describe('isThroughProxyNode', () => {
   it('rejects chains that resolve to DIRECT/REJECT policy', () => {
     // group selected DIRECT: leaf chain still carries the policy name
     expect(
-      isThroughProxyNode(makeConn({ chains: ['DIRECT', 'Proxy Group'] }), 'rule'),
+      isThroughProxyNode(
+        makeConn({ chains: ['DIRECT', 'Proxy Group'] }),
+        'rule',
+      ),
     ).toBe(false)
     expect(
       isThroughProxyNode(makeConn({ chains: ['Node', 'REJECT'] }), 'rule'),

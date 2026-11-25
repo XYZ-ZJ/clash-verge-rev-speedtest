@@ -513,4 +513,3 @@ export async function testNetworkSpeed(onProgress: Channel<SpeedTestProgress>) {
 export async function testDnsLeak() {
   return commands.testDnsLeak()
 }
-

@@ -255,10 +255,7 @@ async fn download_from(
     floor: u64,
     on_event: &(impl Fn(DownloadEvent) + Sync),
 ) -> Result<Vec<u8>> {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::Arc;
     use tokio::sync::Notify;
 
     let mut source = update.clone();

@@ -22,7 +22,10 @@ import { useConnectionData } from '@/hooks/use-connection-data'
 import { useTrafficData } from '@/hooks/use-traffic-data'
 import { useVerge } from '@/hooks/use-verge'
 import { useVisibility } from '@/hooks/use-visibility'
-import { isThroughProxyNode, useAccumulatedTraffic } from '@/services/traffic-tracker'
+import {
+  isThroughProxyNode,
+  useAccumulatedTraffic,
+} from '@/services/traffic-tracker'
 import parseTraffic from '@/utils/parse-traffic'
 
 import {
@@ -30,7 +33,10 @@ import {
   type EnhancedCanvasTrafficGraphRef,
 } from './enhanced-canvas-traffic-graph'
 
-export { isThroughProxyNode, NON_PROXY_KEYWORDS } from '@/services/traffic-tracker'
+export {
+  isThroughProxyNode,
+  NON_PROXY_KEYWORDS,
+} from '@/services/traffic-tracker'
 
 interface TrafficSideStats {
   downSpeed: string
@@ -49,7 +55,16 @@ const SpeedRow = ({
   value: string
 }) => (
   <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-    <Box sx={{ fontSize: 18, color, mr: 0.5, flexShrink: 0, display: 'inline-flex', '& svg': { fontSize: 18 } }}>
+    <Box
+      sx={{
+        fontSize: 18,
+        color,
+        mr: 0.5,
+        flexShrink: 0,
+        display: 'inline-flex',
+        '& svg': { fontSize: 18 },
+      }}
+    >
       {icon}
     </Box>
     <Typography
@@ -361,15 +376,17 @@ export const EnhancedTrafficStats = () => {
 
     const [proxyDownVal, proxyDownUnit] = parseTraffic(proxyDownSpeed)
     const [proxyUpVal, proxyUpUnit] = parseTraffic(proxyUpSpeed)
-    const [proxyTotalDownVal, proxyTotalDownUnit] =
-      parseTraffic(displayProxyDownTotal)
+    const [proxyTotalDownVal, proxyTotalDownUnit] = parseTraffic(
+      displayProxyDownTotal,
+    )
     const [proxyTotalUpVal, proxyTotalUpUnit] =
       parseTraffic(displayProxyUpTotal)
 
     const [directDownVal, directDownUnit] = parseTraffic(directDownSpeed)
     const [directUpVal, directUpUnit] = parseTraffic(directUpSpeed)
-    const [directTotalDownVal, directTotalDownUnit] =
-      parseTraffic(displayDirectDownTotal)
+    const [directTotalDownVal, directTotalDownUnit] = parseTraffic(
+      displayDirectDownTotal,
+    )
     const [directTotalUpVal, directTotalUpUnit] =
       parseTraffic(displayDirectUpTotal)
 
@@ -422,11 +439,7 @@ export const EnhancedTrafficStats = () => {
       }
     >
       <Grid container spacing={1.5}>
-        {trafficGraph && (
-          <Grid size={12}>
-            {trafficGraphComponent}
-          </Grid>
-        )}
+        {trafficGraph && <Grid size={12}>{trafficGraphComponent}</Grid>}
 
         {/* 代理流量卡片 */}
         <Grid size={{ xs: 12, sm: 6 }}>

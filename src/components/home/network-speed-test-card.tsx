@@ -64,7 +64,9 @@ const resolveErrorMessage = (error: unknown, t: (key: string) => string) => {
   const err = error as { code?: string; detail?: string; message?: string }
   if (err?.code?.startsWith('speedtest.')) {
     const rawSubKey = err.code.slice('speedtest.'.length)
-    const camelSubKey = rawSubKey.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+    const camelSubKey = rawSubKey.replace(/_([a-z])/g, (_, c) =>
+      c.toUpperCase(),
+    )
     const key = `home.components.speedTest.errors.${camelSubKey}`
     const translated = t(key)
     if (translated !== key) return translated
@@ -98,7 +100,16 @@ const MetricTile = ({
       backgroundColor: bg,
     }}
   >
-    <Box sx={{ fontSize: 32, color: iconColor, mr: 1.5, flexShrink: 0, display: 'inline-flex', '& svg': { fontSize: 32 } }}>
+    <Box
+      sx={{
+        fontSize: 32,
+        color: iconColor,
+        mr: 1.5,
+        flexShrink: 0,
+        display: 'inline-flex',
+        '& svg': { fontSize: 32 },
+      }}
+    >
       {icon}
     </Box>
     <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -109,7 +120,14 @@ const MetricTile = ({
       >
         {label}
       </Typography>
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 0.75,
+          flexWrap: 'wrap',
+        }}
+      >
         <Typography
           variant="h6"
           sx={{

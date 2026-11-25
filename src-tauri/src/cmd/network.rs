@@ -786,8 +786,6 @@ pub async fn test_network_speed(
     Ok(result)
 }
 
-
-
 #[tauri::command]
 #[specta::specta]
 pub async fn test_dns_leak() -> CmdResult<std::string::String> {

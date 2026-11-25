@@ -222,13 +222,13 @@ fn is_allowed_backup_rel_path(rel_path: &std::path::Path, is_dir: bool) -> bool 
 
     match (parts.as_slice(), is_dir) {
         (["profiles"] | ["icons"], true) => true,
-        ([single], false) => matches!(
-            *single,
-            dirs::CLASH_CONFIG
-                | dirs::VERGE_CONFIG
-                | dirs::PROFILE_YAML
-                | crate::constants::files::DNS_CONFIG
-        ),
+        ([single], false) => [
+            dirs::CLASH_CONFIG,
+            dirs::VERGE_CONFIG,
+            dirs::PROFILE_YAML,
+            crate::constants::files::DNS_CONFIG,
+        ]
+        .contains(single),
         (["profiles" | "icons", file_name], false) => validate_backup_name(file_name).is_ok(),
         _ => false,
     }

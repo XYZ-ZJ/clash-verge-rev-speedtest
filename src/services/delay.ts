@@ -321,7 +321,12 @@ class DelayManager {
       // The invoke keeps running when the client-side timeout wins the race;
       // attach a no-op catch so its later rejection (IPC error, dead node)
       // cannot surface as an unhandled rejection during batch checks.
-      const invokePromise = this.unifiedDelayCheck(apiName, url, timeout, providerName)
+      const invokePromise = this.unifiedDelayCheck(
+        apiName,
+        url,
+        timeout,
+        providerName,
+      )
       invokePromise.catch(() => {})
 
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined

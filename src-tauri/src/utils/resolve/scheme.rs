@@ -89,7 +89,10 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
 
     let display_name = name.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or("(unnamed)");
     let description = format!(
-        "An external link requested to import a subscription profile:\n\nName: {display_name}\nURL: {url}\n\nDo you want to import it?"
+        "An external link requested to import a subscription profile:\n\n\
+         Name: {display_name}\n\
+         URL: {url}\n\n\
+         Do you want to import it?"
     );
     let confirmed = confirm_deep_link_import(description).await;
 
@@ -102,33 +105,33 @@ pub(super) async fn resolve_scheme(param: &str) -> Result<()> {
     Ok(())
 }
 
-async fn confirm_deep_link_import(description: std::string::String) -> bool {
-    let show_dialog = move || -> bool {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Info)
-            .set_title("Import Profile Confirmation")
-            .set_description(description)
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-            == rfd::MessageDialogResult::Yes
-    };
+fn show_deep_link_confirm_dialog(description: std::string::String) -> bool {
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Info)
+        .set_title("Import Profile Confirmation")
+        .set_description(description)
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show()
+        == rfd::MessageDialogResult::Yes
+}
 
+async fn confirm_deep_link_import(description: std::string::String) -> bool {
     if let Some(app_handle) = crate::APP_HANDLE.get() {
         let (tx, rx) = tokio::sync::oneshot::channel();
         if app_handle
             .run_on_main_thread(move || {
-                let _ = tx.send(show_dialog());
+                let _ = tx.send(show_deep_link_confirm_dialog(description));
             })
             .is_err()
         {
             return false;
         }
-        return rx.await.unwrap_or(false);
+        rx.await.unwrap_or(false)
+    } else {
+        crate::process::AsyncHandler::spawn_blocking(move || show_deep_link_confirm_dialog(description))
+            .await
+            .unwrap_or(false)
     }
-
-    crate::process::AsyncHandler::spawn_blocking(show_dialog)
-        .await
-        .unwrap_or(false)
 }
 
 fn extract_subscription_info(link_parsed: &Url) -> Option<(std::string::String, Option<String>)> {

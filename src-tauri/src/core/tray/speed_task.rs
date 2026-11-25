@@ -3,10 +3,8 @@ use crate::process::AsyncHandler;
 use crate::utils::{connections_stream, tray_speed};
 use crate::{Type, logging};
 use parking_lot::Mutex;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 use tauri_plugin_mihomo::models::WsConnectionId;
@@ -64,8 +62,7 @@ impl TraySpeedController {
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
         let task = AsyncHandler::spawn(move || async move {
             loop {
-                if handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation
-                {
+                if handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation {
                     break;
                 }
 
@@ -90,12 +87,16 @@ impl TraySpeedController {
                     break;
                 }
 
-                Self::set_speed_connection_id(&speed_connection_id, Some((task_generation, speed_stream.connection_id)));
+                Self::set_speed_connection_id(
+                    &speed_connection_id,
+                    Some((task_generation, speed_stream.connection_id)),
+                );
 
                 loop {
                     let next_state = speed_stream
                         .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
-                            handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation
+                            handle::Handle::global().is_exiting()
+                                || generation.load(Ordering::Acquire) != task_generation
                         })
                         .await;
 

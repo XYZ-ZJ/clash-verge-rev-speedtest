@@ -410,7 +410,12 @@ mod tests {
 
     #[test]
     fn detects_xhttp_xmux_and_nested_download_reuse_settings() -> anyhow::Result<()> {
-        let plain: Mapping = serde_yaml_ng::from_str("name: Plain\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings: {}\n")?;
+        let plain: Mapping = serde_yaml_ng::from_str(concat!(
+            "name: Plain\n",
+            "network: xhttp\n",
+            "xhttp-opts:\n",
+            "  reuse-settings: {}\n",
+        ))?;
         let feat = detect_node_feature(&plain);
         assert!(feat.as_ref().is_some_and(|f| f.xhttp && !f.xmux));
 

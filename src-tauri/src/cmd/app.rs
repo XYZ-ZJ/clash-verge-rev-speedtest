@@ -9,7 +9,7 @@ use crate::{
     utils::dirs,
 };
 use smartstring::alias::String;
-use tauri::{AppHandle, Manager as _, ipc::Channel};
+use tauri::{AppHandle, ipc::Channel};
 
 #[tauri::command]
 #[specta::specta]
@@ -37,11 +37,15 @@ pub async fn open_logs_dir() -> CmdResult<()> {
 #[specta::specta]
 pub fn open_devtools(app_handle: AppHandle) {
     #[cfg(debug_assertions)]
-    if let Some(window) = app_handle.get_webview_window("main") {
-        if !window.is_devtools_open() {
-            window.open_devtools();
-        } else {
-            window.close_devtools();
+    {
+        use tauri::Manager as _;
+
+        if let Some(window) = app_handle.get_webview_window("main") {
+            if !window.is_devtools_open() {
+                window.open_devtools();
+            } else {
+                window.close_devtools();
+            }
         }
     }
     #[cfg(not(debug_assertions))]
