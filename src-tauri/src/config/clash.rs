@@ -320,4 +320,3 @@ fn test_clash_info() {
 
     assert_eq!(get_case(8888, "192.168.1.1:80800"), get_result(8888, "127.0.0.1:9097"));
 }
-

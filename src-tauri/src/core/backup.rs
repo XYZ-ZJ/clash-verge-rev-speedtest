@@ -290,18 +290,11 @@ pub async fn create_backup() -> Result<(String, PathBuf), Error> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt as _;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&value)
+            std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&value)
         }
         #[cfg(not(unix))]
         {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&value)
+            std::fs::OpenOptions::new().write(true).create_new(true).open(&value)
         }
     })
     .await??;

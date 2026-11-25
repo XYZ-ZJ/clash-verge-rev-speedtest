@@ -86,6 +86,38 @@ pub async fn change_clash_mode(mode: String) -> Result<(), String> {
     Ok(())
 }
 
+fn is_disallowed_ipv4(v4: std::net::Ipv4Addr) -> bool {
+    v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+}
+
+fn is_disallowed_direct_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => is_disallowed_ipv4(v4),
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_unique_local()
+                || v6.is_unicast_link_local()
+                || v6.to_ipv4_mapped().is_some_and(is_disallowed_ipv4)
+        }
+    }
+}
+
+fn validate_direct_delay_target(host: &str) -> anyhow::Result<()> {
+    let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    if lower_host == "localhost"
+        || lower_host.ends_with(".localhost")
+        || lower_host.ends_with(".local")
+        || lower_host.ends_with(".internal")
+    {
+        anyhow::bail!("Refusing direct delay probe to local/internal host without proxy");
+    }
+    if lower_host.parse::<std::net::IpAddr>().is_ok_and(is_disallowed_direct_ip) {
+        anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
+    }
+    Ok(())
+}
+
 /// Test delay to a URL through proxy.
 /// HTTPS: measures TLS handshake time. HTTP: measures HEAD round-trip time.
 #[tracing::instrument(skip_all, level = "trace", fields(url = %url))]
@@ -116,33 +148,7 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
     };
 
     if proxy_port.is_none() {
-        let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
-        if lower_host == "localhost"
-            || lower_host.ends_with(".localhost")
-            || lower_host.ends_with(".local")
-            || lower_host.ends_with(".internal")
-        {
-            anyhow::bail!("Refusing direct delay probe to local/internal host without proxy");
-        }
-        if let Ok(ip) = lower_host.parse::<std::net::IpAddr>() {
-            let blocked = match ip {
-                std::net::IpAddr::V4(v4) => {
-                    v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
-                }
-                std::net::IpAddr::V6(v6) => {
-                    v6.is_loopback()
-                        || v6.is_unspecified()
-                        || v6.is_unique_local()
-                        || v6.is_unicast_link_local()
-                        || v6.to_ipv4_mapped().is_some_and(|v4| {
-                            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
-                        })
-                }
-            };
-            if blocked {
-                anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
-            }
-        }
+        validate_direct_delay_target(&host)?;
     }
 
     tokio::time::timeout(Duration::from_secs(10), async {

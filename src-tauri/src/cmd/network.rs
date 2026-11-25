@@ -128,7 +128,7 @@ fn parse_server_timing_dur(header_val: &str) -> Option<f64> {
         let part = part.trim();
         if let Some(idx) = part.find("dur=") {
             let val_str = &part[idx + 4..];
-            let end_idx = val_str.find(';').unwrap_or(val_str.len());
+            let end_idx = val_str.find(';').unwrap_or_else(|| val_str.len());
             if let Ok(dur) = val_str[..end_idx].trim().parse::<f64>() {
                 return Some(dur);
             }
@@ -144,7 +144,7 @@ fn calculate_median(samples: &[u32]) -> Option<u32> {
     let mut sorted = samples.to_vec();
     sorted.sort_unstable();
     let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 0 {
+    if sorted.len().is_multiple_of(2) {
         Some((sorted[mid - 1] + sorted[mid]) / 2)
     } else {
         Some(sorted[mid])
@@ -181,10 +181,7 @@ fn calculate_steady_speed(samples: &[(f64, u64)], warmup_ratio: f64) -> f64 {
         return 0.0;
     };
     let cutoff_t = t_end * warmup_ratio;
-    let start_sample = samples
-        .iter()
-        .find(|&&(t, _)| t >= cutoff_t)
-        .unwrap_or(&samples[0]);
+    let start_sample = samples.iter().find(|&&(t, _)| t >= cutoff_t).unwrap_or(&samples[0]);
 
     let dt = t_end - start_sample.0;
     let db = b_end.saturating_sub(start_sample.1);
@@ -303,10 +300,7 @@ fn build_speedtest_client(port: u16, max_idle_per_host: usize) -> CmdResult<reqw
     use std::time::Duration;
 
     let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}")).map_err(|e| {
-        super::CommandFailure::coded(
-            "speedtest.proxySetupFailed",
-            format!("failed to create proxy: {e}"),
-        )
+        super::CommandFailure::coded("speedtest.proxySetupFailed", format!("failed to create proxy: {e}"))
     })?;
 
     reqwest::Client::builder()
@@ -321,32 +315,27 @@ fn build_speedtest_client(port: u16, max_idle_per_host: usize) -> CmdResult<reqw
         .proxy(proxy)
         .build()
         .map_err(|e| {
-            super::CommandFailure::coded(
-                "speedtest.clientSetupFailed",
-                format!("failed to build http client: {e}"),
-            )
+            super::CommandFailure::coded("speedtest.clientSetupFailed", format!("failed to build http client: {e}"))
         })
 }
 
-async fn run_latency_probes(
-    client: &reqwest::Client,
-) -> CmdResult<(u32, f64, Option<String>)> {
+async fn run_latency_probes(client: &reqwest::Client) -> CmdResult<(u32, f64, Option<String>)> {
     use std::time::{Duration, Instant};
 
-    let mut location: Option<String> = None;
-    if let Ok(Ok(resp)) = tokio::time::timeout(
+    let mut location = match tokio::time::timeout(
         Duration::from_millis(3000),
-        client
-            .get("https://speed.cloudflare.com/__down?bytes=0")
-            .send(),
+        client.get("https://speed.cloudflare.com/__down?bytes=0").send(),
     )
     .await
-        && resp.status().is_success()
     {
-        location = extract_cf_location(resp.headers());
-        // Drain the empty body so HTTP/1.1 keep-alive returns the connection to the pool.
-        let _ = resp.bytes().await;
-    }
+        Ok(Ok(resp)) if resp.status().is_success() => {
+            let loc = extract_cf_location(resp.headers());
+            // Drain the empty body so HTTP/1.1 keep-alive returns the connection to the pool.
+            let _ = resp.bytes().await;
+            loc
+        }
+        _ => None,
+    };
 
     const PROBE_COUNT: usize = 10;
     let mut delays = Vec::with_capacity(PROBE_COUNT);
@@ -356,9 +345,7 @@ async fn run_latency_probes(
         let t0 = Instant::now();
         let resp = tokio::time::timeout(
             Duration::from_millis(2000),
-            client
-                .get("https://speed.cloudflare.com/__down?bytes=0")
-                .send(),
+            client.get("https://speed.cloudflare.com/__down?bytes=0").send(),
         )
         .await;
 
@@ -387,10 +374,7 @@ async fn run_latency_probes(
     }
 
     if delays.is_empty() {
-        return Err(super::CommandFailure::coded(
-            "speedtest.probeFailed",
-            "all network probes timed out or failed",
-        ));
+        return Err(super::CommandFailure::coded("speedtest.probeFailed", "all network probes timed out or failed"));
     }
 
     let median_latency = calculate_median(&delays).unwrap_or(0);
@@ -481,9 +465,7 @@ async fn run_download_test(
     while dl_start.elapsed() < DOWNLOAD_MAX_DURATION {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let elapsed_secs = dl_start.elapsed().as_secs_f64();
-        let bytes = total_dl_bytes
-            .load(Ordering::Relaxed)
-            .saturating_sub(base_bytes);
+        let bytes = total_dl_bytes.load(Ordering::Relaxed).saturating_sub(base_bytes);
         dl_samples.push((elapsed_secs, bytes));
 
         let current_rate = calculate_rate_now(&dl_samples, 1.5);
@@ -512,8 +494,7 @@ async fn run_download_test(
             break;
         }
 
-        let can_early_settle = bytes >= DOWNLOAD_MIN_SETTLE_BYTES
-            || elapsed >= DOWNLOAD_FALLBACK_SETTLE_DURATION;
+        let can_early_settle = bytes >= DOWNLOAD_MIN_SETTLE_BYTES || elapsed >= DOWNLOAD_FALLBACK_SETTLE_DURATION;
         if can_early_settle && is_settled(&dl_samples, DOWNLOAD_MIN_DURATION.as_secs_f64()) {
             break;
         }
@@ -564,17 +545,12 @@ async fn run_upload_test(
 
         ul_handles.push(tokio::spawn(async move {
             while !stop_upload.load(Ordering::Relaxed) {
-                let chunk_size = current_ul_chunk
-                    .load(Ordering::Relaxed)
-                    .min(random_payload.len());
+                let chunk_size = current_ul_chunk.load(Ordering::Relaxed).min(random_payload.len());
                 let payload = random_payload.slice(..chunk_size);
 
                 let resp_res = tokio::time::timeout(
                     Duration::from_secs(12),
-                    client
-                        .post("https://speed.cloudflare.com/__up")
-                        .body(payload)
-                        .send(),
+                    client.post("https://speed.cloudflare.com/__up").body(payload).send(),
                 )
                 .await;
 
@@ -612,12 +588,7 @@ async fn run_upload_test(
         }
 
         let current_rate = calculate_rate_now(&ul_samples, 1.5);
-        let next_chunk = next_chunk_size(
-            current_rate,
-            UPLOAD_STREAMS,
-            UPLOAD_MIN_CHUNK,
-            UPLOAD_MAX_CHUNK,
-        );
+        let next_chunk = next_chunk_size(current_rate, UPLOAD_STREAMS, UPLOAD_MIN_CHUNK, UPLOAD_MAX_CHUNK);
         current_ul_chunk.store(next_chunk, Ordering::Relaxed);
 
         if last_ul_progress.elapsed() >= Duration::from_millis(200) {
@@ -660,19 +631,14 @@ async fn run_upload_test(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn test_network_speed(
-    on_progress: tauri::ipc::Channel<SpeedTestProgress>,
-) -> CmdResult<SpeedTestResult> {
+pub async fn test_network_speed(on_progress: tauri::ipc::Channel<SpeedTestProgress>) -> CmdResult<SpeedTestResult> {
     use std::sync::atomic::Ordering;
 
     if SPEEDTEST_RUNNING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Err(super::CommandFailure::coded(
-            "speedtest.busy",
-            "a speed test is already running",
-        ));
+        return Err(super::CommandFailure::coded("speedtest.busy", "a speed test is already running"));
     }
 
     let _guard = scopeguard::guard((), |_| {
@@ -800,10 +766,7 @@ pub async fn test_dns_leak() -> CmdResult<std::string::String> {
     }
 
     let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{port}")).map_err(|e| {
-        super::CommandFailure::coded(
-            "dnsleak.proxyConfigFailed",
-            format!("invalid proxy configuration: {e}"),
-        )
+        super::CommandFailure::coded("dnsleak.proxyConfigFailed", format!("invalid proxy configuration: {e}"))
     })?;
 
     let client = reqwest::Client::builder()
@@ -812,13 +775,11 @@ pub async fn test_dns_leak() -> CmdResult<std::string::String> {
         .proxy(proxy)
         .build()
         .map_err(|e| {
-            super::CommandFailure::coded(
-                "dnsleak.clientSetupFailed",
-                format!("failed to build client: {e}"),
-            )
+            super::CommandFailure::coded("dnsleak.clientSetupFailed", format!("failed to build client: {e}"))
         })?;
 
     // RFC 952/1123 合规：DNS 标签只允许小写字母和数字，严禁包含下划线或以连字符开头
+    #[rustfmt::skip]
     const DNS_ID_ALPHABET: [char; 36] = [
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',

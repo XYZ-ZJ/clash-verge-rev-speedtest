@@ -33,11 +33,6 @@ import {
   type EnhancedCanvasTrafficGraphRef,
 } from './enhanced-canvas-traffic-graph'
 
-export {
-  isThroughProxyNode,
-  NON_PROXY_KEYWORDS,
-} from '@/services/traffic-tracker'
-
 interface TrafficSideStats {
   downSpeed: string
   upSpeed: string
@@ -285,10 +280,10 @@ export const EnhancedTrafficStats = () => {
     const globalDown = traffic?.down || 0
     const globalUp = traffic?.up || 0
 
-    let proxyDownSpeed = 0
-    let directDownSpeed = 0
-    let proxyUpSpeed = 0
-    let directUpSpeed = 0
+    let proxyDownSpeed: number
+    let directDownSpeed: number
+    let proxyUpSpeed: number
+    let directUpSpeed: number
 
     // 直连模式：全部归属直连流量
     if (currentMode && currentMode.toLowerCase() === 'direct') {

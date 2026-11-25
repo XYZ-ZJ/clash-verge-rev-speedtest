@@ -135,6 +135,9 @@ export const commands = {
     __TAURI_INVOKE<NetworkInterfaceView_Serialize[]>(
       'get_network_interfaces_info',
     ),
+  testNetworkSpeed: (onProgress: Channel<SpeedTestProgress>) =>
+    __TAURI_INVOKE<SpeedTestResult>('test_network_speed', { onProgress }),
+  testDnsLeak: () => __TAURI_INVOKE<string>('test_dns_leak'),
   getProfiles: () => __TAURI_INVOKE<IProfiles_Serialize>('get_profiles'),
   enhanceProfiles: () => __TAURI_INVOKE<ValidationOutcome>('enhance_profiles'),
   patchProfilesConfig: (profiles: ProfileSelection_Deserialize) =>
@@ -186,9 +189,6 @@ export const commands = {
     }),
   checkMediaUnlockItem: (name: string) =>
     __TAURI_INVOKE<UnlockItem_Serialize>('check_media_unlock_item', { name }),
-  testNetworkSpeed: (onProgress: Channel<SpeedTestProgress>) =>
-    __TAURI_INVOKE<SpeedTestResult>('test_network_speed', { onProgress }),
-  testDnsLeak: () => __TAURI_INVOKE<string>('test_dns_leak'),
 }
 
 /* Types */
@@ -1069,6 +1069,26 @@ export type SidecarFailureSnapshot_Serialize = {
   detail: string | null
 }
 
+export type SpeedTestProgress = {
+  stage: string
+  latency: number | null
+  loss_rate: number | null
+  download_speed: number | null
+  upload_speed: number | null
+  location: string | null
+  timestamp: string | null
+  error: string | null
+}
+
+export type SpeedTestResult = {
+  latency: number
+  loss_rate: number
+  download_speed: number
+  upload_speed: number
+  location: string
+  timestamp: string
+}
+
 export type SystemInfo = {
   system_name: string
   system_version: string
@@ -1160,23 +1180,3 @@ export type WebDavFile = {
 export type YamlMapping = { [key in string]: JsonValue }
 
 export type YamlValue = JsonValue
-
-export type SpeedTestProgress = {
-  stage: string
-  latency: number | null
-  loss_rate: number | null
-  download_speed: number | null
-  upload_speed: number | null
-  location: string | null
-  timestamp: string | null
-  error: string | null
-}
-
-export type SpeedTestResult = {
-  latency: number
-  loss_rate: number
-  download_speed: number
-  upload_speed: number
-  location: string
-  timestamp: string
-}

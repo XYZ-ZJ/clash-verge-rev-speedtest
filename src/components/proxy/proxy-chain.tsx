@@ -47,12 +47,12 @@ import { useAppRefreshers, useProxiesData } from '@/providers/app-data-context'
 import { updateProxyChainConfigInRuntime } from '@/services/cmds'
 import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
-import { delayLevel } from '@/utils/delay'
 import {
   selectGlobalChainNodes,
   selectRuleChainMembers,
 } from '@/types/proxy-view'
 import { debugLog } from '@/utils/debug'
+import { delayLevel } from '@/utils/delay'
 
 import { rebindProxyChainItems, type ProxyChainItem } from './proxy-chain-model'
 
@@ -580,7 +580,6 @@ export const ProxyChain = ({
     mode,
     proxyView,
     selectedGroup,
-    onUpdateChain,
     recordSelection,
     teardownChain,
   ])
@@ -634,7 +633,7 @@ export const ProxyChain = ({
             <IconButton
               size="small"
               onClick={() => {
-                void teardownChain()
+                teardownChain().catch(console.error)
               }}
               sx={{
                 color: theme.palette.error.main,

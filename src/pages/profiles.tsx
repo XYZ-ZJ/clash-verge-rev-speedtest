@@ -691,13 +691,15 @@ const ProfilePage = () => {
   // Stable per-uid bridges for ProfileItemCard. `onSelect` and `onEnhance`
   // capture render state, so they go through latest-refs to keep the bridge
   // identities (and therefore the card memo) stable across renders.
-  const onSelectLatest = useRef(onSelect)
-  onSelectLatest.current = onSelect
-  const onEnhanceLatest = useRef(onEnhance)
-  onEnhanceLatest.current = onEnhance
+  const onSelectLatestRef = useRef(onSelect)
+  onSelectLatestRef.current = onSelect
+  const onEnhanceLatestRef = useRef(onEnhance)
+  onEnhanceLatestRef.current = onEnhance
+  const currentProfileUidRef = useRef(profiles.current)
+  currentProfileUidRef.current = profiles.current
 
   const handleSelectByUid = useCallback((uid: string, force: boolean) => {
-    void onSelectLatest.current(uid, force)
+    void onSelectLatestRef.current(uid, force)
   }, [])
 
   const handleEditItem = useCallback((item: IProfileItem) => {
@@ -706,11 +708,11 @@ const ProfilePage = () => {
 
   const handleSaveByUid = useCallback(
     async (uid: string, prev: unknown, curr: unknown) => {
-      if (prev !== curr && profiles.current === uid) {
-        await onEnhanceLatest.current(false)
+      if (prev !== curr && currentProfileUidRef.current === uid) {
+        await onEnhanceLatestRef.current(false)
       }
     },
-    [profiles.current],
+    [],
   )
 
   const handleDeleteByUid = useCallback(

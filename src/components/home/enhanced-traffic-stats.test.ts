@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isThroughProxyNode } from './enhanced-traffic-stats'
+import { isThroughProxyNode } from '@/services/traffic-tracker'
 
 const makeConn = (overrides: Partial<IConnectionsItem> = {}) =>
   ({

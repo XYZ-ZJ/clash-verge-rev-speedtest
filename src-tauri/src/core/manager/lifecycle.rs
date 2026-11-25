@@ -472,9 +472,7 @@ impl CoreManager {
         }
 
         // Release locks while the OS elevation UI blocks so exit handlers stay responsive.
-        SERVICE_MANAGER
-            .handle_service_status(ServiceStatus::UninstallRequired)
-            .await?;
+        SERVICE_MANAGER.handle_service_status(ServiceStatus::UninstallRequired).await?;
 
         // Lock order is config then lifecycle, for the unclaimed draft write below.
         let _config_write = Config::lock_config_write().await;
@@ -827,9 +825,8 @@ impl CoreManager {
 
             let verge_data = verge.latest_arc();
             if let Err(err) = verge_data.save_file().await {
-                let rollback = prev.clone();
                 verge.edit_draft(|d| {
-                    d.clash_core = rollback;
+                    d.clash_core = prev;
                 });
                 verge.apply();
                 return Err(err);

@@ -148,12 +148,13 @@ static FILE_FEATURE_CACHE: OnceLock<
 
 fn scan_proxies_slice(proxies: &[Value], features: &mut BTreeMap<String, NodeFeature>) {
     for proxy in proxies.iter().filter_map(|v| v.as_mapping()) {
-        if let (Some(name), Some(feat)) = (
-            proxy.get("name").and_then(|v| v.as_str()),
-            detect_node_feature(proxy),
-        ) {
-            features.insert(name.to_owned(), feat);
-        }
+        let Some(name) = proxy.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(feat) = detect_node_feature(proxy) else {
+            continue;
+        };
+        features.insert(name.to_owned(), feat);
     }
 }
 
@@ -184,8 +185,7 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     let Ok(content) = std::fs::read_to_string(full_path) else {
         return;
     };
-    let Ok(serde_yaml_ng::Value::Mapping(pdoc)) =
-        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
+    let Ok(serde_yaml_ng::Value::Mapping(pdoc)) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
     else {
         return;
     };
@@ -204,10 +204,7 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     features.extend(file_feats);
 }
 
-fn scan_providers(
-    providers: &Mapping,
-    provider_features: &mut BTreeMap<String, BTreeMap<String, NodeFeature>>,
-) {
+fn scan_providers(providers: &Mapping, provider_features: &mut BTreeMap<String, BTreeMap<String, NodeFeature>>) {
     let app_dir = crate::utils::dirs::app_home_dir().ok();
     for (key, val) in providers {
         let Some(provider_name) = key.as_str() else {
@@ -217,9 +214,7 @@ fn scan_providers(
             continue;
         };
 
-        let entry = provider_features
-            .entry(provider_name.to_owned())
-            .or_default();
+        let entry = provider_features.entry(provider_name.to_owned()).or_default();
 
         if let Some(payload) = provider_map.get("payload").and_then(|v| v.as_sequence()) {
             scan_proxies_slice(payload, entry);
@@ -230,15 +225,7 @@ fn scan_providers(
                 continue;
             }
             let path = std::path::Path::new(raw_path);
-            let is_unc_or_non_disk = matches!(
-                path.components().next(),
-                Some(std::path::Component::Prefix(prefix))
-                    if !matches!(
-                        prefix.kind(),
-                        std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)
-                    )
-            );
-            if is_unc_or_non_disk {
+            if is_unc_or_non_disk_prefix(path) {
                 continue;
             }
             let Some(ref dir) = app_dir else {
@@ -263,6 +250,16 @@ fn scan_providers(
     }
 }
 
+fn is_unc_or_non_disk_prefix(path: &std::path::Path) -> bool {
+    let Some(std::path::Component::Prefix(prefix)) = path.components().next() else {
+        return false;
+    };
+    !matches!(
+        prefix.kind(),
+        std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)
+    )
+}
+
 fn scan_current_profile(features: &mut BTreeMap<String, NodeFeature>) {
     let Ok(profiles_dir) = crate::utils::dirs::app_profiles_dir() else {
         return;
@@ -274,8 +271,7 @@ fn scan_current_profile(features: &mut BTreeMap<String, NodeFeature>) {
     let Ok(content) = std::fs::read_to_string(&profiles_yaml) else {
         return;
     };
-    let Ok(serde_yaml_ng::Value::Mapping(profiles_cfg)) =
-        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
+    let Ok(serde_yaml_ng::Value::Mapping(profiles_cfg)) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&content)
     else {
         return;
     };

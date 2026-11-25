@@ -270,10 +270,7 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
 
         for i in 0..zip.len() {
             let entry = zip.by_index(i)?;
-            if entry
-                .unix_mode()
-                .is_some_and(|mode| (mode & 0o170000) == 0o120000)
-            {
+            if entry.unix_mode().is_some_and(|mode| (mode & 0o170000) == 0o120000) {
                 return Err(anyhow!("backup archive contains disallowed symlink entry"));
             }
 
@@ -284,10 +281,7 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
             let is_dir = entry.is_dir();
 
             if !is_allowed_backup_rel_path(&rel_path, is_dir) {
-                return Err(anyhow!(
-                    "backup archive contains disallowed path: {}",
-                    rel_path.display()
-                ));
+                return Err(anyhow!("backup archive contains disallowed path: {}", rel_path.display()));
             }
             if is_dir {
                 continue;

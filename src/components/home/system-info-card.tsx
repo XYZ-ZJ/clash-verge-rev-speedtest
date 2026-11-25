@@ -14,11 +14,7 @@ import { useNavigate } from 'react-router'
 
 import { useServiceInstaller } from '@/hooks/use-service-installer'
 import { useSystemState } from '@/hooks/use-system-state'
-import {
-  useUpdate,
-  updateLastCheckTime,
-  readLastCheckTime,
-} from '@/hooks/use-update'
+import { useUpdate, readLastCheckTime } from '@/hooks/use-update'
 import { useVerge } from '@/hooks/use-verge'
 import { getSystemInfo } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'

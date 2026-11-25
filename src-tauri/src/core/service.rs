@@ -340,9 +340,7 @@ pub(crate) fn trusted_service_evidence() -> Result<bool> {
             format!("/etc/systemd/system/{slug}.service"),
             format!("/usr/lib/systemd/system/{slug}.service"),
             format!("/etc/init.d/{slug}"),
-        ]
-        .into_iter()
-        .any(|p| PathBuf::from(p).exists());
+        ].into_iter().any(|p| PathBuf::from(p).exists());
         return Ok(has_unit);
     }
     let unit = format!("{}.service", clash_verge_service_ipc::SERVICE_SLUG);

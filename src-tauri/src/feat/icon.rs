@@ -162,8 +162,7 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
         .build()
         .stringify_err()?;
     let response = client.get(parsed_url).send().await.stringify_err()?;
-    let final_url = response.url().clone();
-    validate_external_icon_url(final_url.as_str())?;
+    validate_external_icon_url(response.url().as_str())?;
     let response = response.error_for_status().stringify_err()?;
     if response.content_length().is_some_and(|len| len > MAX_ICON_BYTES as u64) {
         return Err("Icon download exceeds maximum allowed size".into());

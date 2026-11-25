@@ -34,7 +34,7 @@ const shouldSkipDuplicateMemory = (memory: IMemoryUsageItem) => {
 export const useMemoryData = (options?: { enabled?: boolean }) => {
   const enabled = options?.enabled ?? true
 
-  const { response, refresh } = useMihomoWsSubscription<IMemoryUsageItem>({
+  const { response } = useMihomoWsSubscription<IMemoryUsageItem>({
     subscriptionKey: enabled ? 'getClashMemory' : null,
     fallbackData: FALLBACK_MEMORY_USAGE,
     connect: () => MihomoWebSocket.connect_memory(),

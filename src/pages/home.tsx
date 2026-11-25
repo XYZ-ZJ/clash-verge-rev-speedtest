@@ -273,10 +273,15 @@ const HomePage = () => {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   // 卡片显示状态（与默认值合并，旧配置缺少新卡片键时按默认显示）
-  const homeCards: HomeCardsSettings = {
-    ...DEFAULT_HOME_CARDS,
-    ...((verge?.home_cards as Partial<HomeCardsSettings> | undefined) ?? {}),
-  } as HomeCardsSettings
+  const homeCards = useMemo<HomeCardsSettings>(
+    () =>
+      ({
+        ...DEFAULT_HOME_CARDS,
+        ...((verge?.home_cards as Partial<HomeCardsSettings> | undefined) ??
+          {}),
+      }) as HomeCardsSettings,
+    [verge?.home_cards],
+  )
 
   // 文档链接函数
   const toGithubDoc = useLockFn(() =>

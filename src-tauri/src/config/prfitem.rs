@@ -222,13 +222,12 @@ impl PrfItem {
     ) -> Result<Self> {
         let uid = help::get_uid("L").into();
         let file = format!("{uid}.yaml").into();
-        let opt_ref = option.as_ref();
-        let update_interval = opt_ref.and_then(|o| o.update_interval);
-        let mut merge = opt_ref.and_then(|o| o.merge.clone());
-        let mut script = opt_ref.and_then(|o| o.script.clone());
-        let mut rules = opt_ref.and_then(|o| o.rules.clone());
-        let mut proxies = opt_ref.and_then(|o| o.proxies.clone());
-        let mut groups = opt_ref.and_then(|o| o.groups.clone());
+        let update_interval = option.and_then(|o| o.update_interval);
+        let mut merge = option.and_then(|o| o.merge.clone());
+        let mut script = option.and_then(|o| o.script.clone());
+        let mut rules = option.and_then(|o| o.rules.clone());
+        let mut proxies = option.and_then(|o| o.proxies.clone());
+        let mut groups = option.and_then(|o| o.groups.clone());
 
         Self::ensure_companion_items(&mut merge, &mut script, &mut rules, &mut proxies, &mut groups).await?;
         Ok(Self {

@@ -93,7 +93,7 @@ export function calculateRiskInfo(params: {
 
   score = Math.min(100, Math.max(0, score))
 
-  let level: RiskInfo['level'] = 'low'
+  let level: RiskInfo['level']
   if (score >= 65) {
     level = 'high'
   } else if (score >= 25) {
