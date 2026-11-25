@@ -240,9 +240,7 @@ impl NetworkManager {
     /// endless body; `get_bytes` already enforces the same idea for binaries.
     const MAX_TEXT_BODY_BYTES: usize = 64 * 1024 * 1024;
 
-    async fn read_body_limited(
-        mut response: reqwest::Response,
-    ) -> Result<std::string::String> {
+    async fn read_body_limited(mut response: reqwest::Response) -> Result<std::string::String> {
         let mut bytes: Vec<u8> = Vec::new();
         while let Some(chunk) = response
             .chunk()
@@ -250,10 +248,7 @@ impl NetworkManager {
             .map_err(|e| Self::context_reqwest_error(e, "Failed to read response body"))?
         {
             if bytes.len() + chunk.len() > Self::MAX_TEXT_BODY_BYTES {
-                return Err(anyhow!(
-                    "response body exceeded the {} byte limit",
-                    Self::MAX_TEXT_BODY_BYTES
-                ));
+                return Err(anyhow!("response body exceeded the {} byte limit", Self::MAX_TEXT_BODY_BYTES));
             }
             bytes.extend_from_slice(&chunk);
         }

@@ -211,7 +211,7 @@ fn download_sources(url: &tauri::Url) -> Vec<tauri::Url> {
     let origin = MIRRORS
         .iter()
         .find_map(|mirror| url.as_str().strip_prefix(mirror))
-        .unwrap_or(url.as_str());
+        .unwrap_or_else(|| url.as_str());
     let mut sources = vec![url.clone()];
     if origin.starts_with("https://github.com/") {
         let candidates = MIRRORS.iter().map(|mirror| format!("{mirror}{origin}"));
@@ -452,10 +452,7 @@ impl SilentUpdater {
         // Same #2558 hazard as the startup path: NSIS can take over without
         // returning. Bound the wait so this dialog IPC cannot hang forever;
         // 600s comfortably covers a slow passive install.
-        let install = tokio::time::timeout(
-            std::time::Duration::from_secs(600),
-            Self::install(update, bytes),
-        );
+        let install = tokio::time::timeout(std::time::Duration::from_secs(600), Self::install(update, bytes));
         install
             .await
             .map_err(|_| anyhow::anyhow!("install timed out (600s)"))??;

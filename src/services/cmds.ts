@@ -12,7 +12,6 @@ import type {
   ProxyPortSettings,
   UnlockItem,
   SpeedTestProgress,
-  SpeedTestResult,
   ProxyViewV1_Serialize as ProxyViewV1,
   ProfileSelection,
   ProfilePatch,

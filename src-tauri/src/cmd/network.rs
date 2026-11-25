@@ -424,8 +424,7 @@ async fn run_download_test(
                 );
                 seq = seq.wrapping_add(1);
 
-                let resp_res =
-                    tokio::time::timeout(Duration::from_secs(8), client.get(&url).send()).await;
+                let resp_res = tokio::time::timeout(Duration::from_secs(8), client.get(&url).send()).await;
 
                 match resp_res {
                     Ok(Ok(mut resp)) if resp.status().is_success() => {

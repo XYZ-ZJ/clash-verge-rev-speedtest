@@ -419,7 +419,7 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   }
 
   // 代理出口
-  const proxyV4Id = `D${dIndex++}`
+  const proxyV4Id = `D${dIndex}`
   if (proxyIp) {
     exits.push({
       id: proxyV4Id,

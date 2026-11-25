@@ -48,7 +48,7 @@ fn normalized_text_prefix(content: &[u8]) -> std::string::String {
     let start = content
         .iter()
         .position(|byte| !byte.is_ascii_whitespace())
-        .unwrap_or(content.len());
+        .unwrap_or_else(|| content.len());
     let end = content.len().min(start.saturating_add(2048));
     let prefix = &content[start..end];
     std::string::String::from_utf8_lossy(prefix).to_ascii_lowercase()
