@@ -38,13 +38,42 @@ export interface EgressReport {
 
 // 支持 ChatGPT 和 Claude 的常见合规国家与地区二字码
 const AI_SUPPORTED_COUNTRIES = new Set([
-  'US', 'SG', 'JP', 'TW', 'HK', 'GB', 'DE', 'FR', 'KR', 'CA', 'AU', 'NL',
-  'SE', 'NO', 'CH', 'IT', 'ES', 'BR', 'IN', 'NZ', 'MY', 'TH', 'VN', 'PH',
+  'US',
+  'SG',
+  'JP',
+  'TW',
+  'HK',
+  'GB',
+  'DE',
+  'FR',
+  'KR',
+  'CA',
+  'AU',
+  'NL',
+  'SE',
+  'NO',
+  'CH',
+  'IT',
+  'ES',
+  'BR',
+  'IN',
+  'NZ',
+  'MY',
+  'TH',
+  'VN',
+  'PH',
 ])
 
 // 限制或不支持 AI 的地区
 const AI_RESTRICTED_COUNTRIES = new Set([
-  'CN', 'RU', 'IR', 'KP', 'CU', 'SY', 'BY', 'VE',
+  'CN',
+  'RU',
+  'IR',
+  'KP',
+  'CU',
+  'SY',
+  'BY',
+  'VE',
 ])
 
 const safeFetch = async (
@@ -128,7 +157,12 @@ const isValidIpAddress = (candidate: string): boolean => {
 export const extractCandidateIp = (cand: string): string | null => {
   if (!cand.includes('srflx')) return null
   const parts = cand.trim().split(/\s+/)
-  if (parts.length >= 8 && parts[6] === 'typ' && parts[7] === 'srflx' && parts[4]) {
+  if (
+    parts.length >= 8 &&
+    parts[6] === 'typ' &&
+    parts[7] === 'srflx' &&
+    parts[4]
+  ) {
     if (isValidIpAddress(parts[4])) return parts[4]
   }
   for (const token of parts) {
@@ -186,14 +220,16 @@ export const detectCloudflareStatus = async (): Promise<{
       return {
         state: 'interactive',
         title: '需人机验证',
-        description: '该出口 IP 可能会触发 Cloudflare Turnstile 质询，需手动完成人机验证。',
+        description:
+          '该出口 IP 可能会触发 Cloudflare Turnstile 质询，需手动完成人机验证。',
         rttMs,
       }
     } else {
       return {
         state: 'fail',
         title: '可能被拒绝',
-        description: '无法直连 Cloudflare 鉴权节点或被风控阻断，访问部分 Cloudflare 站点可能受阻。',
+        description:
+          '无法直连 Cloudflare 鉴权节点或被风控阻断，访问部分 Cloudflare 站点可能受阻。',
         rttMs,
       }
     }
@@ -268,16 +304,22 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   const minWait = new Promise((resolve) => setTimeout(resolve, 600))
 
   // 1. 并发探测国内直连与海外代理出口及 Cloudflare 状态
-  const [v4DirectText, biliDirectText, ipSbText, cfTraceText, webrtcIp, cfStatus] =
-    await Promise.all([
-      safeFetch('https://4.ipw.cn'),
-      safeFetch('https://api.bilibili.com/x/web-interface/zone'),
-      safeFetch('https://api.ip.sb/geoip'),
-      safeFetch('https://1.1.1.1/cdn-cgi/trace'),
-      detectWebRtcIp(),
-      detectCloudflareStatus(),
-      minWait,
-    ])
+  const [
+    v4DirectText,
+    biliDirectText,
+    ipSbText,
+    cfTraceText,
+    webrtcIp,
+    cfStatus,
+  ] = await Promise.all([
+    safeFetch('https://4.ipw.cn'),
+    safeFetch('https://api.bilibili.com/x/web-interface/zone'),
+    safeFetch('https://api.ip.sb/geoip'),
+    safeFetch('https://1.1.1.1/cdn-cgi/trace'),
+    detectWebRtcIp(),
+    detectCloudflareStatus(),
+    minWait,
+  ])
 
   // 解析国内直连 IPv4 / IPv6
   let directV4 = v4DirectText ? v4DirectText.trim() : ''
@@ -294,7 +336,10 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
         } else if (!directV4) {
           directV4 = bili.data.addr
         }
-        directCity = [bili.data.city, bili.data.province, bili.data.country].filter(Boolean)[0] || '中国'
+        directCity =
+          [bili.data.city, bili.data.province, bili.data.country].filter(
+            Boolean,
+          )[0] || '中国'
         directIsp = bili.data.isp ? `${bili.data.isp}` : '宽带网络'
       }
     } catch {}
@@ -326,7 +371,8 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     const lines = cfTraceText.split('\n')
     for (const line of lines) {
       if (line.startsWith('ip=')) proxyIp = line.slice(3)
-      if (line.startsWith('loc=')) proxyCountryCode = line.slice(4).toUpperCase()
+      if (line.startsWith('loc='))
+        proxyCountryCode = line.slice(4).toUpperCase()
     }
   }
 
@@ -335,8 +381,12 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
   let dIndex = 1
 
   // 若国内直连探针与代理出口 IP 完全一致（典型为 Global 全代理模式），不再误标为国内直连分流出口
-  const isDirectV4SameAsProxy = Boolean(directV4 && proxyIp && directV4 === proxyIp)
-  const isDirectV6SameAsProxy = Boolean(directV6 && proxyIp && directV6 === proxyIp)
+  const isDirectV4SameAsProxy = Boolean(
+    directV4 && proxyIp && directV4 === proxyIp,
+  )
+  const isDirectV6SameAsProxy = Boolean(
+    directV6 && proxyIp && directV6 === proxyIp,
+  )
 
   // D1: 国内直连 IPv4（仅当与代理出口不同时视作独立直连出口）
   if (directV4 && !isDirectV4SameAsProxy) {
@@ -540,14 +590,17 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
         badge: '时区差异',
         badgeColor: 'error',
         text: `和出口不一致：系统(${systemTz}, ${formatOffset(sysOffset)}) vs 出口(${proxyTimezone}, ${formatOffset(exitOffset)})`,
-        helpText: '部分对时区敏感的网站（如部分银行或 AI 服务）可能会检测本地系统时区与 IP 时区的偏差。',
+        helpText:
+          '部分对时区敏感的网站（如部分银行或 AI 服务）可能会检测本地系统时区与 IP 时区的偏差。',
       })
     }
   }
 
   return {
     isSplit,
-    title: isSplit ? '分流生效：不同网站走不同出口' : '单出口：所有网站走同一出口',
+    title: isSplit
+      ? '分流生效：不同网站走不同出口'
+      : '单出口：所有网站走同一出口',
     exits,
     findings,
     cfStatus,

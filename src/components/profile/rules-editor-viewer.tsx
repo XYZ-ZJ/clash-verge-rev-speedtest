@@ -428,7 +428,10 @@ export const RulesEditorViewer = (props: Props) => {
   }
 
   const serializeVisualConfig = useCallback((): string | null => {
-    if (!hasLoadedSeqConfigRef.current || !(prependSeq && appendSeq && deleteSeq)) {
+    if (
+      !hasLoadedSeqConfigRef.current ||
+      !(prependSeq && appendSeq && deleteSeq)
+    ) {
       return null
     }
     try {
@@ -444,7 +447,10 @@ export const RulesEditorViewer = (props: Props) => {
 
   // 优化：异步处理大数据yaml.dump，避免UI卡死
   useEffect(() => {
-    if (!hasLoadedSeqConfigRef.current || !(prependSeq && appendSeq && deleteSeq)) {
+    if (
+      !hasLoadedSeqConfigRef.current ||
+      !(prependSeq && appendSeq && deleteSeq)
+    ) {
       return
     }
 

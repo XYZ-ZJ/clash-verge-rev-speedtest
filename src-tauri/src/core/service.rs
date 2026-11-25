@@ -336,9 +336,14 @@ pub(crate) fn service_stop_reason() -> Result<Option<&'static str>> {
 pub(crate) fn trusted_service_evidence() -> Result<bool> {
     if !Path::new("/run/systemd/system").exists() {
         let slug = clash_verge_service_ipc::SERVICE_SLUG;
-        return Ok(Path::new(&format!("/etc/systemd/system/{slug}.service")).exists()
-            || Path::new(&format!("/usr/lib/systemd/system/{slug}.service")).exists()
-            || Path::new(&format!("/etc/init.d/{slug}")).exists());
+        let has_unit = [
+            format!("/etc/systemd/system/{slug}.service"),
+            format!("/usr/lib/systemd/system/{slug}.service"),
+            format!("/etc/init.d/{slug}"),
+        ]
+        .into_iter()
+        .any(|p| PathBuf::from(p).exists());
+        return Ok(has_unit);
     }
     let unit = format!("{}.service", clash_verge_service_ipc::SERVICE_SLUG);
     let output = match StdCommand::new("systemctl")
@@ -350,10 +355,7 @@ pub(crate) fn trusted_service_evidence() -> Result<bool> {
         Err(error) => return Err(error).context("failed to inspect systemd service registration"),
     };
     if !output.status.success() {
-        bail!(
-            "systemd service registration probe failed with status {}",
-            output.status
-        );
+        bail!("systemd service registration probe failed with status {}", output.status);
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim() != "not-found")
 }

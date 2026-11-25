@@ -201,13 +201,11 @@ impl CoreManager {
             }
 
             #[cfg(unix)]
-            let _umask_guard =
-                UmaskGuard(unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(0o077) });
+            let _umask_guard = UmaskGuard(unsafe { tauri_plugin_clash_verge_sysinfo::libc::umask(0o077) });
 
-            let command = app_handle
-                .shell()
-                .sidecar(clash_core.as_str())
-                .map_err(|error| anyhow::anyhow!("failed to build sidecar command for core {clash_core:?}: {error:#}"))?;
+            let command = app_handle.shell().sidecar(clash_core.as_str()).map_err(|error| {
+                anyhow::anyhow!("failed to build sidecar command for core {clash_core:?}: {error:#}")
+            })?;
             let command = command.args([
                 "-d",
                 dirs::path_to_str(&config_dir)?,

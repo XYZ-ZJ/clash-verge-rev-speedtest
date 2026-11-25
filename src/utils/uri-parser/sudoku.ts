@@ -122,7 +122,8 @@ export function URI_Sudoku(line: string): IProxySudokuConfig {
       )
       if (tableType) proxy['table-type'] = tableType
 
-      const pureDownlink = obj['enable-pure-downlink'] ?? obj.enable_pure_downlink
+      const pureDownlink =
+        obj['enable-pure-downlink'] ?? obj.enable_pure_downlink
       if (pureDownlink !== undefined) {
         proxy['enable-pure-downlink'] = Boolean(pureDownlink)
       }

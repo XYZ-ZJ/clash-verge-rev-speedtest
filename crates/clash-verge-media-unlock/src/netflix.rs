@@ -108,14 +108,7 @@ async fn check_region(client: &Client) -> UnlockItem {
                 .and_then(parse_country_segment)
                 .or_else(|| location.split('/').nth(1).and_then(parse_country_segment))
         })
-        .or_else(|| {
-            response
-                .url()
-                .path()
-                .split('/')
-                .nth(1)
-                .and_then(parse_country_segment)
-        })
+        .or_else(|| response.url().path().split('/').nth(1).and_then(parse_country_segment))
         .unwrap_or("us");
 
     UnlockItem::checked_region(NETFLIX_NAME, "Yes", region)

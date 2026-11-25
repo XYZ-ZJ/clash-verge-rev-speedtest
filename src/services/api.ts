@@ -46,7 +46,8 @@ export function calculateRiskInfo(params: {
   nativeScore?: number
 }): RiskInfo {
   let type: RiskInfo['type'] = params.type || 'unknown'
-  const orgText = `${params.organization || ''} ${params.asnOrg || ''}`.toLowerCase()
+  const orgText =
+    `${params.organization || ''} ${params.asnOrg || ''}`.toLowerCase()
 
   if (type === 'unknown') {
     if (params.isMobile) {
@@ -69,7 +70,10 @@ export function calculateRiskInfo(params: {
   }
 
   let score: number
-  if (typeof params.nativeScore === 'number' && Number.isFinite(params.nativeScore)) {
+  if (
+    typeof params.nativeScore === 'number' &&
+    Number.isFinite(params.nativeScore)
+  ) {
     score = Math.round(params.nativeScore)
   } else {
     score = 5
@@ -280,7 +284,9 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
       )
       const asn = cleanAsn(data.asn?.asn || data.asn)
       const org =
-        (typeof data.company === 'string' ? data.company : data.company?.name) ||
+        (typeof data.company === 'string'
+          ? data.company
+          : data.company?.name) ||
         (typeof data.asn === 'string' ? data.asn : data.asn?.org) ||
         ''
       const asnOrg = cleanAsnOrg(data.asn, org)
@@ -294,8 +300,10 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
           organization: org,
           asn,
           asn_organization: asnOrg,
-          longitude: Number(data.lon ?? data.longitude ?? data.location?.longitude) || 0,
-          latitude: Number(data.lat ?? data.latitude ?? data.location?.latitude) || 0,
+          longitude:
+            Number(data.lon ?? data.longitude ?? data.location?.longitude) || 0,
+          latitude:
+            Number(data.lat ?? data.latitude ?? data.location?.latitude) || 0,
           timezone: data.timezone || data.location?.timezone || '',
         },
       }
@@ -350,7 +358,10 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
   {
     url: 'https://ipapi.co/json',
     mapping: (data) => {
-      const countryCode = resolveCountryCode(data.country_code, data.country_name)
+      const countryCode = resolveCountryCode(
+        data.country_code,
+        data.country_name,
+      )
       const asn = cleanAsn(data.asn)
       const org = data.org || ''
       return {
@@ -375,7 +386,10 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
     mapping: (data) => {
       const countryCode = resolveCountryCode(data.country_code, data.country)
       const asn = cleanAsn(data.asn)
-      const asnOrg = cleanAsnOrg(data.asn_organization, data.organization || data.isp)
+      const asnOrg = cleanAsnOrg(
+        data.asn_organization,
+        data.organization || data.isp,
+      )
       const org = data.organization || data.isp || asnOrg || ''
       return {
         info: {
@@ -429,38 +443,52 @@ const enrichIpRiskFromAuthoritativeSources = async (
 
   const [ipinfoRes, ipapiRes, ipqueryRes, proxycheckRes, scamRes] =
     await Promise.all([
-      fetchWithTimeout(`https://ipinfo.io/widget/demo/${encodedIp}`, 3800)
-        .then((r) => (r ? r.json().catch(() => null) : null)),
-      fetchWithTimeout(`https://ipinfo.check.place/${encodedIp}?db=ipapi`, 3800)
-        .then((r) => (r ? r.json().catch(() => null) : null)),
+      fetchWithTimeout(`https://ipinfo.io/widget/demo/${encodedIp}`, 3800).then(
+        (r) => (r ? r.json().catch(() => null) : null),
+      ),
+      fetchWithTimeout(
+        `https://ipinfo.check.place/${encodedIp}?db=ipapi`,
+        3800,
+      ).then((r) => (r ? r.json().catch(() => null) : null)),
       initialIpQueryRisk
         ? Promise.resolve({ risk: initialIpQueryRisk })
-        : fetchWithTimeout(`https://api.ipquery.io/${encodedIp}?format=json`, 3500)
-            .then((r) => (r ? r.json().catch(() => null) : null)),
+        : fetchWithTimeout(
+            `https://api.ipquery.io/${encodedIp}?format=json`,
+            3500,
+          ).then((r) => (r ? r.json().catch(() => null) : null)),
       fetchWithTimeout(
         `https://proxycheck.io/v2/${encodedIp}?vpn=1&asn=1&risk=1`,
         3500,
       ).then((r) => (r ? r.json().catch(() => null) : null)),
-      fetchWithTimeout(`https://scamalytics.com/ip/${encodedIp}`, 3800)
-        .then((r) => (r ? r.text().catch(() => null) : null)),
+      fetchWithTimeout(`https://scamalytics.com/ip/${encodedIp}`, 3800).then(
+        (r) => (r ? r.text().catch(() => null) : null),
+      ),
     ])
 
   // 若 IPinfo 返回了更完整的基础信息，顺便补全缺失字段
   const ipinfoData = ipinfoRes?.data
   if (ipinfoData) {
     if (!baseInfo.country_code && ipinfoData.country) {
-      baseInfo.country_code = resolveCountryCode(ipinfoData.country, ipinfoData.country)
+      baseInfo.country_code = resolveCountryCode(
+        ipinfoData.country,
+        ipinfoData.country,
+      )
     }
-    if (!baseInfo.region && ipinfoData.region) baseInfo.region = ipinfoData.region
+    if (!baseInfo.region && ipinfoData.region)
+      baseInfo.region = ipinfoData.region
     if (!baseInfo.city && ipinfoData.city) baseInfo.city = ipinfoData.city
-    if (!baseInfo.timezone && ipinfoData.timezone) baseInfo.timezone = ipinfoData.timezone
+    if (!baseInfo.timezone && ipinfoData.timezone)
+      baseInfo.timezone = ipinfoData.timezone
     if (!baseInfo.asn && ipinfoData.asn?.asn) {
       baseInfo.asn = cleanAsn(ipinfoData.asn.asn)
     }
     if (!baseInfo.asn_organization && ipinfoData.asn?.name) {
       baseInfo.asn_organization = ipinfoData.asn.name
     }
-    if (!baseInfo.organization && (ipinfoData.company?.name || ipinfoData.asn?.name)) {
+    if (
+      !baseInfo.organization &&
+      (ipinfoData.company?.name || ipinfoData.asn?.name)
+    ) {
       baseInfo.organization = ipinfoData.company?.name || ipinfoData.asn?.name
     }
   }
@@ -499,7 +527,11 @@ const enrichIpRiskFromAuthoritativeSources = async (
     if (ipapiData.is_mobile) isMobile = true
     const asnType = String(ipapiData.asn?.type || '').toLowerCase()
     const comType = String(ipapiData.company?.type || '').toLowerCase()
-    if (ipapiData.is_datacenter || comType === 'hosting' || asnType === 'hosting') {
+    if (
+      ipapiData.is_datacenter ||
+      comType === 'hosting' ||
+      asnType === 'hosting'
+    ) {
       votes.datacenter += 2
       hasAuthoritativeType = true
     } else if (comType === 'isp' || asnType === 'isp') {
@@ -523,7 +555,11 @@ const enrichIpRiskFromAuthoritativeSources = async (
     if (iqRisk.is_datacenter === true) {
       votes.datacenter += 1
       hasAuthoritativeType = true
-    } else if (iqRisk.is_datacenter === false && !iqRisk.is_vpn && !iqRisk.is_proxy) {
+    } else if (
+      iqRisk.is_datacenter === false &&
+      !iqRisk.is_vpn &&
+      !iqRisk.is_proxy
+    ) {
       votes.residential += 1
       hasAuthoritativeType = true
     }
@@ -568,7 +604,11 @@ const enrichIpRiskFromAuthoritativeSources = async (
   if (isMobile) {
     resolvedType = 'mobile'
   } else if (hasAuthoritativeType) {
-    if (votes.residential >= votes.datacenter && votes.residential >= votes.business && votes.residential > 0) {
+    if (
+      votes.residential >= votes.datacenter &&
+      votes.residential >= votes.business &&
+      votes.residential > 0
+    ) {
       resolvedType = 'residential'
     } else if (votes.datacenter >= votes.business && votes.datacenter > 0) {
       resolvedType = 'datacenter'
@@ -596,7 +636,8 @@ const enrichIpRiskFromAuthoritativeSources = async (
       ipapiData?.is_proxy ||
       iqRisk?.is_proxy ||
       (pcIsProxy &&
-        (resolvedType === 'datacenter' || (pcRiskNum !== null && pcRiskNum >= 50))),
+        (resolvedType === 'datacenter' ||
+          (pcRiskNum !== null && pcRiskNum >= 50))),
   )
 
   // 3. 收集真实原生连续风控分（0-100），多源去极值融合
@@ -608,9 +649,13 @@ const enrichIpRiskFromAuthoritativeSources = async (
       comAbuse !== null && asnAbuse !== null
         ? Math.max(comAbuse, asnAbuse)
         : (comAbuse ?? asnAbuse)
-    if (maxAbuse !== null) nativeScores.push(Math.min(100, Math.max(0, maxAbuse)))
+    if (maxAbuse !== null)
+      nativeScores.push(Math.min(100, Math.max(0, maxAbuse)))
   }
-  if (typeof iqRisk?.risk_score === 'number' && Number.isFinite(iqRisk.risk_score)) {
+  if (
+    typeof iqRisk?.risk_score === 'number' &&
+    Number.isFinite(iqRisk.risk_score)
+  ) {
     nativeScores.push(Math.min(100, Math.max(0, Math.round(iqRisk.risk_score))))
   }
   if (pcRiskNum !== null && Number.isFinite(pcRiskNum)) {
@@ -638,7 +683,8 @@ const enrichIpRiskFromAuthoritativeSources = async (
   if (typeof fusedScore === 'number') {
     if (isTor || isAbuser) fusedScore = Math.max(fusedScore, 65)
     else if (isVpn || isProxy) fusedScore = Math.max(fusedScore, 35)
-    else if (resolvedType === 'datacenter') fusedScore = Math.max(fusedScore, 25)
+    else if (resolvedType === 'datacenter')
+      fusedScore = Math.max(fusedScore, 25)
   }
 
   baseInfo.risk = calculateRiskInfo({
@@ -755,7 +801,6 @@ export const getIpInfo = async (): Promise<
   }
 }
 
-
 // DNS 泄露检测服务接口定义
 export interface DnsServerInfo {
   ip: string
@@ -816,10 +861,11 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
         )
       }
 
-      const ipCountry = (ipItem?.country || ipItem?.country_name || '').trim().toLowerCase()
+      const ipCountry = (ipItem?.country || ipItem?.country_name || '')
+        .trim()
+        .toLowerCase()
       const isOverseasProxy = Boolean(
-        ipCountry &&
-          !['cn', 'china'].includes(ipCountry),
+        ipCountry && !['cn', 'china'].includes(ipCountry),
       )
 
       // 严密且符合分流规律的远程 DNS 泄露判定：

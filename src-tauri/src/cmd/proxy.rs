@@ -4,10 +4,7 @@ use crate::{
     config::Config,
     core::{
         handle::Handle,
-        proxy_view::{
-            GroupScope, NodeFeature, NodeFeatureScopes, ProxyViewBuilder, ProxyViewInput,
-            ProxyViewV1,
-        },
+        proxy_view::{GroupScope, NodeFeature, NodeFeatureScopes, ProxyViewBuilder, ProxyViewInput, ProxyViewV1},
         tray::Tray,
     },
     process::AsyncHandler,
@@ -413,21 +410,28 @@ mod tests {
 
     #[test]
     fn detects_xhttp_xmux_and_nested_download_reuse_settings() -> anyhow::Result<()> {
-        let plain: Mapping = serde_yaml_ng::from_str(
-            "name: Plain\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings: {}\n",
-        )?;
+        let plain: Mapping = serde_yaml_ng::from_str("name: Plain\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings: {}\n")?;
         let feat = detect_node_feature(&plain);
         assert!(feat.as_ref().is_some_and(|f| f.xhttp && !f.xmux));
 
-        let valid_xmux: Mapping = serde_yaml_ng::from_str(
-            "name: Mux\nnetwork: xhttp\nxhttp-opts:\n  reuse-settings:\n    max-concurrency: \"16-32\"\n",
-        )?;
+        let valid_xmux: Mapping = serde_yaml_ng::from_str(concat!(
+            "name: Mux\n",
+            "network: xhttp\n",
+            "xhttp-opts:\n",
+            "  reuse-settings:\n",
+            "    max-concurrency: \"16-32\"\n",
+        ))?;
         let feat = detect_node_feature(&valid_xmux);
         assert!(feat.as_ref().is_some_and(|f| f.xhttp && f.xmux));
 
-        let nested_dl: Mapping = serde_yaml_ng::from_str(
-            "name: NestedMux\nnetwork: xhttp\nxhttp-opts:\n  download-settings:\n    reuse-settings:\n      max-connections: \"4\"\n",
-        )?;
+        let nested_dl: Mapping = serde_yaml_ng::from_str(concat!(
+            "name: NestedMux\n",
+            "network: xhttp\n",
+            "xhttp-opts:\n",
+            "  download-settings:\n",
+            "    reuse-settings:\n",
+            "      max-connections: \"4\"\n",
+        ))?;
         let feat = detect_node_feature(&nested_dl);
         assert!(feat.as_ref().is_some_and(|f| f.xhttp && f.xmux));
 
@@ -438,9 +442,19 @@ mod tests {
 
     #[test]
     fn provider_scan_isolates_duplicate_node_names_by_provider() -> anyhow::Result<()> {
-        let providers: Mapping = serde_yaml_ng::from_str(
-            "providerA:\n  payload:\n    - name: Relay\n      network: xhttp\n      xhttp-opts:\n        reuse-settings:\n          max-concurrency: \"8\"\nproviderB:\n  payload:\n    - name: Relay\n      network: xhttp\n",
-        )?;
+        let providers: Mapping = serde_yaml_ng::from_str(concat!(
+            "providerA:\n",
+            "  payload:\n",
+            "    - name: Relay\n",
+            "      network: xhttp\n",
+            "      xhttp-opts:\n",
+            "        reuse-settings:\n",
+            "          max-concurrency: \"8\"\n",
+            "providerB:\n",
+            "  payload:\n",
+            "    - name: Relay\n",
+            "      network: xhttp\n",
+        ))?;
         let mut scoped = BTreeMap::new();
         scan_providers(&providers, &mut scoped);
 

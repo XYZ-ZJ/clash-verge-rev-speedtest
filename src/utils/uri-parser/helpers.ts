@@ -135,7 +135,9 @@ export function parseInsecureParam(
   return undefined
 }
 
-export function parseCommaList(value: string | undefined): string[] | undefined {
+export function parseCommaList(
+  value: string | undefined,
+): string[] | undefined {
   if (!value) return undefined
   const items = value
     .split(',')

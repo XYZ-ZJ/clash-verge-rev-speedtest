@@ -150,15 +150,15 @@ function applyXhttpCommonFields(
     [['uplinkDataPlacement', 'uplink-data-placement'], 'uplink-data-placement'],
     [['uplinkDataKey', 'uplink-data-key'], 'uplink-data-key'],
     [['uplinkChunkSize', 'uplink-chunk-size'], 'uplink-chunk-size'],
-    [['scMaxEachPostBytes', 'sc-max-each-post-bytes'], 'sc-max-each-post-bytes'],
+    [
+      ['scMaxEachPostBytes', 'sc-max-each-post-bytes'],
+      'sc-max-each-post-bytes',
+    ],
     [
       ['scMinPostsIntervalMs', 'sc-min-posts-interval-ms'],
       'sc-min-posts-interval-ms',
     ],
-    [
-      ['scMaxBufferedPosts', 'sc-max-buffered-posts'],
-      'sc-max-buffered-posts',
-    ],
+    [['scMaxBufferedPosts', 'sc-max-buffered-posts'], 'sc-max-buffered-posts'],
     [
       ['scStreamUpServerSecs', 'sc-stream-up-server-secs'],
       'sc-stream-up-server-secs',
@@ -197,7 +197,7 @@ function applyXhttpCommonFields(
         fallbackParams?.['session-length'],
     )
     if (sessionLength) {
-      (target as XHttpOptions)['session-length'] = sessionLength
+      ;(target as XHttpOptions)['session-length'] = sessionLength
     }
   }
 
@@ -212,7 +212,9 @@ function applyXhttpCommonFields(
   const rawReuse =
     src.xmux ??
     src['reuse-settings'] ??
-    parseJsonObjectSafe(fallbackParams?.xmux ?? fallbackParams?.['reuse-settings'])
+    parseJsonObjectSafe(
+      fallbackParams?.xmux ?? fallbackParams?.['reuse-settings'],
+    )
   const reuse = parseReuseSettings(rawReuse)
   if (reuse) target['reuse-settings'] = reuse
 }
@@ -233,9 +235,7 @@ function buildXhttpDownloadSettings(
   )
   if (server) out.server = server
 
-  const port = parseInteger(
-    ds.port !== undefined ? String(ds.port) : undefined,
-  )
+  const port = parseInteger(ds.port !== undefined ? String(ds.port) : undefined)
   if (port !== undefined && port >= 1 && port <= 65535) {
     out.port = port
   }
@@ -275,9 +275,7 @@ function buildXhttpDownloadSettings(
   }
 
   const skipCert = toOptionalBool(
-    ds['skip-cert-verify'] ??
-      ds.allowInsecure ??
-      tlsSettings.allowInsecure,
+    ds['skip-cert-verify'] ?? ds.allowInsecure ?? tlsSettings.allowInsecure,
   )
   if (skipCert !== undefined) out['skip-cert-verify'] = skipCert
 

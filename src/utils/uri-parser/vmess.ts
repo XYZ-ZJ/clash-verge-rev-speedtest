@@ -167,7 +167,9 @@ export function URI_VMESS(line: string): IProxyVmessConfig {
   }
 
   if (Array.isArray(params.alpn)) {
-    const alpnList = params.alpn.map((a: unknown) => String(a).trim()).filter(Boolean)
+    const alpnList = params.alpn
+      .map((a: unknown) => String(a).trim())
+      .filter(Boolean)
     if (alpnList.length > 0) proxy.alpn = alpnList
   } else if (typeof params.alpn === 'string') {
     const alpnList = parseCommaList(params.alpn)
@@ -228,9 +230,7 @@ export function URI_VMESS(line: string): IProxyVmessConfig {
     if (params.sid) realityOpts['short-id'] = String(params.sid)
     const mlkem = parseBool(
       String(
-        params['support-x25519mlkem768'] ??
-          params.supportX25519mlkem768 ??
-          '',
+        params['support-x25519mlkem768'] ?? params.supportX25519mlkem768 ?? '',
       ),
     )
     if (mlkem !== undefined) {

@@ -15,9 +15,7 @@ function normalizeMultiplexing(
 ): MieruMultiplexing | undefined {
   const val = getIfNotBlank(raw)?.toUpperCase()
   if (!val) return undefined
-  const prefixed = val.startsWith('MULTIPLEXING_')
-    ? val
-    : `MULTIPLEXING_${val}`
+  const prefixed = val.startsWith('MULTIPLEXING_') ? val : `MULTIPLEXING_${val}`
   if (
     prefixed === 'MULTIPLEXING_DEFAULT' ||
     prefixed === 'MULTIPLEXING_OFF' ||
@@ -74,7 +72,9 @@ export function URI_Mieru(line: string): IProxyMieruConfig {
     throw new Error('Invalid mieru uri: missing credentials')
   }
 
-  const displayPort = isRange ? portValue : String(parseRequiredPort(portValue, 'Invalid mieru uri: invalid port'))
+  const displayPort = isRange
+    ? portValue
+    : String(parseRequiredPort(portValue, 'Invalid mieru uri: invalid port'))
   const name = decodeAndTrim(nameRaw) ?? `Mieru ${server}:${displayPort}`
 
   const proxy: IProxyMieruConfig = {
@@ -105,9 +105,7 @@ export function URI_Mieru(line: string): IProxyMieruConfig {
     proxy.udp = parseBoolOrPresence(params.udp)
   }
 
-  const multiplexing = normalizeMultiplexing(
-    params.multiplexing ?? params.mux,
-  )
+  const multiplexing = normalizeMultiplexing(params.multiplexing ?? params.mux)
   if (multiplexing) {
     proxy.multiplexing = multiplexing
   }

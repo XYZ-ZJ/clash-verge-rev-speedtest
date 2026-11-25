@@ -516,7 +516,7 @@ impl IVerge {
         let url_changed = patch
             .webdav_url
             .as_ref()
-            .is_some_and(|next| self.webdav_url.as_ref().map(|prev| prev.trim()) != Some(next.trim()));
+            .is_some_and(|next| self.webdav_url.as_deref().map(str::trim) != Some(next.trim()));
         patch_opt_field!(self, patch, webdav_url);
         if url_changed && patch.webdav_username.is_none() && patch.webdav_password.is_none() {
             self.webdav_username = None;

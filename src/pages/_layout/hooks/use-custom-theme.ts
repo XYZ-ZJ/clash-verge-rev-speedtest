@@ -13,11 +13,7 @@ import { useSetThemeMode, useThemeMode } from '@/services/states'
 const CSS_INJECTION_SCOPE_ROOT = '[data-css-injection-root]'
 const CSS_INJECTION_SCOPE_LIMIT =
   ':is(.monaco-editor .view-lines, .monaco-editor .view-line, .monaco-editor .margin, .monaco-editor .margin-view-overlays, .monaco-editor .view-overlays, .monaco-editor [class^="mtk"], .monaco-editor [class*=" mtk"])'
-const TOP_LEVEL_AT_RULES = [
-  '@charset',
-  '@import',
-  '@namespace',
-]
+const TOP_LEVEL_AT_RULES = ['@charset', '@import', '@namespace']
 
 const sanitizeBackgroundImageUrl = (rawUrl: string): string => {
   const trimmed = rawUrl.trim()

@@ -96,7 +96,8 @@ export function WebUIViewer({ ref }: { ref?: Ref<DialogRef> }) {
         }
         const serverStr = clashInfo.server?.trim() ?? ''
         const lastColon = serverStr.lastIndexOf(':')
-        const port = lastColon !== -1 ? serverStr.slice(lastColon + 1).trim() : ''
+        const port =
+          lastColon !== -1 ? serverStr.slice(lastColon + 1).trim() : ''
         if (!/^\d+$/.test(port)) {
           throw new Error(
             t('settings.modals.webUI.errors.invalidServer', {

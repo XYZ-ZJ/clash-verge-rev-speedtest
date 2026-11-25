@@ -825,9 +825,11 @@ impl CoreManager {
             });
             verge.apply();
 
-            if let Err(err) = verge.latest_arc().save_file().await {
+            let verge_data = verge.latest_arc();
+            if let Err(err) = verge_data.save_file().await {
+                let rollback = prev.clone();
                 verge.edit_draft(|d| {
-                    d.clash_core = prev;
+                    d.clash_core = rollback;
                 });
                 verge.apply();
                 return Err(err);

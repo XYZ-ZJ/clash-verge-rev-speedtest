@@ -223,7 +223,8 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
 
     if matches!(
         file_path.components().next(),
-        Some(Component::Prefix(prefix)) if matches!(prefix.kind(), std::path::Prefix::UNC(_) | std::path::Prefix::VerbatimUNC(_))
+        Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), std::path::Prefix::UNC(_) | std::path::Prefix::VerbatimUNC(_))
     ) {
         return Err("refusing UNC icon path".into());
     }

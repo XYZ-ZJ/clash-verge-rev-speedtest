@@ -474,7 +474,7 @@ fn encode_tray_id_segment(input: &str) -> std::string::String {
 
 fn decode_tray_id_segment(mut input: &str) -> std::string::String {
     let mut out = std::string::String::with_capacity(input.len());
-    while let Some((idx, _)) = input.match_indices('%').next() {
+    while let Some(idx) = input.find('%') {
         out.push_str(&input[..idx]);
         let after = &input[idx..];
         if let Some(rest) = after.strip_prefix("%5F") {

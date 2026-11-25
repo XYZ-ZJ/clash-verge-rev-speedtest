@@ -64,8 +64,7 @@ impl TraySpeedController {
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
         let task = AsyncHandler::spawn(move || async move {
             loop {
-                if handle::Handle::global().is_exiting()
-                    || generation.load(Ordering::Acquire) != task_generation
+                if handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation
                 {
                     break;
                 }
@@ -87,20 +86,16 @@ impl TraySpeedController {
                 };
 
                 if generation.load(Ordering::Acquire) != task_generation {
-                    let _ = connections_stream::disconnect_stream(speed_stream.connection_id).await;
+                    connections_stream::disconnect_connection(speed_stream.connection_id).await;
                     break;
                 }
 
-                Self::set_speed_connection_id(
-                    &speed_connection_id,
-                    Some((task_generation, speed_stream.connection_id)),
-                );
+                Self::set_speed_connection_id(&speed_connection_id, Some((task_generation, speed_stream.connection_id)));
 
                 loop {
                     let next_state = speed_stream
                         .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
-                            handle::Handle::global().is_exiting()
-                                || generation.load(Ordering::Acquire) != task_generation
+                            handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation
                         })
                         .await;
 
@@ -205,8 +200,11 @@ impl TraySpeedController {
         }
     }
 
-    async fn disconnect_speed_connection(speed_connection_id: &Arc<Mutex<Option<WsConnectionId>>>) {
-        if let Some(connection_id) = Self::take_speed_connection_id(speed_connection_id) {
+    async fn disconnect_speed_connection(
+        speed_connection_id: &Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+        max_generation: Option<u64>,
+    ) {
+        if let Some(connection_id) = Self::take_speed_connection_id(speed_connection_id, max_generation) {
             connections_stream::disconnect_connection(connection_id).await;
         }
     }

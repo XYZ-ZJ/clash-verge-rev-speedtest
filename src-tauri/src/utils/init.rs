@@ -563,10 +563,7 @@ pub fn init_scheme() -> Result<()> {
     let app_exe = app_exe.to_string_lossy().into_owned();
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    for (key_name, label) in [
-        ("Clash", "Clash Verge"),
-        ("clash-verge", "Clash Verge"),
-    ] {
+    for (key_name, label) in [("Clash", "Clash Verge"), ("clash-verge", "Clash Verge")] {
         let (scheme_key, _) = hkcu.create_subkey(format!("Software\\Classes\\{key_name}"))?;
         scheme_key.set_value("", &label)?;
         scheme_key.set_value("URL Protocol", &"Clash Verge URL Scheme Protocol")?;

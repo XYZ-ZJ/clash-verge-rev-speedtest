@@ -54,7 +54,6 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
 
-
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
     setLoading(true)
@@ -126,15 +125,25 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
           <LanguageOutlined sx={{ color: 'primary.main', fontSize: 24 }} />
-          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.05rem' }}>
+          <Typography
+            variant="h6"
+            sx={{ fontWeight: 600, fontSize: '1.05rem' }}
+          >
             {t('home.components.ipInfo.detailModal.title')}
           </Typography>
           {report?.timestamp && !loading && (
-            <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, ml: 1 }}>
+            <Box
+              sx={{
+                display: { xs: 'none', sm: 'flex' },
+                alignItems: 'center',
+                gap: 1,
+                ml: 1,
+              }}
+            >
               <Typography variant="caption" color="text.secondary">
-                {t('home.components.ipInfo.detailModal.lastCheck')}: {new Date(report.timestamp).toLocaleTimeString()}
+                {t('home.components.ipInfo.detailModal.lastCheck')}:{' '}
+                {new Date(report.timestamp).toLocaleTimeString()}
               </Typography>
-
             </Box>
           )}
         </Box>
@@ -158,7 +167,11 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               ? t('home.components.ipInfo.detailModal.testing')
               : t('home.components.ipInfo.detailModal.refresh')}
           </Button>
-          <IconButton size="small" onClick={onClose} sx={{ color: 'text.secondary' }}>
+          <IconButton
+            size="small"
+            onClick={onClose}
+            sx={{ color: 'text.secondary' }}
+          >
             <CloseOutlined fontSize="small" />
           </IconButton>
         </Box>
@@ -204,7 +217,14 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               gap: 2,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flex: 1 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 1.5,
+                flex: 1,
+              }}
+            >
               {loading && !report ? (
                 <Skeleton variant="circular" width={26} height={26} />
               ) : isCfPass ? (
@@ -249,7 +269,11 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                           size="small"
                           label={`${report.cfStatus.rttMs} ms`}
                           variant="outlined"
-                          sx={{ height: 20, fontSize: '0.68rem', fontWeight: 600 }}
+                          sx={{
+                            height: 20,
+                            fontSize: '0.68rem',
+                            fontWeight: 600,
+                          }}
                         />
                       ) : null}
                     </Box>
@@ -279,7 +303,9 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
               onClick={handleRetestCf}
               disabled={cfLoading || loading}
               startIcon={
-                cfLoading ? <CircularProgress size={14} color="inherit" /> : null
+                cfLoading ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : null
               }
               sx={{
                 textTransform: 'none',
@@ -467,7 +493,11 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   )
 })
 
-const EXIT_SKELETON_KEYS = ['exit-skel-0', 'exit-skel-1', 'exit-skel-2'] as const
+const EXIT_SKELETON_KEYS = [
+  'exit-skel-0',
+  'exit-skel-1',
+  'exit-skel-2',
+] as const
 const FINDING_SKELETON_KEYS = [
   'finding-skel-0',
   'finding-skel-1',
@@ -549,7 +579,8 @@ const ExitCard = memo(({ item, hideIp }: ExitCardProps) => {
               whiteSpace: 'nowrap',
             }}
           >
-            {[item.city, item.country].filter(Boolean).join(', ') || item.country}
+            {[item.city, item.country].filter(Boolean).join(', ') ||
+              item.country}
           </Typography>
           <Typography
             variant="caption"

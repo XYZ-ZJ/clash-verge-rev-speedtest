@@ -136,7 +136,9 @@ const IPInfoCardContainer = forwardRef<HTMLElement, IPInfoCardContainerProps>(
         ref={ref}
         action={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Tooltip title={t('home.components.ipInfo.detailModal.openTooltip')}>
+            <Tooltip
+              title={t('home.components.ipInfo.detailModal.openTooltip')}
+            >
               <IconButton size="small" onClick={onOpenDetail}>
                 <OpenInFullOutlined fontSize="small" />
               </IconButton>
@@ -538,21 +540,21 @@ export const IpInfoCard = () => {
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {ipInfo.risk.type && ipInfo.risk.type !== 'unknown' && (
-                <Chip
-                  size="small"
-                  label={getIpTypeText(ipInfo.risk.type, t)}
-                  variant="filled"
-                  sx={{
-                    height: 20,
-                    fontSize: '0.68rem',
-                    backgroundColor: (theme) =>
-                      theme.palette.mode === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                    '& .MuiChip-label': { px: 0.7 },
-                  }}
-                />
-              )}
+                  <Chip
+                    size="small"
+                    label={getIpTypeText(ipInfo.risk.type, t)}
+                    variant="filled"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.68rem',
+                      backgroundColor: (theme) =>
+                        theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.06)',
+                      '& .MuiChip-label': { px: 0.7 },
+                    }}
+                  />
+                )}
                 {ipInfo.risk.isProxy || ipInfo.risk.isVpn ? (
                   <Chip
                     size="small"
@@ -644,10 +646,7 @@ export const IpInfoCard = () => {
       >
         {mainElement}
       </IPInfoCardContainer>
-      <IpDetailModal
-        open={detailOpen}
-        onClose={() => setDetailOpen(false)}
-      />
+      <IpDetailModal open={detailOpen} onClose={() => setDetailOpen(false)} />
     </>
   )
 }

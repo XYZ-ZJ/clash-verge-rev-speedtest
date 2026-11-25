@@ -81,8 +81,7 @@ export const useWebdavSignature = (
 const canUseStorage = () => typeof localStorage !== 'undefined'
 
 const isSafeStoredSignature = (sig: unknown): sig is string =>
-  typeof sig === 'string' &&
-  (SHA256_HEX_RE.test(sig) || sig.startsWith('fb-'))
+  typeof sig === 'string' && (SHA256_HEX_RE.test(sig) || sig.startsWith('fb-'))
 
 export const getWebdavStatus = (signature: string): WebdavStatus => {
   if (!signature || !canUseStorage()) return 'unknown'

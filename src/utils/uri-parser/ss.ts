@@ -132,9 +132,7 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
         proxy.plugin = 'obfs'
         proxy['plugin-opts'] = {
           mode: getIfNotBlank(pluginOptions.obfs ?? pluginOptions.mode),
-          host: getIfNotBlank(
-            pluginOptions['obfs-host'] ?? pluginOptions.host,
-          ),
+          host: getIfNotBlank(pluginOptions['obfs-host'] ?? pluginOptions.host),
         }
         break
       case 'v2ray-plugin': {
@@ -151,7 +149,9 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
             pluginOptions.insecure,
         )
         if (skipCert !== undefined) opts['skip-cert-verify'] = skipCert
-        const fp = getIfNotBlank(pluginOptions.fingerprint ?? pluginOptions.hpkp)
+        const fp = getIfNotBlank(
+          pluginOptions.fingerprint ?? pluginOptions.hpkp,
+        )
         if (fp) opts.fingerprint = fp
         const mux = parsePluginBool(pluginOptions.mux)
         if (mux !== undefined) opts.mux = mux
@@ -346,7 +346,8 @@ export function URI_SS(line: string): IProxyShadowsocksConfig {
   ) {
     proxy['plugin-opts']['skip-cert-verify'] =
       proxy['plugin-opts']['skip-cert-verify'] ??
-      (parseBool(String(insecure)) ?? insecure)
+      parseBool(String(insecure)) ??
+      insecure
   }
 
   return proxy
