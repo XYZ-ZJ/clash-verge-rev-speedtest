@@ -25,10 +25,10 @@ server of its own that the application talks to.
   Section 4. None of them are operated by this project.
 - By default, only the **application update check** (Section 4.3) connects
   automatically on startup unless disabled. The homepage **IP information card**
-  and **DNS leak card** (Section 4.5) are **user-initiated by default** and do
-  not query external endpoints automatically unless you explicitly turn on
-  auto-refresh for those cards. Both are described below, and Section 6 explains
-  how to control them.
+  and **DNS leak card** (Section 4.5), as well as the **speed test**
+  (Section 4.6), are **user-initiated by default** and do not query external
+  endpoints automatically unless you explicitly turn on auto-refresh for those
+  cards. Both are described below, and Section 6 explains how to control them.
 
 ## 2. Who is responsible
 
@@ -63,7 +63,7 @@ It contains:
 - Core runtime files (for example mihomo's `cache.db` and GeoIP/GeoSite
   databases) used by the proxy core.
 
-None of this leaves your device unless you enable WebDAV backup (Section 4.9),
+None of this leaves your device unless you enable WebDAV backup (Section 4.10),
 export a backup yourself, or attach these files to a bug report.
 
 Application logs are deleted automatically after a retention period you choose
@@ -134,7 +134,9 @@ card, the application queries specialised analysis endpoints on demand:
   `https://proxycheck.io/v2/…`, `https://scamalytics.com/ip/…`.
 - **Direct & proxy egress detection:** `https://4.ipw.cn`,
   `https://api.bilibili.com/x/web-interface/zone`, `https://api.ip.sb/geoip`,
-  `https://1.1.1.1/cdn-cgi/trace`, `https://speed.cloudflare.com/meta`.
+  `https://1.1.1.1/cdn-cgi/trace`, `https://speed.cloudflare.com/meta`, plus
+  WebRTC STUN discovery against `stun:stun.cloudflare.com:3478` and
+  `stun:stun.google.com:19302`.
 - **DNS Leak test (user-initiated unless auto-refresh enabled):** queries
   `https://{test_id}.bash.ws` and `https://bash.ws/dnsleak/test/{test_id}?json`
   from the mihomo process, and may inspect EDNS details via
@@ -146,27 +148,35 @@ Each service is operated by an independent third party under its own privacy
 policy; the project has no agreement with any of them. Leave auto-refresh off if
 you only want manual checks.
 
-### 4.6 Latency tests — *user-initiated*
+### 4.6 Network speed test — *user-initiated*
+
+When you click to run a speed test on the Home dashboard, the Rust backend sends
+probe, download and upload test traffic strictly through your local mihomo proxy
+port to `https://speed.cloudflare.com/__down` and
+`https://speed.cloudflare.com/__up`. It runs only when you start a test.
+
+### 4.7 Latency tests — *user-initiated*
 
 Testing a proxy or group sends an HTTP request through that proxy to
 `http://cp.cloudflare.com/generate_204`, or to the test URL you configure.
 
-### 4.7 Streaming availability test — *user-initiated*
+### 4.8 Streaming availability test — *user-initiated*
 
 The unlock test sends requests through your local proxy port to the streaming
 and AI services being tested (Netflix, Disney+, YouTube, Spotify, OpenAI and
 similar). It runs only when you start it, and only through the proxy you have
 selected.
 
-### 4.8 DNS
+### 4.9 DNS
 
 The default generated DNS settings use public overseas resolvers (`1.1.1.1`,
-`8.8.4.4`, `9.9.9.9`, `8.8.8.8`, `https://1.1.1.1/dns-query`,
-`https://dns.google/dns-query`), and your proxy configuration may define
-others. Resolvers see the domain names being resolved. You can change or replace
-them in the DNS settings and in your own configuration.
+`8.8.4.4`, `9.9.9.9`, `8.8.8.8`, `2606:4700:4700::1111`, `2001:4860:4860::8888`,
+`https://1.1.1.1/dns-query`, `https://dns.google/dns-query`), and your proxy
+configuration may define others. Resolvers see the domain names being
+resolved. You can change or replace them in the DNS settings and in your own
+configuration.
 
-### 4.9 WebDAV backup — *disabled until you configure it*
+### 4.10 WebDAV backup — *disabled until you configure it*
 
 If you set up backup, the application uploads a ZIP archive to the WebDAV server
 you specify. The archive contains your profiles, `profiles.yaml`, `config.yaml`,
@@ -175,7 +185,7 @@ the DNS configuration and `verge.yaml`; **WebDAV credentials are stripped from
 inside your profiles are not**. Treat a backup as sensitive and use a server you
 trust. Backups are only transferred to that server.
 
-### 4.10 Local listeners
+### 4.11 Local listeners
 
 The proxy ports and the internal control port bind to `127.0.0.1` only. They are
 not exposed to your network unless you deliberately configure the core to allow
