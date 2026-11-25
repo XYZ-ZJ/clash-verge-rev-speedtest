@@ -78,6 +78,7 @@ export function useQuery<T>(options: QueryOptions<T>): QueryResult<T> {
     refetchInterval,
     refetchIntervalInBackground,
     revalidateOnMount,
+    revalidateIfStale,
     refetchOnWindowFocus,
     refetchOnReconnect,
     staleTime,

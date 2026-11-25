@@ -14,6 +14,23 @@ const CSS_INJECTION_SCOPE_ROOT = '[data-css-injection-root]'
 const CSS_INJECTION_SCOPE_LIMIT =
   ':is(.monaco-editor .view-lines, .monaco-editor .view-line, .monaco-editor .margin, .monaco-editor .margin-view-overlays, .monaco-editor .view-overlays, .monaco-editor [class^="mtk"], .monaco-editor [class*=" mtk"])'
 const TOP_LEVEL_AT_RULES = ['@charset', '@import', '@namespace']
+let cssScopeSupport: boolean | null = null
+
+const canUseCssScope = () => {
+  if (cssScopeSupport !== null) {
+    return cssScopeSupport
+  }
+  try {
+    const testStyle = document.createElement('style')
+    testStyle.textContent = '@scope (:root) { }'
+    document.head.appendChild(testStyle)
+    cssScopeSupport = !!testStyle.sheet?.cssRules?.length
+    document.head.removeChild(testStyle)
+  } catch {
+    cssScopeSupport = false
+  }
+  return cssScopeSupport
+}
 
 const sanitizeBackgroundImageUrl = (rawUrl: string): string => {
   const trimmed = rawUrl.trim()

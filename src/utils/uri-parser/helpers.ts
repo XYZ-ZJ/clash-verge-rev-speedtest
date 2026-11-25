@@ -117,6 +117,13 @@ export function parseBool(value: string | undefined): boolean | undefined {
   return /^(?:true|1)$/i.test(value)
 }
 
+export function parseBoolOrPresence(value: string | undefined): boolean {
+  if (value === undefined) return true
+  const trimmed = value.trim()
+  if (trimmed === '') return true
+  return /^(?:true|1)$/i.test(trimmed)
+}
+
 const INSECURE_QUERY_KEYS = [
   'skip-cert-verify',
   'allowInsecure',
