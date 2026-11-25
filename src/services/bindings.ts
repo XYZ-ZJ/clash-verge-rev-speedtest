@@ -1097,9 +1097,9 @@ export type SpeedTestProgress_Serialize = {
 
 export type SpeedTestResult = {
   latency: number
-  loss_rate: number
-  download_speed: number
-  upload_speed: number
+  loss_rate: number | null
+  download_speed: number | null
+  upload_speed: number | null
   location: string
   timestamp: string
 }
