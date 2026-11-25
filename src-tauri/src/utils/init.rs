@@ -12,9 +12,10 @@ use crate::{
 use anyhow::{Context as _, Result};
 use chrono::{Local, TimeZone as _};
 use clash_verge_logging::Type;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use std::path::Path;
-use std::{path::PathBuf, str::FromStr as _};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr as _,
+};
 use tauri_plugin_shell::ShellExt as _;
 use tokio::fs;
 use tokio::fs::DirEntry;
@@ -95,12 +96,11 @@ async fn clean_log_dir(dir: &Path, day: i64, label: &str) -> Result<()> {
     let mut read_dir = fs::read_dir(dir)
         .await
         .with_context(|| format!("failed to read {label} directory {}", dir.display()))?;
-    while let Some(entry) = read_dir.next_entry().await.with_context(|| {
-        format!(
-            "failed to read next entry in {label} directory {}",
-            dir.display()
-        )
-    })? {
+    while let Some(entry) = read_dir
+        .next_entry()
+        .await
+        .with_context(|| format!("failed to read next entry in {label} directory {}", dir.display()))?
+    {
         // Skip unparsable names visibly instead of silently dropping the error.
         if let Err(err) = prune_expired_log(entry, day).await {
             logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");

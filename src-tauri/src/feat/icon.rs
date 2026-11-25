@@ -85,7 +85,9 @@ fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
                 || v6.is_multicast()
-                || v6.to_ipv4_mapped().is_some_and(|v4| is_disallowed_ip(std::net::IpAddr::V4(v4)))
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_disallowed_ip(std::net::IpAddr::V4(v4)))
         }
     }
 }
@@ -223,7 +225,7 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
     if let Some(Component::Prefix(prefix)) = file_path.components().next()
         && matches!(
             prefix.kind(),
-            std::path::Prefix::UNC(_) | std::path::Prefix::VerbatimUNC(_)
+            std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _)
         )
     {
         return Err("refusing UNC icon path".into());

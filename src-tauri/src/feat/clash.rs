@@ -110,7 +110,10 @@ fn validate_direct_delay_target(host: &str) -> anyhow::Result<()> {
     {
         anyhow::bail!("Refusing direct delay probe to local/internal host without proxy");
     }
-    if lower_host.parse::<std::net::IpAddr>().is_ok_and(is_disallowed_direct_ip) {
+    if lower_host
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(is_disallowed_direct_ip)
+    {
         anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
     }
     Ok(())

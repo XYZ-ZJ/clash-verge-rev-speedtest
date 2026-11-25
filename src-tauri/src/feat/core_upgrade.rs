@@ -325,7 +325,12 @@ fn compare_plain_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
     let (left, right) = (parse(a)?, parse(b)?);
     let width = left.len().max(right.len());
     (0..width)
-        .map(|i| left.get(i).copied().unwrap_or(0).cmp(&right.get(i).copied().unwrap_or(0)))
+        .map(|i| {
+            left.get(i)
+                .copied()
+                .unwrap_or(0)
+                .cmp(&right.get(i).copied().unwrap_or(0))
+        })
         .find(|ord| *ord != std::cmp::Ordering::Equal)
         .or(Some(std::cmp::Ordering::Equal))
 }

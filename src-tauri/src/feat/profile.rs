@@ -41,7 +41,10 @@ async fn record_switched_node(group_name: &str, proxy_name: &str) {
 pub async fn switch_proxy_node(group_name: &str, proxy_name: &str) {
     // 单次带短退避的重试：仅针对可能因内核刚重启/连接抖动导致的瞬时失败。
     // 确定性失败（节点不在分组内等）重试必然再失败，只会多打一条日志。
-    match handle::Handle::mihomo().select_node_for_group(group_name, proxy_name).await {
+    match handle::Handle::mihomo()
+        .select_node_for_group(group_name, proxy_name)
+        .await
+    {
         Ok(_) => {
             record_switched_node(group_name, proxy_name).await;
             announce(Refresh::Proxies);

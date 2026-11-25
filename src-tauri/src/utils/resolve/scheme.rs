@@ -28,7 +28,9 @@ fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
                 || v6.is_multicast()
-                || v6.to_ipv4_mapped().is_some_and(|v4| is_disallowed_ip(std::net::IpAddr::V4(v4)))
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_disallowed_ip(std::net::IpAddr::V4(v4)))
         }
     }
 }
@@ -213,7 +215,7 @@ async fn fetch_profile_item(url: &str, name: Option<&String>) -> Option<PrfItem>
     }
 }
 
-fn post_import_updates(uid: &str) {
+fn post_import_updates(uid: &String) {
     handle::Handle::refresh_verge();
     handle::Handle::notify_profile_changed(uid);
 }

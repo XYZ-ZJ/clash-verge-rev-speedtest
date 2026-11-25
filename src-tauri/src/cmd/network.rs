@@ -377,7 +377,10 @@ async fn run_latency_probes(client: &reqwest::Client) -> CmdResult<(u32, f64, Op
     }
 
     if delays.is_empty() {
-        return Err(super::CommandFailure::coded("speedtest.probeFailed", "all network probes timed out or failed"));
+        return Err(super::CommandFailure::coded(
+            "speedtest.probeFailed",
+            "all network probes timed out or failed",
+        ));
     }
 
     let median_latency = calculate_median(&delays).unwrap_or(0);
@@ -681,7 +684,10 @@ pub async fn test_network_speed(on_progress: tauri::ipc::Channel<SpeedTestProgre
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Err(super::CommandFailure::coded("speedtest.busy", "a speed test is already running"));
+        return Err(super::CommandFailure::coded(
+            "speedtest.busy",
+            "a speed test is already running",
+        ));
     }
 
     let _guard = scopeguard::guard((), |_| {
@@ -843,7 +849,9 @@ pub async fn test_dns_leak() -> CmdResult<std::string::String> {
         .get(format!("https://bash.ws/dnsleak/test/{test_id}?json"))
         .send()
         .await
-        .map_err(|e| super::CommandFailure::coded("dnsleak.fetchFailed", format!("failed to fetch test result: {e}")))?;
+        .map_err(|e| {
+            super::CommandFailure::coded("dnsleak.fetchFailed", format!("failed to fetch test result: {e}"))
+        })?;
 
     let text = res
         .text()

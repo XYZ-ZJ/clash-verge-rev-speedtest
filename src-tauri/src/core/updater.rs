@@ -456,7 +456,9 @@ impl SilentUpdater {
         // returning. Bound the wait so this dialog IPC cannot hang forever;
         // 600s comfortably covers a slow passive install.
         let install = tokio::time::timeout(std::time::Duration::from_secs(600), Self::install(update, bytes));
-        install.await.map_err(|_| anyhow::anyhow!("install timed out (600s)"))??;
+        install
+            .await
+            .map_err(|_| anyhow::anyhow!("install timed out (600s)"))??;
         Self::delete_cache();
         Ok(InstallUpdateOutcome::Installed)
     }

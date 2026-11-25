@@ -34,8 +34,8 @@ pub async fn read_mapping(path: &Path) -> Result<Mapping> {
     let bytes = tokio::fs::read(path)
         .await
         .with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
-    let yaml_str = String::from_utf8(bytes)
-        .with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
+    let yaml_str =
+        String::from_utf8(bytes).with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
     let label = path.to_path_buf();
 
     // Parsing a multi-megabyte profile is pure CPU; keep it off the async worker.
@@ -240,16 +240,12 @@ pub fn get_last_part_and_decode(url: &str) -> Option<String> {
 }
 
 pub fn open_file(path: PathBuf) -> Result<()> {
-    if path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "js" | "jse" | "vbs" | "vbe" | "bat" | "cmd" | "ps1" | "exe" | "msi" | "sh"
-            )
-        })
-    {
+    if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
+        matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "js" | "jse" | "vbs" | "vbe" | "bat" | "cmd" | "ps1" | "exe" | "msi" | "sh"
+        )
+    }) {
         anyhow::bail!(
             "refusing to execute script or executable via default opener: {}",
             path.display()

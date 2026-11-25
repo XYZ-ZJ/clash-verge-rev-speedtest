@@ -162,8 +162,8 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            let metadata = fs::metadata(&key_path)
-                .map_err(|e| anyhow::anyhow!("Failed to stat encryption key: {}", e))?;
+            let metadata =
+                fs::metadata(&key_path).map_err(|e| anyhow::anyhow!("Failed to stat encryption key: {}", e))?;
             if metadata.permissions().mode() & 0o777 != 0o600 {
                 let _ = fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600));
             }

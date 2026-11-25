@@ -922,7 +922,8 @@ mod tests {
     fn startup_scope_uses_the_runtime_lan_binding() -> anyhow::Result<()> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr()?.port();
-        let scope = ListenerBindScope::from_mapping(&mapping("allow-lan: true\nbind-address: 0.0.0.0\nipv6: false\n")?)?;
+        let scope =
+            ListenerBindScope::from_mapping(&mapping("allow-lan: true\nbind-address: 0.0.0.0\nipv6: false\n")?)?;
         assert!(!scope.mixed_port_is_available(port));
         Ok(())
     }

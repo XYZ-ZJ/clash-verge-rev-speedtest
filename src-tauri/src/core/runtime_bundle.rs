@@ -41,8 +41,8 @@ pub(crate) async fn collect_runtime_bundle(config_file: &Path, core_path: &Path)
         .to_path_buf();
     // collect_runtime_parts canonicalizes provider paths and probes geo assets
     // with synchronous filesystem calls; keep that off the async workers.
-    let parts = crate::process::AsyncHandler::spawn_blocking(move || collect_runtime_parts(config, &config_root))
-        .await??;
+    let parts =
+        crate::process::AsyncHandler::spawn_blocking(move || collect_runtime_parts(config, &config_root)).await??;
     Ok(RuntimeBundle {
         yaml: serde_yaml_ng::to_string(&parts.config).context("failed to serialize service runtime config")?,
         assets: parts.assets,
@@ -169,7 +169,7 @@ fn collect_runtime_parts(mut config: Value, config_root: &Path) -> Result<Runtim
         &mut assets,
         &mut remote_providers,
     )?;
-    collect_ssh_private_keys(&mut config, config_root, &mut destinations, &mut assets);
+    collect_ssh_private_keys(&mut config, &config_root, &mut destinations, &mut assets);
     let canonical_root = std::fs::canonicalize(config_root).unwrap_or_else(|_| config_root.to_path_buf());
     for filename in GEO_ASSETS {
         let source = config_root.join(filename);
