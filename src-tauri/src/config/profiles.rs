@@ -29,7 +29,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri_plugin_mihomo::models::{Proxies, ProxyType};
-use tokio::{fs, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 pub(crate) static PROFILE_WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 

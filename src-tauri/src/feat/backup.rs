@@ -49,17 +49,12 @@ fn validate_backup_name(filename: &str) -> Result<()> {
     }
 }
 
-/// Reloads restored configs into memory while preserving WebDAV credentials
-/// and stripping executable startup/CSS injection fields from untrusted archives.
-async fn finalize_restored_verge_config(
+fn sanitize_restored_verge(
+    restored: &mut IVerge,
     webdav_url: Option<String>,
     webdav_username: Option<String>,
     webdav_password: Option<String>,
-) -> Result<()> {
-    let config_write = Config::lock_config_write().await;
-
-    // A broken restored `verge.yaml` is a restore failure, not a reason to load defaults.
-    let mut restored = help::read_yaml::<IVerge>(&verge_path()?).await?;
+) {
     restored.webdav_url = webdav_url;
     restored.webdav_username = webdav_username;
     restored.webdav_password = webdav_password;
@@ -89,9 +84,9 @@ async fn finalize_restored_verge_config(
         );
         restored.clash_core = Some("verge-mihomo".into());
     }
-    restored.save_file().await?;
+}
 
-    let mut restored_profiles = IProfiles::new().await;
+fn sanitize_restored_profiles(restored_profiles: &mut IProfiles) {
     if let Some(items) = restored_profiles.items.as_mut() {
         for item in items.iter_mut() {
             if let Some(file) = item.file.as_deref()
@@ -106,6 +101,24 @@ async fn finalize_restored_verge_config(
             }
         }
     }
+}
+
+/// Reloads restored configs into memory while preserving WebDAV credentials
+/// and stripping executable startup/CSS injection fields from untrusted archives.
+async fn finalize_restored_verge_config(
+    webdav_url: Option<String>,
+    webdav_username: Option<String>,
+    webdav_password: Option<String>,
+) -> Result<()> {
+    let config_write = Config::lock_config_write().await;
+
+    // A broken restored `verge.yaml` is a restore failure, not a reason to load defaults.
+    let mut restored = help::read_yaml::<IVerge>(&verge_path()?).await?;
+    sanitize_restored_verge(&mut restored, webdav_url, webdav_username, webdav_password);
+    restored.save_file().await?;
+
+    let mut restored_profiles = IProfiles::new().await;
+    sanitize_restored_profiles(&mut restored_profiles);
     restored_profiles.save_file().await?;
 
     let restored_clash = IClashTemp::new().await;
@@ -268,7 +281,10 @@ fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> 
         let is_dir = entry.is_dir();
 
         if !is_allowed_backup_rel_path(&rel_path, is_dir) {
-            return Err(anyhow!("backup archive contains disallowed path: {}", rel_path.display()));
+            return Err(anyhow!(
+                "backup archive contains disallowed path: {}",
+                rel_path.display()
+            ));
         }
         if is_dir {
             continue;

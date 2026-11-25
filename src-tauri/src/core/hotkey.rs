@@ -425,7 +425,11 @@ impl Hotkey {
         let mut first_error = None;
         for (key, func) in add.iter() {
             if let Err(err) = self.register(key, func).await {
-                logging!(error, Type::Hotkey, "Failed to register hotkey {key} -> {func}: {err:?}");
+                logging!(
+                    error,
+                    Type::Hotkey,
+                    "Failed to register hotkey {key} -> {func}: {err:?}"
+                );
                 if first_error.is_none() {
                     first_error = Some(err);
                 }

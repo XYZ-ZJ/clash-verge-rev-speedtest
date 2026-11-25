@@ -208,9 +208,7 @@ fn register_remote_provider(
         .find(|declared| declared.provider.destination == destination)
     {
         Some(declared) if declared.provider.url == url => {}
-        Some(_) => {
-            bail!("runtime provider destination {destination:?} is declared for two different sources")
-        }
+        Some(_) => bail!("runtime provider destination {destination:?} is declared for two different sources"),
         None => {
             if !destinations.insert(destination.clone()) {
                 bail!("runtime provider destination {destination:?} is claimed more than once");

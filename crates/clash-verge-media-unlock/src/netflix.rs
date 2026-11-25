@@ -38,7 +38,7 @@ pub(super) async fn check_netflix(client: &Client) -> UnlockItem {
         return cdn;
     }
 
-    let (r1, r2) = tokio::join!(check_title(client, "81280792"), check_title(client, "70143836"),);
+    let (r1, r2) = tokio::join!(check_title(client, "81280792"), check_title(client, "70143836"));
 
     let (Ok(status1), Ok(status2)) = (r1, r2) else {
         return item("Failed");

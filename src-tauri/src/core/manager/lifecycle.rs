@@ -912,7 +912,11 @@ impl CoreManager {
                 _ = &mut wait => break,
                 _ = &mut exit_poll => {
                     if Handle::global().is_exiting() {
-                        logging!(info, Type::Core, "app is exiting; abandoning the service readiness wait");
+                        logging!(
+                            info,
+                            Type::Core,
+                            "app is exiting; abandoning the service readiness wait"
+                        );
                         break;
                     }
                     if tokio::time::Instant::now() >= deadline {

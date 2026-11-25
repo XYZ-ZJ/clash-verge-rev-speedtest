@@ -287,7 +287,7 @@ async fn handle_update_error<E: std::fmt::Display>(
     e: E,
     current_profile: Option<&String>,
 ) -> CmdResult<ValidationOutcome> {
-    logging!(warn, Type::Cmd, "更新过程发生错误: {}", e,);
+    logging!(warn, Type::Cmd, "更新过程发生错误: {}", e);
     discard_and_restore(current_profile).await?;
     let message: String = e.to_string().into();
     handle::Handle::notice(NoticeStatus::ConfigValidateBootError, message.as_str());

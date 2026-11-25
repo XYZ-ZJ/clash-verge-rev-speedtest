@@ -94,7 +94,9 @@ fn is_disallowed_direct_ip(ip: std::net::IpAddr) -> bool {
                 || v6.is_unspecified()
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
-                || v6.to_ipv4_mapped().is_some_and(|v4| is_disallowed_direct_ip(std::net::IpAddr::V4(v4)))
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_disallowed_direct_ip(std::net::IpAddr::V4(v4)))
         }
     }
 }
@@ -114,14 +116,57 @@ fn validate_direct_delay_target(host: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn probe_https_delay(host: &str, port: u16, proxy_port: Option<u16>) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::TcpStream;
+
+    let mut buf = BytesMut::with_capacity(1024);
+    let stream = match proxy_port {
+        Some(pp) => {
+            let mut s = TcpStream::connect(format!("127.0.0.1:{pp}")).await?;
+            s.write_all(format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n").as_bytes())
+                .await?;
+            s.read_buf(&mut buf).await?;
+            if !buf.windows(3).any(|w| w == b"200") {
+                return Err(anyhow::anyhow!("Proxy CONNECT failed"));
+            }
+            s
+        }
+        None => TcpStream::connect(format!("{host}:{port}")).await?,
+    };
+    let connector = tokio_rustls::TlsConnector::from(Arc::clone(&TLS_CONFIG));
+    let server_name = rustls::pki_types::ServerName::try_from(host)
+        .map_err(|_| anyhow::anyhow!("Invalid DNS name: {host}"))?
+        .to_owned();
+    connector.connect(server_name, stream).await?;
+    Ok(())
+}
+
+async fn probe_http_delay(url: &str, host: &str, port: u16, proxy_port: Option<u16>) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::TcpStream;
+
+    let mut buf = BytesMut::with_capacity(1024);
+    let (mut stream, req) = match proxy_port {
+        Some(pp) => (
+            TcpStream::connect(format!("127.0.0.1:{pp}")).await?,
+            format!("HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        ),
+        None => (
+            TcpStream::connect(format!("{host}:{port}")).await?,
+            format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        ),
+    };
+    stream.write_all(req.as_bytes()).await?;
+    let _ = stream.read(&mut buf).await?;
+    Ok(())
+}
+
 /// Test delay to a URL through proxy.
 /// HTTPS: measures TLS handshake time. HTTP: measures HEAD round-trip time.
 #[tracing::instrument(skip_all, level = "trace", fields(url = %url))]
 pub async fn test_delay(url: String) -> anyhow::Result<u32> {
-    use std::sync::Arc;
     use std::time::Duration;
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-    use tokio::net::TcpStream;
     use tokio::time::Instant;
 
     let parsed = tauri::Url::parse(&url)?;
@@ -149,42 +194,11 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let start = Instant::now();
-        let mut buf = BytesMut::with_capacity(1024);
-
         if is_https {
-            let stream = match proxy_port {
-                Some(pp) => {
-                    let mut s = TcpStream::connect(format!("127.0.0.1:{pp}")).await?;
-                    s.write_all(format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n").as_bytes())
-                        .await?;
-                    s.read_buf(&mut buf).await?;
-                    if !buf.windows(3).any(|w| w == b"200") {
-                        return Err(anyhow::anyhow!("Proxy CONNECT failed"));
-                    }
-                    s
-                }
-                None => TcpStream::connect(format!("{host}:{port}")).await?,
-            };
-            let connector = tokio_rustls::TlsConnector::from(Arc::clone(&TLS_CONFIG));
-            let server_name = rustls::pki_types::ServerName::try_from(host.as_str())
-                .map_err(|_| anyhow::anyhow!("Invalid DNS name: {host}"))?
-                .to_owned();
-            connector.connect(server_name, stream).await?;
+            probe_https_delay(&host, port, proxy_port).await?;
         } else {
-            let (mut stream, req) = match proxy_port {
-                Some(pp) => (
-                    TcpStream::connect(format!("127.0.0.1:{pp}")).await?,
-                    format!("HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
-                ),
-                None => (
-                    TcpStream::connect(format!("{host}:{port}")).await?,
-                    format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
-                ),
-            };
-            stream.write_all(req.as_bytes()).await?;
-            let _ = stream.read(&mut buf).await?;
+            probe_http_delay(&url, &host, port, proxy_port).await?;
         }
-
         Ok((start.elapsed().as_millis() as u32).max(1))
     })
     .await

@@ -354,7 +354,10 @@ pub(crate) fn trusted_service_evidence() -> Result<bool> {
         Err(error) => return Err(error).context("failed to inspect systemd service registration"),
     };
     if !output.status.success() {
-        bail!("systemd service registration probe failed with status {}", output.status);
+        bail!(
+            "systemd service registration probe failed with status {}",
+            output.status
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim() != "not-found")
 }

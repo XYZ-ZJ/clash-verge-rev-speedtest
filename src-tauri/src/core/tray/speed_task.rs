@@ -60,8 +60,7 @@ impl TraySpeedController {
         let task_gen = self.generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
         let generation = Arc::clone(&self.generation);
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
-        let task =
-            AsyncHandler::spawn(move || Self::run_speed_stream_loop(task_gen, generation, speed_connection_id));
+        let task = AsyncHandler::spawn(move || Self::run_speed_stream_loop(task_gen, generation, speed_connection_id));
 
         *guard = Some(task);
     }
@@ -102,29 +101,7 @@ impl TraySpeedController {
                 Some((task_generation, speed_stream.connection_id)),
             );
 
-            loop {
-                let next_state = speed_stream
-                    .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
-                        handle::Handle::global().is_exiting()
-                            || generation.load(Ordering::Acquire) != task_generation
-                    })
-                    .await;
-
-                match next_state {
-                    connections_stream::StreamConsumeState::Event(speed_event) => {
-                        Self::apply_tray_speed(speed_event.up, speed_event.down);
-                    }
-                    connections_stream::StreamConsumeState::Stale => {
-                        logging!(debug, Type::Tray, "托盘速率流长时间未收到有效数据，触发重连");
-                        Self::apply_tray_speed(0, 0);
-                        break;
-                    }
-                    connections_stream::StreamConsumeState::Closed
-                    | connections_stream::StreamConsumeState::ExitRequested => {
-                        break;
-                    }
-                }
-            }
+            Self::consume_speed_stream(&mut speed_stream, task_generation, &generation).await;
 
             Self::disconnect_speed_connection(&speed_connection_id, Some(task_generation)).await;
 
@@ -141,6 +118,35 @@ impl TraySpeedController {
         }
 
         Self::clear_connection_for_generation(&speed_connection_id, task_generation);
+    }
+
+    async fn consume_speed_stream(
+        speed_stream: &mut connections_stream::MihomoWsEventStream<connections_stream::TrafficSpeedEvent>,
+        task_generation: u64,
+        generation: &Arc<AtomicU64>,
+    ) {
+        loop {
+            let next_state = speed_stream
+                .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
+                    handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation
+                })
+                .await;
+
+            match next_state {
+                connections_stream::StreamConsumeState::Event(speed_event) => {
+                    Self::apply_tray_speed(speed_event.up, speed_event.down);
+                }
+                connections_stream::StreamConsumeState::Stale => {
+                    logging!(debug, Type::Tray, "托盘速率流长时间未收到有效数据，触发重连");
+                    Self::apply_tray_speed(0, 0);
+                    break;
+                }
+                connections_stream::StreamConsumeState::Closed
+                | connections_stream::StreamConsumeState::ExitRequested => {
+                    break;
+                }
+            }
+        }
     }
 
     fn stop_task(&self) {

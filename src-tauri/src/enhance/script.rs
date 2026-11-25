@@ -49,7 +49,8 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
                 Type::Config,
                 "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; worker keeps running"
             );
-            (Err(format!("script execution timed out after {SCRIPT_TIMEOUT:?}")), vec![])
+            let msg = format!("script execution timed out after {SCRIPT_TIMEOUT:?}");
+            (Err(msg), vec![])
         }
     };
 

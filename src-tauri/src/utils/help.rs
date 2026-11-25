@@ -34,8 +34,8 @@ pub async fn read_mapping(path: &Path) -> Result<Mapping> {
     let bytes = tokio::fs::read(path)
         .await
         .with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
-    let yaml_str =
-        String::from_utf8(bytes).with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
+    let yaml_str = String::from_utf8(bytes)
+        .with_context(|| format!("failed to read the file \"{}\"", path.display()))?;
     let label = path.to_path_buf();
 
     // Parsing a multi-megabyte profile is pure CPU; keep it off the async worker.
@@ -250,7 +250,10 @@ pub fn open_file(path: PathBuf) -> Result<()> {
             )
         })
     {
-        anyhow::bail!("refusing to execute script or executable via default opener: {}", path.display());
+        anyhow::bail!(
+            "refusing to execute script or executable via default opener: {}",
+            path.display()
+        );
     }
     open::that_detached(path.as_os_str())?;
     Ok(())

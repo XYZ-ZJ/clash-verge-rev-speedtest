@@ -208,13 +208,13 @@ async fn collect_profile_items(profiles: &IProfiles) -> Result<ProfileItems> {
     } = ProfileItems::default();
 
     let (merge_item, script_item, rules_item, proxies_item, groups_item, global_merge, global_script) = tokio::join!(
-        chain_item_or_default(profiles.get_item(&merge_uid).ok(), || default_merge,),
-        chain_item_or_default(profiles.get_item(&script_uid).ok(), || default_script,),
-        chain_item_or_default(profiles.get_item(&rules_uid).ok(), || default_rules,),
-        chain_item_or_default(profiles.get_item(&proxies_uid).ok(), || default_proxies,),
-        chain_item_or_default(profiles.get_item(&groups_uid).ok(), || default_groups,),
-        chain_item_or_default(profiles.get_item("Merge").ok(), || default_global_merge,),
-        chain_item_or_default(profiles.get_item("Script").ok(), || default_global_script,),
+        chain_item_or_default(profiles.get_item(&merge_uid).ok(), || default_merge),
+        chain_item_or_default(profiles.get_item(&script_uid).ok(), || default_script),
+        chain_item_or_default(profiles.get_item(&rules_uid).ok(), || default_rules),
+        chain_item_or_default(profiles.get_item(&proxies_uid).ok(), || default_proxies),
+        chain_item_or_default(profiles.get_item(&groups_uid).ok(), || default_groups),
+        chain_item_or_default(profiles.get_item("Merge").ok(), || default_global_merge),
+        chain_item_or_default(profiles.get_item("Script").ok(), || default_global_script),
     );
 
     Ok(ProfileItems {

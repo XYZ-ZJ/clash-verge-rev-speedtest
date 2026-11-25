@@ -248,7 +248,10 @@ impl NetworkManager {
             .map_err(|e| Self::context_reqwest_error(e, "Failed to read response body"))?
         {
             if bytes.len() + chunk.len() > Self::MAX_TEXT_BODY_BYTES {
-                return Err(anyhow!("response body exceeded the {} byte limit", Self::MAX_TEXT_BODY_BYTES));
+                return Err(anyhow!(
+                    "response body exceeded the {} byte limit",
+                    Self::MAX_TEXT_BODY_BYTES
+                ));
             }
             bytes.extend_from_slice(&chunk);
         }
