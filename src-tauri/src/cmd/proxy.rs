@@ -205,6 +205,41 @@ fn scan_provider_file(full_path: &std::path::Path, features: &mut BTreeMap<Strin
     features.extend(file_feats);
 }
 
+fn scan_provider_path(
+    provider_map: &Mapping,
+    app_dir: Option<&std::path::Path>,
+    entry: &mut BTreeMap<String, NodeFeature>,
+) {
+    let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) else {
+        return;
+    };
+    if raw_path.contains("..") || raw_path.contains('\0') {
+        return;
+    }
+    let path = std::path::Path::new(raw_path);
+    if is_unc_or_non_disk_prefix(path) {
+        return;
+    }
+    let Some(dir) = app_dir else {
+        return;
+    };
+    let Ok(canonical_dir) = std::fs::canonicalize(dir) else {
+        return;
+    };
+    let candidate = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        dir.join(path)
+    };
+    let Ok(canonical_path) = std::fs::canonicalize(&candidate) else {
+        return;
+    };
+    if !canonical_path.starts_with(&canonical_dir) || !canonical_path.is_file() {
+        return;
+    }
+    scan_provider_file(&canonical_path, entry);
+}
+
 fn scan_providers(providers: &Mapping, provider_features: &mut BTreeMap<String, BTreeMap<String, NodeFeature>>) {
     let app_dir = crate::utils::dirs::app_home_dir().ok();
     for (key, val) in providers {
@@ -221,33 +256,7 @@ fn scan_providers(providers: &Mapping, provider_features: &mut BTreeMap<String, 
             scan_proxies_slice(payload, entry);
         }
 
-        if let Some(raw_path) = provider_map.get("path").and_then(|v| v.as_str()) {
-            if raw_path.contains("..") || raw_path.contains('\0') {
-                continue;
-            }
-            let path = std::path::Path::new(raw_path);
-            if is_unc_or_non_disk_prefix(path) {
-                continue;
-            }
-            let Some(ref dir) = app_dir else {
-                continue;
-            };
-            let Ok(canonical_dir) = std::fs::canonicalize(dir) else {
-                continue;
-            };
-            let candidate = if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                dir.join(path)
-            };
-            let Ok(canonical_path) = std::fs::canonicalize(&candidate) else {
-                continue;
-            };
-            if !canonical_path.starts_with(&canonical_dir) || !canonical_path.is_file() {
-                continue;
-            }
-            scan_provider_file(&canonical_path, entry);
-        }
+        scan_provider_path(provider_map, app_dir.as_deref(), entry);
     }
 }
 

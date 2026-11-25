@@ -103,29 +103,13 @@ impl WebDavClient {
 
         let parsed_base_url = tauri::Url::parse(config.url.as_str())
             .map_err(|e| anyhow::Error::msg(format!("Invalid WebDAV URL: {e}")))?;
-        let base_scheme = parsed_base_url.scheme().to_ascii_lowercase();
-        let base_host = parsed_base_url.host_str().map(|h| h.to_ascii_lowercase());
-        let base_port = parsed_base_url.port_or_known_default();
-
         let client = reqwest_dav::ClientBuilder::new()
             .set_agent(
                 reqwest::Client::builder()
                     .use_rustls_tls()
                     .timeout(Duration::from_secs(op.timeout()))
                     .user_agent(format!("clash-verge/{APP_VERSION} ({OS} WebDAV-Client)"))
-                    .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                        if attempt.previous().len() >= 5 {
-                            return attempt.error("重定向次数过多");
-                        }
-                        let target = attempt.url();
-                        let same_scheme = target.scheme().eq_ignore_ascii_case(&base_scheme);
-                        let same_host = target.host_str().map(|h| h.to_ascii_lowercase()) == base_host;
-                        let same_port = target.port_or_known_default() == base_port;
-                        if !same_scheme || !same_host || !same_port {
-                            return attempt.error("Refusing cross-origin or scheme-downgrade WebDAV redirect");
-                        }
-                        attempt.follow()
-                    }))
+                    .redirect(build_webdav_redirect_policy(&parsed_base_url))
                     .build()?,
             )
             .set_host(config.url.into())
@@ -134,44 +118,7 @@ impl WebDavClient {
 
         // 直接使用 MKCOL；部分服务器的 depth-0 PROPFIND 会误报解码错误。
         if let Err(e) = client.mkcol(dirs::BACKUP_DIR).await {
-            let (status_code, message) = match &e {
-                reqwest_dav::Error::Decode(reqwest_dav::DecodeError::Server(server_err)) => {
-                    (Some(server_err.response_code), Some(server_err.message.as_str()))
-                }
-                reqwest_dav::Error::Decode(reqwest_dav::DecodeError::StatusMismatched(status_err)) => {
-                    (Some(status_err.response_code), None)
-                }
-                reqwest_dav::Error::Reqwest(http_err) => (http_err.status().map(|s| s.as_u16()), None),
-                _ => (None, None),
-            };
-
-            // 409 表示父目录不存在，不能按消息启发式处理。
-            if status_code == Some(409) {
-                logging!(
-                    warn,
-                    Type::Backup,
-                    "Backup directory cannot be created because its parent folder does not exist"
-                );
-                self.reset();
-                return Err(anyhow::Error::msg(
-                    "Failed to create backup directory: parent directory does not exist",
-                ));
-            }
-
-            // 405 是标准的已存在响应；部分服务器只在消息里说明。
-            let already_exists = status_code == Some(405)
-                || message.is_some_and(|m| {
-                    let m = m.to_ascii_lowercase();
-                    m.contains("already exist") || m.contains("already taken")
-                });
-
-            if already_exists {
-                logging!(info, Type::Backup, "Backup directory already exists");
-            } else {
-                logging!(warn, Type::Backup, "Failed to create backup directory: {}", e);
-                self.reset();
-                return Err(anyhow::Error::msg(format!("Failed to create backup directory: {}", e)));
-            }
+            self.handle_mkcol_error(e)?;
         } else {
             logging!(info, Type::Backup, "Successfully created backup directory");
         }
@@ -185,6 +132,48 @@ impl WebDavClient {
         }
 
         Ok(client)
+    }
+
+    fn handle_mkcol_error(&self, e: reqwest_dav::Error) -> Result<(), Error> {
+        let (status_code, message) = match &e {
+            reqwest_dav::Error::Decode(reqwest_dav::DecodeError::Server(server_err)) => {
+                (Some(server_err.response_code), Some(server_err.message.as_str()))
+            }
+            reqwest_dav::Error::Decode(reqwest_dav::DecodeError::StatusMismatched(status_err)) => {
+                (Some(status_err.response_code), None)
+            }
+            reqwest_dav::Error::Reqwest(http_err) => (http_err.status().map(|s| s.as_u16()), None),
+            _ => (None, None),
+        };
+
+        // 409 表示父目录不存在，不能按消息启发式处理。
+        if status_code == Some(409) {
+            logging!(
+                warn,
+                Type::Backup,
+                "Backup directory cannot be created because its parent folder does not exist"
+            );
+            self.reset();
+            return Err(anyhow::Error::msg(
+                "Failed to create backup directory: parent directory does not exist",
+            ));
+        }
+
+        // 405 是标准的已存在响应；部分服务器只在消息里说明。
+        let already_exists = status_code == Some(405)
+            || message.is_some_and(|m| {
+                let m = m.to_ascii_lowercase();
+                m.contains("already exist") || m.contains("already taken")
+            });
+
+        if already_exists {
+            logging!(info, Type::Backup, "Backup directory already exists");
+            Ok(())
+        } else {
+            logging!(warn, Type::Backup, "Failed to create backup directory: {}", e);
+            self.reset();
+            Err(anyhow::Error::msg(format!("Failed to create backup directory: {}", e)))
+        }
     }
 
     pub fn reset(&self) {
@@ -270,6 +259,26 @@ impl WebDavClient {
         timeout(Duration::from_secs(TIMEOUT_DELETE), fut).await??;
         Ok(())
     }
+}
+
+fn build_webdav_redirect_policy(parsed_base_url: &tauri::Url) -> reqwest::redirect::Policy {
+    let base_scheme = parsed_base_url.scheme().to_ascii_lowercase();
+    let base_host = parsed_base_url.host_str().map(|h| h.to_ascii_lowercase());
+    let base_port = parsed_base_url.port_or_known_default();
+
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= 5 {
+            return attempt.error("重定向次数过多");
+        }
+        let target = attempt.url();
+        let same_scheme = target.scheme().eq_ignore_ascii_case(&base_scheme);
+        let same_host = target.host_str().map(|h| h.to_ascii_lowercase()) == base_host;
+        let same_port = target.port_or_known_default() == base_port;
+        if !same_scheme || !same_host || !same_port {
+            return attempt.error("Refusing cross-origin or scheme-downgrade WebDAV redirect");
+        }
+        attempt.follow()
+    })
 }
 
 fn parse_webdav_list(xml: &str) -> Result<Vec<ListEntity>, reqwest_dav::Error> {

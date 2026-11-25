@@ -47,7 +47,7 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
             logging!(
                 warn,
                 Type::Config,
-                "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; its worker thread keeps running until it finishes"
+                "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; worker keeps running"
             );
             (Err(format!("script execution timed out after {SCRIPT_TIMEOUT:?}")), vec![])
         }

@@ -41,10 +41,8 @@ pub(crate) async fn collect_runtime_bundle(config_file: &Path, core_path: &Path)
         .to_path_buf();
     // collect_runtime_parts canonicalizes provider paths and probes geo assets
     // with synchronous filesystem calls; keep that off the async workers.
-    let parts = crate::process::AsyncHandler::spawn_blocking(move || {
-        collect_runtime_parts(config, &config_root)
-    })
-    .await??;
+    let parts = crate::process::AsyncHandler::spawn_blocking(move || collect_runtime_parts(config, &config_root))
+        .await??;
     Ok(RuntimeBundle {
         yaml: serde_yaml_ng::to_string(&parts.config).context("failed to serialize service runtime config")?,
         assets: parts.assets,
@@ -194,6 +192,73 @@ fn collect_runtime_parts(mut config: Value, config_root: &Path) -> Result<Runtim
     })
 }
 
+fn register_remote_provider(
+    section: &'static str,
+    name: &Value,
+    raw_path: &str,
+    url: String,
+    config_root: &Path,
+    destinations: &mut HashSet<String>,
+    remote_providers: &mut Vec<RemoteProviderRef>,
+) -> Result<String> {
+    let destination = provider_destination(config_root, raw_path)?;
+    // Reserve remote destinations too; copied and downloaded files must not collide.
+    match remote_providers
+        .iter()
+        .find(|declared| declared.provider.destination == destination)
+    {
+        Some(declared) if declared.provider.url == url => {}
+        Some(_) => {
+            bail!("runtime provider destination {destination:?} is declared for two different sources")
+        }
+        None => {
+            if !destinations.insert(destination.clone()) {
+                bail!("runtime provider destination {destination:?} is claimed more than once");
+            }
+            remote_providers.push(RemoteProviderRef {
+                section,
+                name: name.as_str().unwrap_or_default().to_owned(),
+                provider: RemoteProvider {
+                    destination: destination.clone(),
+                    url,
+                },
+            });
+        }
+    }
+    Ok(destination)
+}
+
+fn collect_local_provider(
+    name: &Value,
+    raw_path: &str,
+    config_root: &Path,
+    destinations: &mut HashSet<String>,
+    assets: &mut Vec<RuntimeAsset>,
+) -> Result<Option<String>> {
+    if !is_local_path(raw_path) {
+        bail!("local provider {name:?} uses disallowed UNC or device path: {raw_path:?}");
+    }
+    let Ok(source) = local_provider_source(config_root, raw_path) else {
+        if std::path::Path::new(raw_path).is_absolute() || provider_destination(config_root, raw_path).is_err() {
+            bail!("local provider {name:?} path is outside the config root: {raw_path:?}");
+        }
+        logging!(
+            warn,
+            Type::Config,
+            "local provider {name:?} is unavailable at {raw_path:?}; leaving its path to the core"
+        );
+        return Ok(None);
+    };
+    let destination = destination_below_root(config_root, &source)?;
+    if destinations.insert(destination.clone()) {
+        assets.push(RuntimeAsset {
+            source: source.to_string_lossy().into_owned(),
+            destination: destination.clone(),
+        });
+    }
+    Ok(Some(destination))
+}
+
 /// Rewrites provider paths and records copied assets separately from core-downloaded providers.
 /// Remote URLs let the service decide whether a core download cache remains reusable.
 fn collect_provider_assets(
@@ -223,33 +288,15 @@ fn collect_provider_assets(
         let is_remote = provider.get("type").and_then(Value::as_str) == Some("http");
         let url = provider.get("url").and_then(Value::as_str).map(str::to_owned);
         let destination = match (is_remote, url) {
-            (true, Some(url)) => {
-                let destination = provider_destination(config_root, raw_path)?;
-                // Reserve remote destinations too; copied and downloaded files must not collide.
-                match remote_providers
-                    .iter()
-                    .find(|declared| declared.provider.destination == destination)
-                {
-                    Some(declared) if declared.provider.url == url => {}
-                    Some(_) => {
-                        bail!("runtime provider destination {destination:?} is declared for two different sources")
-                    }
-                    None => {
-                        if !destinations.insert(destination.clone()) {
-                            bail!("runtime provider destination {destination:?} is claimed more than once");
-                        }
-                        remote_providers.push(RemoteProviderRef {
-                            section,
-                            name: name.as_str().unwrap_or_default().to_owned(),
-                            provider: RemoteProvider {
-                                destination: destination.clone(),
-                                url,
-                            },
-                        });
-                    }
-                }
-                destination
-            }
+            (true, Some(url)) => register_remote_provider(
+                section,
+                name,
+                raw_path,
+                url,
+                config_root,
+                destinations,
+                remote_providers,
+            )?,
             (true, None) => {
                 if !is_local_path(raw_path) || provider_destination(config_root, raw_path).is_err() {
                     logging!(
@@ -258,40 +305,20 @@ fn collect_provider_assets(
                         "remote provider {name:?} declares no url with unsafe path {raw_path:?}; stripping path"
                     );
                     provider.remove("path");
-                    continue;
-                }
-                logging!(
-                    warn,
-                    Type::Config,
-                    "remote provider {name:?} declares no url; leaving its path to the core"
-                );
-                continue;
-            }
-            (false, _) => {
-                if !is_local_path(raw_path) {
-                    bail!("local provider {name:?} uses disallowed UNC or device path: {raw_path:?}");
-                }
-                let Ok(source) = local_provider_source(config_root, raw_path) else {
-                    if std::path::Path::new(raw_path).is_absolute()
-                        || provider_destination(config_root, raw_path).is_err()
-                    {
-                        bail!("local provider {name:?} path is outside the config root: {raw_path:?}");
-                    }
+                } else {
                     logging!(
                         warn,
                         Type::Config,
-                        "local provider {name:?} is unavailable at {raw_path:?}; leaving its path to the core"
+                        "remote provider {name:?} declares no url; leaving its path to the core"
                     );
+                }
+                continue;
+            }
+            (false, _) => {
+                let Some(dest) = collect_local_provider(name, raw_path, config_root, destinations, assets)? else {
                     continue;
                 };
-                let destination = destination_below_root(config_root, &source)?;
-                if destinations.insert(destination.clone()) {
-                    assets.push(RuntimeAsset {
-                        source: source.to_string_lossy().into_owned(),
-                        destination: destination.clone(),
-                    });
-                }
-                destination
+                dest
             }
         };
         provider.insert(Value::String("path".to_owned()), Value::String(destination));
@@ -348,7 +375,10 @@ fn collect_ssh_private_keys(
             proxy.remove("private-key");
             continue;
         }
-        let Some(source) = local_provider_source(config_root, &raw_path).ok().filter(|source| source.is_file()) else {
+        let Some(source) = local_provider_source(config_root, &raw_path)
+            .ok()
+            .filter(|source| source.is_file())
+        else {
             let name = proxy.get("name").and_then(Value::as_str).unwrap_or_default();
             logging!(
                 warn,

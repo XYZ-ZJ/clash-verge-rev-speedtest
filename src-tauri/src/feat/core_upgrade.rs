@@ -62,9 +62,7 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     if !force && installed == latest {
         return Ok(CoreUpgradeReport { upgraded: false });
     }
-    if !force
-        && let Some(std::cmp::Ordering::Greater) = compare_plain_versions(&installed, &latest)
-    {
+    if !force && compare_plain_versions(&installed, &latest) == Some(std::cmp::Ordering::Greater) {
         // GitHub moving `latest` backwards must not silently downgrade an
         // installed core (which service mode would even copy into the
         // administrator-approved directory).
@@ -116,42 +114,7 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     }
 
     if let Err(error) = result {
-        // Put the previous core back when its file is gone or its process is down. A failure
-        // after the new core started must keep the new file instead. A service that refused the
-        // new core also restores: leaving the new file would make a retry read the new version
-        // and report nothing to do while the service keeps running the old core.
-        let core_is_down = matches!(*CoreManager::global().get_running_mode(), RunningMode::NotRunning);
-        if restorable
-            && (matches!(service_staging, ServiceStaging::Refused) || core_is_down || !target.exists())
-            && std::fs::rename(&rollback, &target).is_ok()
-        {
-            logging!(warn, Type::Core, "core upgrade: rolled back to {installed:?}");
-            // Only a staging that SUCCEEDED left the failing bytes in the approved copy, and only
-            // then must the restore reach it too — otherwise the restart below would spawn the
-            // very core that just failed. Refused or never-attempted staging left the approved
-            // copy untouched, and re-staging would raise an elevation prompt for a no-op. This is
-            // deliberately not gated on the current running mode, which reads NotRunning after
-            // the very crash being rolled back.
-            if matches!(service_staging, ServiceStaging::Succeeded)
-                && let Err(stage_error) = crate::core::service::stage_approved_core(&target)
-            {
-                logging!(
-                    warn,
-                    Type::Core,
-                    "core upgrade: could not restore the service copy: {stage_error:#}"
-                );
-            }
-            if core_is_down {
-                let _ = CoreManager::global().restart_core().await;
-            }
-        }
-        // Renaming one hard link over the other succeeds without consuming the name.
-        let _ = std::fs::remove_file(&rollback);
-        // Redundant once the rollback link exists; without one it is the only copy left.
-        #[cfg(windows)]
-        if restorable {
-            let _ = std::fs::remove_file(target.with_extension("old"));
-        }
+        rollback_failed_upgrade(&target, &rollback, &installed, restorable, service_staging).await;
         return Err(error);
     }
     let _ = std::fs::remove_file(&rollback);
@@ -160,6 +123,51 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     let _ = std::fs::remove_file(target.with_extension("old"));
 
     Ok(CoreUpgradeReport { upgraded: true })
+}
+
+async fn rollback_failed_upgrade(
+    target: &Path,
+    rollback: &Path,
+    installed: &str,
+    restorable: bool,
+    service_staging: ServiceStaging,
+) {
+    // Put the previous core back when its file is gone or its process is down. A failure
+    // after the new core started must keep the new file instead. A service that refused the
+    // new core also restores: leaving the new file would make a retry read the new version
+    // and report nothing to do while the service keeps running the old core.
+    let core_is_down = matches!(*CoreManager::global().get_running_mode(), RunningMode::NotRunning);
+    if restorable
+        && (matches!(service_staging, ServiceStaging::Refused) || core_is_down || !target.exists())
+        && std::fs::rename(rollback, target).is_ok()
+    {
+        logging!(warn, Type::Core, "core upgrade: rolled back to {installed:?}");
+        // Only a staging that SUCCEEDED left the failing bytes in the approved copy, and only
+        // then must the restore reach it too — otherwise the restart below would spawn the
+        // very core that just failed. Refused or never-attempted staging left the approved
+        // copy untouched, and re-staging would raise an elevation prompt for a no-op. This is
+        // deliberately not gated on the current running mode, which reads NotRunning after
+        // the very crash being rolled back.
+        if matches!(service_staging, ServiceStaging::Succeeded)
+            && let Err(stage_error) = crate::core::service::stage_approved_core(target)
+        {
+            logging!(
+                warn,
+                Type::Core,
+                "core upgrade: could not restore the service copy: {stage_error:#}"
+            );
+        }
+        if core_is_down {
+            let _ = CoreManager::global().restart_core().await;
+        }
+    }
+    // Renaming one hard link over the other succeeds without consuming the name.
+    let _ = std::fs::remove_file(rollback);
+    // Redundant once the rollback link exists; without one it is the only copy left.
+    #[cfg(windows)]
+    if restorable {
+        let _ = std::fs::remove_file(target.with_extension("old"));
+    }
 }
 
 /// Whether this upgrade handed bytes to the Service's approved core directory.
@@ -330,6 +338,7 @@ fn compare_plain_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
 /// fails the upgrade.
 async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]) -> Result<()> {
     use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
 
     const DOWNLOAD_PREFIX: &str = "https://github.com/MetaCubeX/mihomo/releases/download/";
     let Some(rest) = package_url.strip_prefix(DOWNLOAD_PREFIX) else {
@@ -380,7 +389,6 @@ async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]
     let digest = Sha256::digest(bytes);
     let mut computed = std::string::String::with_capacity(64);
     for b in digest {
-        use std::fmt::Write as _;
         let _ = write!(&mut computed, "{b:02x}");
     }
     anyhow::ensure!(
@@ -483,7 +491,7 @@ fn create_staging_file(directory: &Path, core_name: &OsStr) -> Result<(PathBuf, 
 /// write without bound.
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 
-fn copy_bounded(mut reader: impl std::io::Read, out: &mut File) -> Result<()> {
+fn copy_bounded(reader: impl std::io::Read, out: &mut File) -> Result<()> {
     // `take(MAX + 1)` makes an over-large body surface as an error instead of
     // a silently truncated write.
     let mut limited = reader.take(MAX_UNPACKED_BYTES + 1);

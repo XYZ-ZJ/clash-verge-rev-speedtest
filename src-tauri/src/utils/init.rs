@@ -48,6 +48,67 @@ async fn delete_snapshot_logs(log_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn parse_log_date(s: &str) -> Result<chrono::NaiveDateTime> {
+    // Rotated log files are named `%Y-%m-%d_%H-%M-%S` (see
+    // crates/clash-verge-logging). Retention only needs the date half,
+    // so drop the time part before splitting into 3 date segments.
+    let date_part = s.split_once('_').map(|(date, _)| date).unwrap_or(s);
+    let sa: Vec<&str> = date_part.split('-').collect();
+    if sa.len() != 3 {
+        return Err(anyhow::anyhow!("invalid time str"));
+    }
+
+    let year = i32::from_str(sa[0])?;
+    let month = u32::from_str(sa[1])?;
+    let day = u32::from_str(sa[2])?;
+    chrono::NaiveDate::from_ymd_opt(year, month, day)
+        .ok_or_else(|| anyhow::anyhow!("invalid time str"))?
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| anyhow::anyhow!("invalid time str"))
+}
+
+async fn prune_expired_log(file: DirEntry, day: i64) -> Result<()> {
+    let file_name = file.file_name();
+    let file_name = file_name.to_str().unwrap_or_default();
+
+    if file_name.ends_with(".log") {
+        let now = Local::now();
+        let created_time = parse_log_date(&file_name[0..file_name.len() - 4])?;
+        let file_time = Local
+            .from_local_datetime(&created_time)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("invalid local datetime"))?;
+
+        let duration = now.signed_duration_since(file_time);
+        if duration.num_days() > day {
+            let _ = file.path().remove_if_exists().await;
+            logging!(debug, Type::Setup, "delete log file: {}", file_name);
+        }
+    }
+    Ok(())
+}
+
+async fn clean_log_dir(dir: &Path, day: i64, label: &str) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let mut read_dir = fs::read_dir(dir)
+        .await
+        .with_context(|| format!("failed to read {label} directory {}", dir.display()))?;
+    while let Some(entry) = read_dir.next_entry().await.with_context(|| {
+        format!(
+            "failed to read next entry in {label} directory {}",
+            dir.display()
+        )
+    })? {
+        // Skip unparsable names visibly instead of silently dropping the error.
+        if let Err(err) = prune_expired_log(entry, day).await {
+            logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");
+        }
+    }
+    Ok(())
+}
+
 // TODO flexi_logger 提供了最大保留天数，或许我们应该用内置删除log文件
 pub async fn delete_log() -> Result<()> {
     let log_dir = dirs::app_logs_dir()?;
@@ -78,78 +139,8 @@ pub async fn delete_log() -> Result<()> {
 
     logging!(debug, Type::Setup, "try to delete log files, day: {}", day);
 
-    let parse_time_str = |s: &str| {
-        // Rotated log files are named `%Y-%m-%d_%H-%M-%S` (see
-        // crates/clash-verge-logging). Retention only needs the date half,
-        // so drop the time part before splitting into 3 date segments.
-        let date_part = s.split_once('_').map(|(date, _)| date).unwrap_or(s);
-        let sa: Vec<&str> = date_part.split('-').collect();
-        if sa.len() != 3 {
-            return Err(anyhow::anyhow!("invalid time str"));
-        }
-
-        let year = i32::from_str(sa[0])?;
-        let month = u32::from_str(sa[1])?;
-        let day = u32::from_str(sa[2])?;
-        let time = chrono::NaiveDate::from_ymd_opt(year, month, day)
-            .ok_or_else(|| anyhow::anyhow!("invalid time str"))?
-            .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow::anyhow!("invalid time str"))?;
-        Ok(time)
-    };
-
-    let process_file = async move |file: DirEntry| -> Result<()> {
-        let file_name = file.file_name();
-        let file_name = file_name.to_str().unwrap_or_default();
-
-        if file_name.ends_with(".log") {
-            let now = Local::now();
-            let created_time = parse_time_str(&file_name[0..file_name.len() - 4])?;
-            let file_time = Local
-                .from_local_datetime(&created_time)
-                .single()
-                .ok_or_else(|| anyhow::anyhow!("invalid local datetime"))?;
-
-            let duration = now.signed_duration_since(file_time);
-            if duration.num_days() > day {
-                let _ = file.path().remove_if_exists().await;
-                logging!(debug, Type::Setup, "delete log file: {}", file_name);
-            }
-        }
-        Ok(())
-    };
-
-    if log_dir.exists() {
-        let mut log_read_dir = fs::read_dir(&log_dir)
-            .await
-            .with_context(|| format!("failed to read log directory {}", log_dir.display()))?;
-        while let Some(entry) = log_read_dir
-            .next_entry()
-            .await
-            .with_context(|| format!("failed to read next entry in log directory {}", log_dir.display()))?
-        {
-            // Skip unparsable names visibly instead of silently dropping the error.
-            if let Err(err) = process_file(entry).await {
-                logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");
-            }
-        }
-    }
-
-    if service_log_dir.exists() {
-        let mut service_log_read_dir = fs::read_dir(&service_log_dir)
-            .await
-            .with_context(|| format!("failed to read service log directory {}", service_log_dir.display()))?;
-        while let Some(entry) = service_log_read_dir.next_entry().await.with_context(|| {
-            format!(
-                "failed to read next entry in service log directory {}",
-                service_log_dir.display()
-            )
-        })? {
-            if let Err(err) = process_file(entry).await {
-                logging!(debug, Type::Setup, "skip log file cleanup: {err:#}");
-            }
-        }
-    }
+    clean_log_dir(&log_dir, day, "log").await?;
+    clean_log_dir(&service_log_dir, day, "service log").await?;
 
     Ok(())
 }

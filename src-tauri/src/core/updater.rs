@@ -303,7 +303,10 @@ async fn download_from(
                     "only {} bytes in {PROGRESS_WINDOW:?}",
                     total.saturating_sub(seen)
                 );
-                anyhow::ensure!(total <= MAX_DOWNLOAD_BYTES, "download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling");
+                anyhow::ensure!(
+                    total <= MAX_DOWNLOAD_BYTES,
+                    "download exceeded the {MAX_DOWNLOAD_BYTES} byte ceiling"
+                );
                 seen = total;
             }
         }

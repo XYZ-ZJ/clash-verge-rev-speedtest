@@ -220,11 +220,12 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
         fs::create_dir_all(&icon_dir).await.stringify_err()?;
     }
 
-    if matches!(
-        file_path.components().next(),
-        Some(Component::Prefix(prefix))
-            if matches!(prefix.kind(), std::path::Prefix::UNC(_) | std::path::Prefix::VerbatimUNC(_))
-    ) {
+    if let Some(Component::Prefix(prefix)) = file_path.components().next()
+        && matches!(
+            prefix.kind(),
+            std::path::Prefix::UNC(_) | std::path::Prefix::VerbatimUNC(_)
+        )
+    {
         return Err("refusing UNC icon path".into());
     }
 

@@ -234,6 +234,73 @@ fn is_allowed_backup_rel_path(rel_path: &std::path::Path, is_dir: bool) -> bool 
     }
 }
 
+fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> Result<()> {
+    use std::io::Read as _;
+
+    let file = std::fs::File::open(path)?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    if zip.len() > MAX_BACKUP_ENTRIES {
+        return Err(anyhow!(
+            "backup archive exceeds entry limit ({} > {MAX_BACKUP_ENTRIES})",
+            zip.len()
+        ));
+    }
+
+    let staging_dir = home_dir.join(format!(".restore-staging-{}", nanoid::nanoid!(8)));
+    std::fs::create_dir_all(&staging_dir)?;
+    let cleanup_staging = scopeguard::guard(&staging_dir, |dir| {
+        let _ = std::fs::remove_dir_all(dir);
+    });
+
+    let mut total_bytes: u64 = 0;
+    let mut files_to_apply: Vec<(PathBuf, PathBuf)> = Vec::new();
+
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i)?;
+        if entry.unix_mode().is_some_and(|mode| (mode & 0o170000) == 0o120000) {
+            return Err(anyhow!("backup archive contains disallowed symlink entry"));
+        }
+
+        let rel_path = entry
+            .enclosed_name()
+            .ok_or_else(|| anyhow!("backup archive contains unsafe path"))?
+            .to_path_buf();
+        let is_dir = entry.is_dir();
+
+        if !is_allowed_backup_rel_path(&rel_path, is_dir) {
+            return Err(anyhow!("backup archive contains disallowed path: {}", rel_path.display()));
+        }
+        if is_dir {
+            continue;
+        }
+
+        let staged_file = cleanup_staging.join(&rel_path);
+        if let Some(parent) = staged_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let remaining = MAX_BACKUP_TOTAL_BYTES.saturating_sub(total_bytes);
+        let mut limited = entry.take(remaining.saturating_add(1));
+        let mut out = std::fs::File::create(&staged_file)?;
+        let copied = std::io::copy(&mut limited, &mut out)?;
+        total_bytes = total_bytes
+            .checked_add(copied)
+            .filter(|&sum| sum <= MAX_BACKUP_TOTAL_BYTES)
+            .ok_or_else(|| anyhow!("backup archive exceeds maximum uncompressed size limit"))?;
+
+        files_to_apply.push((staged_file, home_dir.join(&rel_path)));
+    }
+
+    for (staged, target) in files_to_apply {
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&staged, &target)?;
+    }
+
+    Ok(())
+}
+
 /// Backup creation strips the WebDAV credentials, so the live ones are kept.
 async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     let (webdav_url, webdav_username, webdav_password) = {
@@ -247,74 +314,9 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     };
 
     let home_dir = app_home_dir()?;
-    AsyncHandler::spawn_blocking(move || -> Result<()> {
-        use std::io::Read as _;
-
-        let file = std::fs::File::open(&path)?;
-        let mut zip = zip::ZipArchive::new(file)?;
-        if zip.len() > MAX_BACKUP_ENTRIES {
-            return Err(anyhow!(
-                "backup archive exceeds entry limit ({} > {MAX_BACKUP_ENTRIES})",
-                zip.len()
-            ));
-        }
-
-        let staging_dir = home_dir.join(format!(".restore-staging-{}", nanoid::nanoid!(8)));
-        std::fs::create_dir_all(&staging_dir)?;
-        let cleanup_staging = scopeguard::guard(&staging_dir, |dir| {
-            let _ = std::fs::remove_dir_all(dir);
-        });
-
-        let mut total_bytes: u64 = 0;
-        let mut files_to_apply: Vec<(PathBuf, PathBuf)> = Vec::new();
-
-        for i in 0..zip.len() {
-            let entry = zip.by_index(i)?;
-            if entry.unix_mode().is_some_and(|mode| (mode & 0o170000) == 0o120000) {
-                return Err(anyhow!("backup archive contains disallowed symlink entry"));
-            }
-
-            let rel_path = entry
-                .enclosed_name()
-                .ok_or_else(|| anyhow!("backup archive contains unsafe path"))?
-                .to_path_buf();
-            let is_dir = entry.is_dir();
-
-            if !is_allowed_backup_rel_path(&rel_path, is_dir) {
-                return Err(anyhow!("backup archive contains disallowed path: {}", rel_path.display()));
-            }
-            if is_dir {
-                continue;
-            }
-
-            let staged_file = cleanup_staging.join(&rel_path);
-            if let Some(parent) = staged_file.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-
-            let remaining = MAX_BACKUP_TOTAL_BYTES.saturating_sub(total_bytes);
-            let mut limited = entry.take(remaining.saturating_add(1));
-            let mut out = std::fs::File::create(&staged_file)?;
-            let copied = std::io::copy(&mut limited, &mut out)?;
-            total_bytes = total_bytes
-                .checked_add(copied)
-                .filter(|&sum| sum <= MAX_BACKUP_TOTAL_BYTES)
-                .ok_or_else(|| anyhow!("backup archive exceeds maximum uncompressed size limit"))?;
-
-            files_to_apply.push((staged_file, home_dir.join(&rel_path)));
-        }
-
-        for (staged, target) in files_to_apply {
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::copy(&staged, &target)?;
-        }
-
-        Ok(())
-    })
-    .await
-    .map_err(|join| anyhow!("backup extraction task failed: {join}"))??;
+    AsyncHandler::spawn_blocking(move || extract_staged_backup(&path, &home_dir))
+        .await
+        .map_err(|join| anyhow!("backup extraction task failed: {join}"))??;
 
     let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
     finalize_restored_verge_config(webdav_url, webdav_username, webdav_password).await
@@ -574,8 +576,10 @@ mod tests {
         assert!(is_allowed_backup_rel_path(Path::new("icons/tray.png"), false));
 
         assert!(!is_allowed_backup_rel_path(Path::new("../evil.yaml"), false));
-        assert!(!is_allowed_backup_rel_path(Path::new("profiles/../evil.yaml"), false));
-        assert!(!is_allowed_backup_rel_path(Path::new("profiles/sub/nested.yaml"), false));
+        let traversal = Path::new("profiles/../evil.yaml");
+        assert!(!is_allowed_backup_rel_path(traversal, false));
+        let nested = Path::new("profiles/sub/nested.yaml");
+        assert!(!is_allowed_backup_rel_path(nested, false));
         assert!(!is_allowed_backup_rel_path(Path::new("random.exe"), false));
         assert!(!is_allowed_backup_rel_path(Path::new("etc"), true));
     }

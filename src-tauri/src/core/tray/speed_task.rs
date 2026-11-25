@@ -57,83 +57,90 @@ impl TraySpeedController {
             return;
         }
 
-        let task_generation = self.generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+        let task_gen = self.generation.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
         let generation = Arc::clone(&self.generation);
         let speed_connection_id = Arc::clone(&self.speed_connection_id);
-        let task = AsyncHandler::spawn(move || async move {
-            loop {
-                if handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation {
-                    break;
-                }
-
-                if !Self::has_main_tray() {
-                    logging!(warn, Type::Tray, "托盘已不可用，停止托盘速率任务");
-                    break;
-                }
-
-                let stream_connect_result = connections_stream::connect_traffic_stream().await;
-                let mut speed_stream = match stream_connect_result {
-                    Ok(stream) => stream,
-                    Err(err) => {
-                        logging!(debug, Type::Tray, "托盘速率流连接失败，稍后重试: {err}");
-                        Self::apply_tray_speed(0, 0);
-                        tokio::time::sleep(TRAY_SPEED_RETRY_DELAY).await;
-                        continue;
-                    }
-                };
-
-                if generation.load(Ordering::Acquire) != task_generation {
-                    connections_stream::disconnect_connection(speed_stream.connection_id).await;
-                    break;
-                }
-
-                Self::set_speed_connection_id(
-                    &speed_connection_id,
-                    Some((task_generation, speed_stream.connection_id)),
-                );
-
-                loop {
-                    let next_state = speed_stream
-                        .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
-                            handle::Handle::global().is_exiting()
-                                || generation.load(Ordering::Acquire) != task_generation
-                        })
-                        .await;
-
-                    match next_state {
-                        connections_stream::StreamConsumeState::Event(speed_event) => {
-                            Self::apply_tray_speed(speed_event.up, speed_event.down);
-                        }
-                        connections_stream::StreamConsumeState::Stale => {
-                            logging!(debug, Type::Tray, "托盘速率流长时间未收到有效数据，触发重连");
-                            Self::apply_tray_speed(0, 0);
-                            break;
-                        }
-                        connections_stream::StreamConsumeState::Closed
-                        | connections_stream::StreamConsumeState::ExitRequested => {
-                            break;
-                        }
-                    }
-                }
-
-                Self::disconnect_speed_connection(&speed_connection_id, Some(task_generation)).await;
-
-                if handle::Handle::global().is_exiting()
-                    || !Self::has_main_tray()
-                    || generation.load(Ordering::Acquire) != task_generation
-                {
-                    break;
-                }
-
-                // `Stale` already reset the display; this covers remote close.
-                Self::apply_tray_speed(0, 0);
-                tokio::time::sleep(TRAY_SPEED_RETRY_DELAY).await;
-            }
-
-            Self::clear_connection_for_generation(&speed_connection_id, task_generation);
-        });
+        let task =
+            AsyncHandler::spawn(move || Self::run_speed_stream_loop(task_gen, generation, speed_connection_id));
 
         *guard = Some(task);
+    }
+
+    async fn run_speed_stream_loop(
+        task_generation: u64,
+        generation: Arc<AtomicU64>,
+        speed_connection_id: Arc<Mutex<Option<(u64, WsConnectionId)>>>,
+    ) {
+        loop {
+            if handle::Handle::global().is_exiting() || generation.load(Ordering::Acquire) != task_generation {
+                break;
+            }
+
+            if !Self::has_main_tray() {
+                logging!(warn, Type::Tray, "托盘已不可用，停止托盘速率任务");
+                break;
+            }
+
+            let stream_connect_result = connections_stream::connect_traffic_stream().await;
+            let mut speed_stream = match stream_connect_result {
+                Ok(stream) => stream,
+                Err(err) => {
+                    logging!(debug, Type::Tray, "托盘速率流连接失败，稍后重试: {err}");
+                    Self::apply_tray_speed(0, 0);
+                    tokio::time::sleep(TRAY_SPEED_RETRY_DELAY).await;
+                    continue;
+                }
+            };
+
+            if generation.load(Ordering::Acquire) != task_generation {
+                connections_stream::disconnect_connection(speed_stream.connection_id).await;
+                break;
+            }
+
+            Self::set_speed_connection_id(
+                &speed_connection_id,
+                Some((task_generation, speed_stream.connection_id)),
+            );
+
+            loop {
+                let next_state = speed_stream
+                    .next_event(TRAY_SPEED_STALE_TIMEOUT, || {
+                        handle::Handle::global().is_exiting()
+                            || generation.load(Ordering::Acquire) != task_generation
+                    })
+                    .await;
+
+                match next_state {
+                    connections_stream::StreamConsumeState::Event(speed_event) => {
+                        Self::apply_tray_speed(speed_event.up, speed_event.down);
+                    }
+                    connections_stream::StreamConsumeState::Stale => {
+                        logging!(debug, Type::Tray, "托盘速率流长时间未收到有效数据，触发重连");
+                        Self::apply_tray_speed(0, 0);
+                        break;
+                    }
+                    connections_stream::StreamConsumeState::Closed
+                    | connections_stream::StreamConsumeState::ExitRequested => {
+                        break;
+                    }
+                }
+            }
+
+            Self::disconnect_speed_connection(&speed_connection_id, Some(task_generation)).await;
+
+            if handle::Handle::global().is_exiting()
+                || !Self::has_main_tray()
+                || generation.load(Ordering::Acquire) != task_generation
+            {
+                break;
+            }
+
+            // `Stale` already reset the display; this covers remote close.
+            Self::apply_tray_speed(0, 0);
+            tokio::time::sleep(TRAY_SPEED_RETRY_DELAY).await;
+        }
+
+        Self::clear_connection_for_generation(&speed_connection_id, task_generation);
     }
 
     fn stop_task(&self) {

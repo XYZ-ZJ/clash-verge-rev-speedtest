@@ -315,7 +315,10 @@ fn build_speedtest_client(port: u16, max_idle_per_host: usize) -> CmdResult<reqw
         .proxy(proxy)
         .build()
         .map_err(|e| {
-            super::CommandFailure::coded("speedtest.clientSetupFailed", format!("failed to build http client: {e}"))
+            super::CommandFailure::coded(
+                "speedtest.clientSetupFailed",
+                format!("failed to build http client: {e}"),
+            )
         })
 }
 
@@ -384,6 +387,58 @@ async fn run_latency_probes(client: &reqwest::Client) -> CmdResult<(u32, f64, Op
     Ok((median_latency, rounded_loss_rate, location))
 }
 
+async fn download_stream_worker(
+    client: reqwest::Client,
+    stream_id: usize,
+    total_dl_bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop_download: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    const DOWNLOAD_STREAM_BYTES: usize = 25_000_000;
+    let mut seq: u32 = 0;
+
+    while !stop_download.load(Ordering::Relaxed) {
+        let url = format!("https://speed.cloudflare.com/__down?bytes={DOWNLOAD_STREAM_BYTES}&s={stream_id}&n={seq}");
+        seq = seq.wrapping_add(1);
+
+        let resp_res = tokio::time::timeout(Duration::from_secs(8), client.get(&url).send()).await;
+        if let Ok(Ok(mut resp)) = resp_res
+            && resp.status().is_success()
+        {
+            while let Ok(Ok(Some(chunk))) = tokio::time::timeout(Duration::from_secs(3), resp.chunk()).await {
+                total_dl_bytes.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                if stop_download.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+        } else if !stop_download.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+}
+
+fn spawn_download_workers(
+    client: &reqwest::Client,
+    streams: usize,
+    total_dl_bytes: &std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop_download: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    use std::sync::Arc;
+
+    let mut handles = Vec::with_capacity(streams);
+    for stream_id in 0..streams {
+        handles.push(tokio::spawn(download_stream_worker(
+            client.clone(),
+            stream_id,
+            Arc::clone(total_dl_bytes),
+            Arc::clone(stop_download),
+        )));
+    }
+    handles
+}
+
 async fn run_download_test(
     client: &reqwest::Client,
     on_progress: &tauri::ipc::Channel<SpeedTestProgress>,
@@ -398,7 +453,6 @@ async fn run_download_test(
     const DOWNLOAD_STREAMS: usize = 8;
     // Cloudflare limits single __down request to 50MB (larger requests return 403 Forbidden).
     // 25MB per stream across 8 concurrent streams generates an initial 200MB download pool.
-    const DOWNLOAD_STREAM_BYTES: usize = 25_000_000;
     const DOWNLOAD_MIN_SETTLE_BYTES: u64 = 60 * 1024 * 1024;
     const DOWNLOAD_MAX_BYTES: u64 = 180 * 1024 * 1024;
     const DOWNLOAD_MIN_DURATION: Duration = Duration::from_secs(5);
@@ -409,44 +463,7 @@ async fn run_download_test(
 
     let total_dl_bytes = Arc::new(AtomicU64::new(0));
     let stop_download = Arc::new(AtomicBool::new(false));
-
-    let mut dl_handles = Vec::with_capacity(DOWNLOAD_STREAMS);
-    for stream_id in 0..DOWNLOAD_STREAMS {
-        let client = client.clone();
-        let total_dl_bytes = Arc::clone(&total_dl_bytes);
-        let stop_download = Arc::clone(&stop_download);
-
-        dl_handles.push(tokio::spawn(async move {
-            let mut seq: u32 = 0;
-            while !stop_download.load(Ordering::Relaxed) {
-                let url = format!(
-                    "https://speed.cloudflare.com/__down?bytes={DOWNLOAD_STREAM_BYTES}&s={stream_id}&n={seq}"
-                );
-                seq = seq.wrapping_add(1);
-
-                let resp_res = tokio::time::timeout(Duration::from_secs(8), client.get(&url).send()).await;
-
-                match resp_res {
-                    Ok(Ok(mut resp)) if resp.status().is_success() => {
-                        while let Ok(Ok(Some(chunk))) =
-                            tokio::time::timeout(Duration::from_secs(3), resp.chunk()).await
-                        {
-                            total_dl_bytes.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-                            if stop_download.load(Ordering::Relaxed) {
-                                break;
-                            }
-                        }
-                    }
-                    _ => {
-                        if stop_download.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(150)).await;
-                    }
-                }
-            }
-        }));
-    }
+    let dl_handles = spawn_download_workers(client, DOWNLOAD_STREAMS, &total_dl_bytes, &stop_download);
 
     // Wait for initial packets to flow so proxy CONNECT + TLS handshakes
     // do not artificially depress initial steady-state throughput.
@@ -508,6 +525,60 @@ async fn run_download_test(
     calculate_steady_speed(&dl_samples, 0.35)
 }
 
+async fn upload_stream_worker(
+    client: reqwest::Client,
+    total_ul_bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop_upload: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    current_ul_chunk: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    random_payload: bytes::Bytes,
+) {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    while !stop_upload.load(Ordering::Relaxed) {
+        let chunk_size = current_ul_chunk.load(Ordering::Relaxed).min(random_payload.len());
+        let payload = random_payload.slice(..chunk_size);
+
+        let resp_res = tokio::time::timeout(
+            Duration::from_secs(12),
+            client.post("https://speed.cloudflare.com/__up").body(payload).send(),
+        )
+        .await;
+
+        if let Ok(Ok(resp)) = resp_res
+            && resp.status().is_success()
+        {
+            let _ = resp.bytes().await;
+            total_ul_bytes.fetch_add(chunk_size as u64, Ordering::Relaxed);
+        } else if !stop_upload.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+}
+
+fn spawn_upload_workers(
+    client: &reqwest::Client,
+    streams: usize,
+    total_ul_bytes: &std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop_upload: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    current_ul_chunk: &std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    random_payload: &bytes::Bytes,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    use std::sync::Arc;
+
+    let mut handles = Vec::with_capacity(streams);
+    for _ in 0..streams {
+        handles.push(tokio::spawn(upload_stream_worker(
+            client.clone(),
+            Arc::clone(total_ul_bytes),
+            Arc::clone(stop_upload),
+            Arc::clone(current_ul_chunk),
+            random_payload.clone(),
+        )));
+    }
+    handles
+}
+
 async fn run_upload_test(
     client: &reqwest::Client,
     on_progress: &tauri::ipc::Channel<SpeedTestProgress>,
@@ -533,41 +604,14 @@ async fn run_upload_test(
     let stop_upload = Arc::new(AtomicBool::new(false));
     let current_ul_chunk = Arc::new(AtomicUsize::new(UPLOAD_MIN_CHUNK));
     let random_payload = bytes::Bytes::from(generate_random_payload_block(UPLOAD_MAX_CHUNK));
-
-    let mut ul_handles = Vec::with_capacity(UPLOAD_STREAMS);
-    for _ in 0..UPLOAD_STREAMS {
-        let client = client.clone();
-        let total_ul_bytes = Arc::clone(&total_ul_bytes);
-        let stop_upload = Arc::clone(&stop_upload);
-        let current_ul_chunk = Arc::clone(&current_ul_chunk);
-        let random_payload = random_payload.clone();
-
-        ul_handles.push(tokio::spawn(async move {
-            while !stop_upload.load(Ordering::Relaxed) {
-                let chunk_size = current_ul_chunk.load(Ordering::Relaxed).min(random_payload.len());
-                let payload = random_payload.slice(..chunk_size);
-
-                let resp_res = tokio::time::timeout(
-                    Duration::from_secs(12),
-                    client.post("https://speed.cloudflare.com/__up").body(payload).send(),
-                )
-                .await;
-
-                match resp_res {
-                    Ok(Ok(resp)) if resp.status().is_success() => {
-                        let _ = resp.bytes().await;
-                        total_ul_bytes.fetch_add(chunk_size as u64, Ordering::Relaxed);
-                    }
-                    _ => {
-                        if stop_upload.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(150)).await;
-                    }
-                }
-            }
-        }));
-    }
+    let ul_handles = spawn_upload_workers(
+        client,
+        UPLOAD_STREAMS,
+        &total_ul_bytes,
+        &stop_upload,
+        &current_ul_chunk,
+        &random_payload,
+    );
 
     let mut ul_samples: Vec<(f64, u64)> = Vec::with_capacity(100);
     let mut ul_steps: Vec<(f64, u64)> = Vec::with_capacity(100);

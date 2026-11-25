@@ -52,30 +52,32 @@ impl AsyncChainItemFrom for Option<ChainItem> {
         };
 
         match itype {
-            "script" => Some(ChainItem {
-                uid: uid.clone(),
-                data: ChainType::Script(
-                    match fs::read_to_string(&path).await {
-                        Ok(content) => content.into(),
-                        Err(err) => {
-                            log_skip(itype, &err);
-                            return None;
-                        }
-                    },
-                ),
-            }),
-            "merge" => Some(ChainItem {
-                uid: uid.clone(),
-                data: ChainType::Merge(
-                    match help::read_mapping(&path).await {
-                        Ok(mapping) => mapping,
-                        Err(err) => {
-                            log_skip(itype, &err);
-                            return None;
-                        }
-                    },
-                ),
-            }),
+            "script" => {
+                let script = match fs::read_to_string(&path).await {
+                    Ok(content) => content.into(),
+                    Err(err) => {
+                        log_skip(itype, &err);
+                        return None;
+                    }
+                };
+                Some(ChainItem {
+                    uid: uid.clone(),
+                    data: ChainType::Script(script),
+                })
+            }
+            "merge" => {
+                let mapping = match help::read_mapping(&path).await {
+                    Ok(mapping) => mapping,
+                    Err(err) => {
+                        log_skip(itype, &err);
+                        return None;
+                    }
+                };
+                Some(ChainItem {
+                    uid: uid.clone(),
+                    data: ChainType::Merge(mapping),
+                })
+            }
             "rules" | "proxies" | "groups" => {
                 let seq_map = match help::read_yaml::<SeqMap>(&path).await {
                     Ok(seq_map) => seq_map,
