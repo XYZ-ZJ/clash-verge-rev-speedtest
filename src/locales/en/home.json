@@ -107,7 +107,18 @@
         "exitsTitle": "Your Exits",
         "hideIp": "Hide IP",
         "showIp": "Show IP",
-        "findingsTitle": "Findings"
+        "findingsTitle": "Findings",
+        "purityTitle": "IP Purity Score",
+        "purityRefresh": "Refresh",
+        "purityRefreshing": "Checking...",
+        "purityHighRisk": "High Risk",
+        "purityTrusted": "Trusted",
+        "purityLevelPure": "Pure",
+        "purityLevelGood": "Good",
+        "purityLevelFair": "Fair",
+        "purityLevelSuspicious": "Suspicious",
+        "purityLevelDanger": "Risky",
+        "purityUnavailable": "Unavailable"
       },
       "errors": {
         "load": "Failed to get IP info",

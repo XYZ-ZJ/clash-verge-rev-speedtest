@@ -21,7 +21,8 @@
         "ip": "IP 정보 카드",
         "clashInfo": "Clash 정보 카드",
         "systemInfo": "시스템 정보 카드",
-        "speedtest": "속도 테스트 카드"
+        "speedtest": "속도 테스트 카드",
+        "dnsleak": "DNS Leak Card"
       },
       "title": "홈 설정"
     },
@@ -81,7 +82,43 @@
         "location": "위치",
         "timezone": "시간대",
         "autoRefresh": "자동 새로고침",
-        "unknown": "알 수 없음"
+        "unknown": "알 수 없음",
+        "riskScore": "Risk Score",
+        "riskLevelLow": "Low Risk",
+        "riskLevelMedium": "Medium Risk",
+        "riskLevelHigh": "High Risk",
+        "typeDatacenter": "Datacenter",
+        "typeResidential": "Residential",
+        "typeMobile": "Mobile",
+        "typeBusiness": "Business",
+        "proxyDetected": "Proxy",
+        "abuseDetected": "Abuse"
+      },
+      "detailModal": {
+        "title": "Egress Details & Traffic Routing",
+        "openTooltip": "View Egress & Split Tunneling Details",
+        "refresh": "Refresh",
+        "startDetect": "Start Detection",
+        "testing": "Detecting...",
+        "lastCheck": "Last check",
+        "close": "Close",
+        "cfTitle": "CLOUDFLARE Turnstile Verification",
+        "retest": "Retest",
+        "exitsTitle": "Your Exits",
+        "hideIp": "Hide IP",
+        "showIp": "Show IP",
+        "findingsTitle": "Findings",
+        "purityTitle": "IP Purity Score",
+        "purityRefresh": "Refresh",
+        "purityRefreshing": "Checking...",
+        "purityHighRisk": "High Risk",
+        "purityTrusted": "Trusted",
+        "purityLevelPure": "Pure",
+        "purityLevelGood": "Good",
+        "purityLevelFair": "Fair",
+        "purityLevelSuspicious": "Suspicious",
+        "purityLevelDanger": "Risky",
+        "purityUnavailable": "Unavailable"
       },
       "errors": {
         "load": "IP 정보를 가져오지 못했습니다",
@@ -93,6 +130,9 @@
       "title": "현재 노드",
       "actions": {
         "refreshDelay": "지연 확인"
+      },
+      "menu": {
+        "truncated": "+{{count}} more nodes — open the Proxies page to browse all"
       },
       "labels": {
         "globalMode": "전역 모드",
@@ -175,6 +215,27 @@
         "proxySetupFailed": "프록시 클라이언트 생성 실패",
         "clientSetupFailed": "HTTP 클라이언트 생성 실패",
         "probeFailed": "속도 테스트 실패: 모든 프로브가 시간 초과되거나 실패했습니다"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS Leak Test",
+      "status": {
+        "safe": "No Leak Detected",
+        "leaking": "DNS Leaking Detected",
+        "testing": "Testing...",
+        "unknown": "Unknown"
+      },
+      "labels": {
+        "serversCount": "DNS Servers",
+        "dnsServer": "Resolver",
+        "isp": "ISP",
+        "location": "Location",
+        "autoRefresh": "Auto refresh",
+        "noServers": "No abnormal DNS captured",
+        "conclusion": "Conclusion"
+      },
+      "errors": {
+        "load": "Failed to test DNS leak"
       }
     }
   }

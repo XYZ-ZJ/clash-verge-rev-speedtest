@@ -1,12 +1,28 @@
-import { describe, expect, test, vi } from 'vitest'
+import { fetch } from '@tauri-apps/plugin-http'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { extractCandidateIp, getUtcOffsetHours } from './egress'
+import {
+  extractCandidateIp,
+  fetchIpPurityScores,
+  getUtcOffsetHours,
+} from './egress'
 
 vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+const mockFetch = vi.mocked(fetch)
+
+const mockResponse = (body: string, ok = true) =>
+  ({
+    ok,
+    text: async () => body,
+  }) as unknown as Awaited<ReturnType<typeof fetch>>
+
 describe('egress helpers', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+  })
   test('extracts srflx IPv4 and IPv6 addresses without false positives', () => {
     expect(
       extractCandidateIp(
@@ -38,5 +54,75 @@ describe('egress helpers', () => {
     expect(getUtcOffsetHours('Asia/Shanghai')).toBe(8)
     expect(getUtcOffsetHours('Asia/Kolkata')).toBe(5.5)
     expect(getUtcOffsetHours('Invalid/Timezone_Name')).toBeNull()
+  })
+
+  test('fetchIpPurityScores converts risk scores and avoids query bust on Scamalytics', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('https://scamalytics.com/ip/')) {
+        expect(url).not.toContain('_t=')
+        return mockResponse('{"score": 7}')
+      }
+      if (url.startsWith('https://api.ipquery.io/')) {
+        return mockResponse(JSON.stringify({ risk: { risk_score: 18 } }))
+      }
+      if (url.startsWith('https://proxycheck.io/v2/')) {
+        return mockResponse(
+          JSON.stringify({ status: 'ok', '1.2.3.4': { risk: 25 } }),
+        )
+      }
+      return mockResponse('', false)
+    })
+
+    const res = await fetchIpPurityScores('1.2.3.4')
+    expect(res).toEqual([
+      { id: 'scamalytics', label: 'Scamalytics', riskScore: 7, score: 93 },
+      { id: 'ipquery', label: 'ipquery', riskScore: 18, score: 82 },
+      { id: 'proxycheck', label: 'proxycheck.io', riskScore: 25, score: 75 },
+    ])
+  })
+
+  test('fetchIpPurityScores calibrates ipapi floor and falls back on IPv6 proxycheck keys', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('https://scamalytics.com/ip/')) {
+        return mockResponse('', false)
+      }
+      if (url.startsWith('https://api.ipquery.io/')) {
+        return mockResponse(JSON.stringify({ risk: { risk_score: 60 } }))
+      }
+      if (url.startsWith('https://proxycheck.io/v2/')) {
+        return mockResponse(
+          JSON.stringify({
+            status: 'ok',
+            '2001:db8::1': { risk: 72 },
+          }),
+        )
+      }
+      if (url.startsWith('https://ipinfo.check.place/')) {
+        return mockResponse(
+          JSON.stringify({
+            ip: '2001:0db8::1',
+            is_proxy: true,
+            is_datacenter: true,
+            company: { abuser_score: '0.01 (Low)' },
+          }),
+        )
+      }
+      return mockResponse('', false)
+    })
+
+    const res = await fetchIpPurityScores('2001:0db8::1')
+    expect(res).toEqual([
+      { id: 'ipquery', label: 'ipquery', riskScore: 60, score: 40 },
+      { id: 'proxycheck', label: 'proxycheck.io', riskScore: 72, score: 28 },
+      { id: 'ipapi', label: 'ipapi', riskScore: 40, score: 60 },
+    ])
+  })
+
+  test('fetchIpPurityScores returns empty array when all sources fail', async () => {
+    mockFetch.mockResolvedValue(mockResponse('', false))
+    const res = await fetchIpPurityScores('8.8.8.8')
+    expect(res).toEqual([])
   })
 })

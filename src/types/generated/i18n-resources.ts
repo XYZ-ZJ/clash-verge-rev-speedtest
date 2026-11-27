@@ -122,6 +122,17 @@ export interface TranslationResources {
             hideIp: string
             lastCheck: string
             openTooltip: string
+            purityHighRisk: string
+            purityLevelDanger: string
+            purityLevelFair: string
+            purityLevelGood: string
+            purityLevelPure: string
+            purityLevelSuspicious: string
+            purityRefresh: string
+            purityRefreshing: string
+            purityTitle: string
+            purityTrusted: string
+            purityUnavailable: string
             refresh: string
             retest: string
             showIp: string

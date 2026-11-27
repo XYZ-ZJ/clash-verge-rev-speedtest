@@ -21,7 +21,8 @@
         "ip": "Tarjeta de información de IP",
         "clashInfo": "Tarjetas de información de Clash",
         "systemInfo": "Tarjetas de información del sistema",
-        "speedtest": "Tarjeta de prueba de velocidad"
+        "speedtest": "Tarjeta de prueba de velocidad",
+        "dnsleak": "DNS Leak Card"
       },
       "title": "Configuración de la página de inicio"
     },
@@ -81,7 +82,43 @@
         "location": "Ubicación",
         "timezone": "Zona horaria",
         "autoRefresh": "Actualización automática",
-        "unknown": "Desconocido"
+        "unknown": "Desconocido",
+        "riskScore": "Risk Score",
+        "riskLevelLow": "Low Risk",
+        "riskLevelMedium": "Medium Risk",
+        "riskLevelHigh": "High Risk",
+        "typeDatacenter": "Datacenter",
+        "typeResidential": "Residential",
+        "typeMobile": "Mobile",
+        "typeBusiness": "Business",
+        "proxyDetected": "Proxy",
+        "abuseDetected": "Abuse"
+      },
+      "detailModal": {
+        "title": "Egress Details & Traffic Routing",
+        "openTooltip": "View Egress & Split Tunneling Details",
+        "refresh": "Refresh",
+        "startDetect": "Start Detection",
+        "testing": "Detecting...",
+        "lastCheck": "Last check",
+        "close": "Close",
+        "cfTitle": "CLOUDFLARE Turnstile Verification",
+        "retest": "Retest",
+        "exitsTitle": "Your Exits",
+        "hideIp": "Hide IP",
+        "showIp": "Show IP",
+        "findingsTitle": "Findings",
+        "purityTitle": "IP Purity Score",
+        "purityRefresh": "Refresh",
+        "purityRefreshing": "Checking...",
+        "purityHighRisk": "High Risk",
+        "purityTrusted": "Trusted",
+        "purityLevelPure": "Pure",
+        "purityLevelGood": "Good",
+        "purityLevelFair": "Fair",
+        "purityLevelSuspicious": "Suspicious",
+        "purityLevelDanger": "Risky",
+        "purityUnavailable": "Unavailable"
       },
       "errors": {
         "load": "Error al obtener la información de IP",
@@ -93,6 +130,9 @@
       "title": "Nodo actual",
       "actions": {
         "refreshDelay": "Prueba de latencia"
+      },
+      "menu": {
+        "truncated": "+{{count}} more nodes — open the Proxies page to browse all"
       },
       "labels": {
         "globalMode": "Global Mode",
@@ -175,6 +215,27 @@
         "proxySetupFailed": "No se pudo crear el cliente proxy",
         "clientSetupFailed": "No se pudo crear el cliente HTTP",
         "probeFailed": "Prueba fallida: todas las sondas expiraron o fallaron"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS Leak Test",
+      "status": {
+        "safe": "No Leak Detected",
+        "leaking": "DNS Leaking Detected",
+        "testing": "Testing...",
+        "unknown": "Unknown"
+      },
+      "labels": {
+        "serversCount": "DNS Servers",
+        "dnsServer": "Resolver",
+        "isp": "ISP",
+        "location": "Location",
+        "autoRefresh": "Auto refresh",
+        "noServers": "No abnormal DNS captured",
+        "conclusion": "Conclusion"
+      },
+      "errors": {
+        "load": "Failed to test DNS leak"
       }
     }
   }

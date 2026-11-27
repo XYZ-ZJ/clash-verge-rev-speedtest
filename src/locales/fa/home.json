@@ -21,7 +21,8 @@
         "ip": "IP Information Card",
         "clashInfo": "Clash Info Cards",
         "systemInfo": "System Info Cards",
-        "speedtest": "کارت تست سرعت"
+        "speedtest": "کارت تست سرعت",
+        "dnsleak": "DNS Leak Card"
       },
       "title": "Home Settings"
     },
@@ -81,7 +82,43 @@
         "location": "Location",
         "timezone": "Timezone",
         "autoRefresh": "Auto refresh",
-        "unknown": "Unknown"
+        "unknown": "Unknown",
+        "riskScore": "Risk Score",
+        "riskLevelLow": "Low Risk",
+        "riskLevelMedium": "Medium Risk",
+        "riskLevelHigh": "High Risk",
+        "typeDatacenter": "Datacenter",
+        "typeResidential": "Residential",
+        "typeMobile": "Mobile",
+        "typeBusiness": "Business",
+        "proxyDetected": "Proxy",
+        "abuseDetected": "Abuse"
+      },
+      "detailModal": {
+        "title": "Egress Details & Traffic Routing",
+        "openTooltip": "View Egress & Split Tunneling Details",
+        "refresh": "Refresh",
+        "startDetect": "Start Detection",
+        "testing": "Detecting...",
+        "lastCheck": "Last check",
+        "close": "Close",
+        "cfTitle": "CLOUDFLARE Turnstile Verification",
+        "retest": "Retest",
+        "exitsTitle": "Your Exits",
+        "hideIp": "Hide IP",
+        "showIp": "Show IP",
+        "findingsTitle": "Findings",
+        "purityTitle": "IP Purity Score",
+        "purityRefresh": "Refresh",
+        "purityRefreshing": "Checking...",
+        "purityHighRisk": "High Risk",
+        "purityTrusted": "Trusted",
+        "purityLevelPure": "Pure",
+        "purityLevelGood": "Good",
+        "purityLevelFair": "Fair",
+        "purityLevelSuspicious": "Suspicious",
+        "purityLevelDanger": "Risky",
+        "purityUnavailable": "Unavailable"
       },
       "errors": {
         "load": "دریافت اطلاعات IP با خطا مواجه شد",
@@ -93,6 +130,9 @@
       "title": "Current Node",
       "actions": {
         "refreshDelay": "بررسی تأخیر"
+      },
+      "menu": {
+        "truncated": "+{{count}} more nodes — open the Proxies page to browse all"
       },
       "labels": {
         "globalMode": "حالت جهانی",
@@ -175,6 +215,27 @@
         "proxySetupFailed": "ایجاد کلاینت پراکسی ناموفق بود",
         "clientSetupFailed": "ایجاد کلاینت HTTP ناموفق بود",
         "probeFailed": "تست سرعت ناموفق بود: همه بررسی‌ها تایم‌اوت یا ناموفق بودند"
+      }
+    },
+    "dnsLeak": {
+      "title": "DNS Leak Test",
+      "status": {
+        "safe": "No Leak Detected",
+        "leaking": "DNS Leaking Detected",
+        "testing": "Testing...",
+        "unknown": "Unknown"
+      },
+      "labels": {
+        "serversCount": "DNS Servers",
+        "dnsServer": "Resolver",
+        "isp": "ISP",
+        "location": "Location",
+        "autoRefresh": "Auto refresh",
+        "noServers": "No abnormal DNS captured",
+        "conclusion": "Conclusion"
+      },
+      "errors": {
+        "load": "Failed to test DNS leak"
       }
     }
   }

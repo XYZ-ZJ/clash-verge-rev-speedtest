@@ -517,12 +517,6 @@ export const IpInfoCard = () => {
                 value={ipInfo?.asn_organization}
               />
               <InfoItem
-                label={t('home.components.ipInfo.labels.location')}
-                value={[ipInfo?.city, ipInfo?.region]
-                  .filter(Boolean)
-                  .join(', ')}
-              />
-              <InfoItem
                 label={t('home.components.ipInfo.labels.timezone')}
                 value={ipInfo?.timezone}
               />

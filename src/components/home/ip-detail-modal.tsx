@@ -21,14 +21,16 @@ import {
   type Theme,
   Typography,
 } from '@mui/material'
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
-  EgressItem,
-  EgressReport,
-  FindingItem,
+  type EgressItem,
+  type EgressReport,
+  type FindingItem,
+  type IpScoreSource,
   detectCloudflareStatus,
+  fetchIpPurityScores,
   runFullEgressDetection,
 } from '@/services/egress'
 import getSystem from '@/utils/get-system'
@@ -54,6 +56,36 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const [detectFailed, setDetectFailed] = useState(false)
   const [cfLoading, setCfLoading] = useState(false)
   const [hideIp, setHideIp] = useState(false)
+  const [ipScores, setIpScores] = useState<IpScoreSource[]>([])
+  const [scoresLoading, setScoresLoading] = useState(false)
+  const lastScoredIpRef = useRef<string | null>(null)
+  const scoreRequestIdRef = useRef(0)
+
+  const targetScoreExit =
+    report?.exits.find((e) => e.isProxy) || report?.exits[0] || null
+
+  const handleRefreshScores = useCallback(
+    async (ipOverride?: string) => {
+      const targetIp = ipOverride || targetScoreExit?.ip
+      if (!targetIp) return
+      const reqId = ++scoreRequestIdRef.current
+      lastScoredIpRef.current = targetIp
+      setScoresLoading(true)
+      try {
+        const res = await fetchIpPurityScores(targetIp)
+        if (scoreRequestIdRef.current === reqId) {
+          setIpScores(res)
+        }
+      } catch (err) {
+        console.error('[IpDetailModal] fetchIpPurityScores failed:', err)
+      } finally {
+        if (scoreRequestIdRef.current === reqId) {
+          setScoresLoading(false)
+        }
+      }
+    },
+    [targetScoreExit?.ip],
+  )
 
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
@@ -61,6 +93,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
     setDetectFailed(false)
     try {
       const res = await runFullEgressDetection()
+      lastScoredIpRef.current = null
       setReport(res)
     } catch (err) {
       console.error('[IpDetailModal] egress detection failed:', err)
@@ -87,6 +120,14 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
       handleDetect()
     }
   }, [open, report, loading, detectFailed, handleDetect])
+
+  // 默认查询：拿到出口 IP 后自动查询多源 IP 纯净度评分
+  useEffect(() => {
+    const ip = targetScoreExit?.ip
+    if (open && ip && !loading && lastScoredIpRef.current !== ip) {
+      handleRefreshScores(ip)
+    }
+  }, [open, targetScoreExit?.ip, loading, handleRefreshScores])
 
   const cfState = report?.cfStatus.state || 'fail'
   const isCfPass = cfState === 'pass'
@@ -437,6 +478,132 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   </Typography>
                 )}
               </Box>
+
+              {/* 左下角：多源 IP 纯净度评分 */}
+              {(targetScoreExit || (loading && !report)) && (
+                <Box sx={{ mt: 2 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      mb: 1,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          color: 'text.secondary',
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        {t('home.components.ipInfo.detailModal.purityTitle')}
+                      </Typography>
+                      {targetScoreExit && (
+                        <Chip
+                          size="small"
+                          label={targetScoreExit.id}
+                          variant="outlined"
+                          color={
+                            targetScoreExit.isProxy ? 'primary' : 'success'
+                          }
+                          sx={{
+                            height: 18,
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            '& .MuiChip-label': { px: 0.6 },
+                          }}
+                        />
+                      )}
+                      {scoresLoading && (
+                        <CircularProgress size={12} color="inherit" />
+                      )}
+                    </Box>
+
+                    <Button
+                      size="small"
+                      onClick={() => handleRefreshScores()}
+                      disabled={scoresLoading || loading || !targetScoreExit}
+                      startIcon={<RefreshOutlined fontSize="inherit" />}
+                      sx={{
+                        p: 0,
+                        minWidth: 'auto',
+                        fontSize: '0.72rem',
+                        color: 'text.secondary',
+                        textTransform: 'none',
+                        '&:hover': {
+                          color: 'primary.main',
+                          bgcolor: 'transparent',
+                        },
+                      }}
+                    >
+                      {scoresLoading
+                        ? t(
+                            'home.components.ipInfo.detailModal.purityRefreshing',
+                          )
+                        : t('home.components.ipInfo.detailModal.purityRefresh')}
+                    </Button>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      p: 1.4,
+                      borderRadius: 2,
+                      border: 1,
+                      borderColor: 'divider',
+                      bgcolor: (theme: Theme) =>
+                        theme.palette.mode === 'dark'
+                          ? 'rgba(255, 255, 255, 0.02)'
+                          : 'rgba(0, 0, 0, 0.01)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      opacity:
+                        (loading || scoresLoading) && ipScores.length > 0
+                          ? 0.65
+                          : 1,
+                      transition: 'opacity 0.2s ease-in-out',
+                    }}
+                  >
+                    {(loading && !report) ||
+                    (scoresLoading && ipScores.length === 0) ? (
+                      SCORE_SKELETON_KEYS.map((key) => (
+                        <Box key={key}>
+                          <Skeleton variant="text" width={88} height={18} />
+                          <Skeleton
+                            variant="rounded"
+                            height={34}
+                            sx={{ borderRadius: 1.5, mt: 0.5 }}
+                          />
+                        </Box>
+                      ))
+                    ) : ipScores.length > 0 ? (
+                      ipScores.map((item, idx) => (
+                        <IpScoreBarRow
+                          key={item.id}
+                          item={item}
+                          isLast={idx === ipScores.length - 1}
+                        />
+                      ))
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        {t(
+                          'home.components.ipInfo.detailModal.purityUnavailable',
+                        )}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
             </Box>
 
             {/* 右栏：检测结论 */}
@@ -502,6 +669,11 @@ const EXIT_SKELETON_KEYS = [
   'exit-skel-0',
   'exit-skel-1',
   'exit-skel-2',
+] as const
+const SCORE_SKELETON_KEYS = [
+  'score-skel-0',
+  'score-skel-1',
+  'score-skel-2',
 ] as const
 const FINDING_SKELETON_KEYS = [
   'finding-skel-0',
@@ -732,6 +904,213 @@ const FindingRow = memo(({ item, isLast }: FindingRowProps) => {
           >
             {item.helpText}
           </Typography>
+        )}
+      </Box>
+    </Box>
+  )
+})
+
+interface IpScoreBarRowProps {
+  item: IpScoreSource
+  isLast: boolean
+}
+
+const getPurityStyle = (score: number, isDark: boolean) => {
+  if (score >= 80) {
+    return {
+      key: 'home.components.ipInfo.detailModal.purityLevelPure' as const,
+      color: isDark ? '#4ade80' : '#0f766e',
+      bg: isDark ? 'rgba(34, 197, 94, 0.16)' : '#dcfce7',
+    }
+  }
+  if (score >= 60) {
+    return {
+      key: 'home.components.ipInfo.detailModal.purityLevelGood' as const,
+      color: isDark ? '#86efac' : '#15803d',
+      bg: isDark ? 'rgba(34, 197, 94, 0.12)' : '#ecfdf5',
+    }
+  }
+  if (score >= 40) {
+    return {
+      key: 'home.components.ipInfo.detailModal.purityLevelFair' as const,
+      color: isDark ? '#fcd34d' : '#b45309',
+      bg: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fef3c7',
+    }
+  }
+  if (score >= 20) {
+    return {
+      key: 'home.components.ipInfo.detailModal.purityLevelSuspicious' as const,
+      color: isDark ? '#fdba74' : '#c2410c',
+      bg: isDark ? 'rgba(249, 115, 22, 0.15)' : '#ffedd5',
+    }
+  }
+  return {
+    key: 'home.components.ipInfo.detailModal.purityLevelDanger' as const,
+    color: isDark ? '#fca5a5' : '#b91c1c',
+    bg: isDark ? 'rgba(239, 68, 68, 0.16)' : '#fee2e2',
+  }
+}
+
+const IpScoreBarRow = memo(({ item, isLast }: IpScoreBarRowProps) => {
+  const { t } = useTranslation()
+  const hasScore = item.score !== null
+  const clampedScore = hasScore
+    ? Math.min(100, Math.max(0, item.score as number))
+    : 0
+  const lightStyle = getPurityStyle(clampedScore, false)
+
+  return (
+    <Box
+      sx={{
+        pb: isLast ? 0 : 1.2,
+        borderBottom: isLast ? 0 : 1,
+        borderColor: 'divider',
+      }}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          display: 'block',
+          fontWeight: 600,
+          color: 'text.primary',
+          fontSize: '0.73rem',
+          mb: 0.6,
+        }}
+      >
+        {item.label}
+      </Typography>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.4 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {/* 红 -> 黄 -> 绿 渐变条与指针 */}
+          <Box sx={{ position: 'relative', py: 0.5 }}>
+            <Box
+              sx={{
+                height: 7,
+                borderRadius: 999,
+                background:
+                  'linear-gradient(90deg, #dc2626 0%, #ea580c 25%, #eab308 50%, #65a30d 75%, #15803d 100%)',
+                opacity: hasScore ? 1 : 0.35,
+              }}
+            />
+            {hasScore && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: `${clampedScore}%`,
+                  transform: 'translate(-50%, -50%)',
+                  width: 3,
+                  height: 15,
+                  borderRadius: 1,
+                  bgcolor: (theme: Theme) =>
+                    theme.palette.mode === 'dark' ? '#f8fafc' : '#111827',
+                  boxShadow: '0 0 0 1px rgba(255,255,255,0.45)',
+                }}
+              />
+            )}
+          </Box>
+
+          {/* 刻度标签 */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              mt: 0.2,
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{ fontSize: '0.62rem', color: 'text.secondary' }}
+            >
+              0 {t('home.components.ipInfo.detailModal.purityHighRisk')}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontSize: '0.62rem', color: 'text.secondary' }}
+            >
+              25
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontSize: '0.62rem', color: 'text.secondary' }}
+            >
+              50
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontSize: '0.62rem', color: 'text.secondary' }}
+            >
+              75
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontSize: '0.62rem', color: 'text.secondary' }}
+            >
+              100 {t('home.components.ipInfo.detailModal.purityTrusted')}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* 右侧分数与状态徽章 */}
+        {hasScore ? (
+          <Box
+            sx={(theme: Theme) => {
+              const style = getPurityStyle(
+                clampedScore,
+                theme.palette.mode === 'dark',
+              )
+              return {
+                minWidth: 74,
+                px: 1,
+                py: 0.45,
+                borderRadius: 1.5,
+                bgcolor: style.bg,
+                color: style.color,
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'center',
+                gap: 0.45,
+                flexShrink: 0,
+              }
+            }}
+          >
+            <Typography
+              component="span"
+              sx={{
+                fontWeight: 700,
+                fontSize: '1.05rem',
+                lineHeight: 1.1,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {clampedScore}
+            </Typography>
+            <Typography
+              component="span"
+              sx={{ fontWeight: 700, fontSize: '0.72rem', lineHeight: 1.1 }}
+            >
+              {t(lightStyle.key)}
+            </Typography>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              minWidth: 74,
+              px: 1,
+              py: 0.6,
+              borderRadius: 1.5,
+              bgcolor: 'action.hover',
+              color: 'text.secondary',
+              textAlign: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontSize: '0.68rem' }}>
+              {t('home.components.ipInfo.detailModal.purityUnavailable')}
+            </Typography>
+          </Box>
         )}
       </Box>
     </Box>

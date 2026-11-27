@@ -107,7 +107,18 @@
         "exitsTitle": "你的出口",
         "hideIp": "隐藏 IP",
         "showIp": "显示 IP",
-        "findingsTitle": "检测结论"
+        "findingsTitle": "检测结论",
+        "purityTitle": "IP 纯净度评分",
+        "purityRefresh": "刷新评分",
+        "purityRefreshing": "查询中...",
+        "purityHighRisk": "高危",
+        "purityTrusted": "可信",
+        "purityLevelPure": "纯净",
+        "purityLevelGood": "良好",
+        "purityLevelFair": "一般",
+        "purityLevelSuspicious": "可疑",
+        "purityLevelDanger": "高危",
+        "purityUnavailable": "暂无评分"
       },
       "errors": {
         "load": "获取 IP 信息失败",

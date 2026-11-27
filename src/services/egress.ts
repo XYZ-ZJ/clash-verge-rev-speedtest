@@ -22,6 +22,13 @@ export interface FindingItem {
   helpText?: string
 }
 
+export interface IpScoreSource {
+  id: 'scamalytics' | 'ipquery' | 'proxycheck' | 'ipapi'
+  label: string
+  score: number | null
+  riskScore: number | null
+}
+
 export interface EgressReport {
   isSplit: boolean
   title: string
@@ -79,15 +86,17 @@ const AI_RESTRICTED_COUNTRIES = new Set([
 const safeFetch = async (
   url: string,
   timeoutMs = 4000,
+  cacheBust = true,
 ): Promise<string | null> => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    // 拼接防缓存随机时间戳，确保每一次手动刷新都绝对穿透本地/代理缓存，发起真实 HTTP 网络请求
-    const separator = url.includes('?') ? '&' : '?'
-    const cacheBusterUrl = `${url}${separator}_t=${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    // 默认拼接防缓存随机时间戳穿透本地/代理缓存；对易受 WAF 拦截的 HTML 页面可关闭 query 拼接
+    const targetUrl = cacheBust
+      ? `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      : url
 
-    const res = await fetch(cacheBusterUrl, {
+    const res = await fetch(targetUrl, {
       signal: controller.signal,
       connectTimeout: timeoutMs,
       headers: {
@@ -603,4 +612,156 @@ export const runFullEgressDetection = async (): Promise<EgressReport> => {
     cfStatus,
     timestamp: Date.now(),
   }
+}
+
+const parseAbuserPercent = (val: unknown): number | null => {
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return val <= 1 ? Math.round(val * 100) : Math.round(val)
+  }
+  if (typeof val === 'string') {
+    const match = val.match(/[\d.]+/)
+    if (match) {
+      const num = parseFloat(match[0])
+      if (Number.isFinite(num)) {
+        return num <= 1 ? Math.round(num * 100) : Math.round(num)
+      }
+    }
+  }
+  return null
+}
+
+const toPurityScore = (riskScore: number | null): number | null => {
+  if (riskScore === null || !Number.isFinite(riskScore)) return null
+  const clampedRisk = Math.min(100, Math.max(0, Math.round(riskScore)))
+  return 100 - clampedRisk
+}
+
+// 并发查询多个权威风控源，返回最多 3 个不同来源的 IP 纯净度评分（0-100，越高越纯净）
+export const fetchIpPurityScores = async (
+  ip: string,
+): Promise<IpScoreSource[]> => {
+  const trimmedIp = ip.trim()
+  if (!trimmedIp) return []
+  const encodedIp = encodeURIComponent(trimmedIp)
+
+  const [scamText, ipqueryText, proxycheckText, ipapiText] = await Promise.all([
+    safeFetch(`https://scamalytics.com/ip/${encodedIp}`, 4200, false),
+    safeFetch(`https://api.ipquery.io/${encodedIp}?format=json`, 3800),
+    safeFetch(`https://proxycheck.io/v2/${encodedIp}?vpn=1&asn=1&risk=1`, 3800),
+    safeFetch(`https://ipinfo.check.place/${encodedIp}?db=ipapi`, 4000),
+  ])
+
+  let scamRisk: number | null = null
+  if (scamText) {
+    const scoreMatch = scamText.match(/"score"\s*:\s*"?(\d+)"?/)
+    if (scoreMatch) {
+      const parsed = parseInt(scoreMatch[1], 10)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+        scamRisk = parsed
+      }
+    }
+  }
+
+  let ipqueryRisk: number | null = null
+  if (ipqueryText) {
+    try {
+      const data = JSON.parse(ipqueryText)
+      const val = data?.risk?.risk_score
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        ipqueryRisk = Math.min(100, Math.max(0, Math.round(val)))
+      }
+    } catch {}
+  }
+
+  let proxycheckRisk: number | null = null
+  if (proxycheckText) {
+    try {
+      const data = JSON.parse(proxycheckText) as Record<string, unknown>
+      const directEntry = data?.[trimmedIp] as { risk?: unknown } | undefined
+      let val =
+        typeof directEntry?.risk === 'number' ? directEntry.risk : undefined
+      if (val === undefined && data && typeof data === 'object') {
+        for (const [key, entry] of Object.entries(data)) {
+          if (
+            key !== 'status' &&
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as { risk?: unknown }).risk === 'number'
+          ) {
+            val = (entry as { risk: number }).risk
+            break
+          }
+        }
+      }
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        proxycheckRisk = Math.min(100, Math.max(0, Math.round(val)))
+      }
+    } catch {}
+  }
+
+  let ipapiRisk: number | null = null
+  if (ipapiText) {
+    try {
+      const data = JSON.parse(ipapiText)
+      const comAbuse = parseAbuserPercent(data?.company?.abuser_score)
+      const asnAbuse = parseAbuserPercent(data?.asn?.abuser_score)
+      const maxAbuse =
+        comAbuse !== null && asnAbuse !== null
+          ? Math.max(comAbuse, asnAbuse)
+          : (comAbuse ?? asnAbuse)
+
+      const isTor = Boolean(data?.is_tor)
+      const isAbuser = Boolean(data?.is_abuser)
+      const isVpn = Boolean(data?.is_vpn)
+      const isProxy = Boolean(data?.is_proxy)
+      const comType = String(data?.company?.type || '').toLowerCase()
+      const asnType = String(data?.asn?.type || '').toLowerCase()
+      const isDatacenter = Boolean(
+        data?.is_datacenter || comType === 'hosting' || asnType === 'hosting',
+      )
+
+      if (maxAbuse !== null || data?.ip) {
+        let calibratedRisk = maxAbuse ?? 5
+        // ipapi 的 abuser_score 为网段历史滥用比例，需结合节点风险标记做下限校准
+        if (isTor || isAbuser) calibratedRisk = Math.max(calibratedRisk, 65)
+        else if (isVpn || isProxy) calibratedRisk = Math.max(calibratedRisk, 40)
+        else if (isDatacenter) calibratedRisk = Math.max(calibratedRisk, 25)
+
+        ipapiRisk = Math.min(100, Math.max(0, calibratedRisk))
+      }
+    } catch {}
+  }
+
+  const allSources: IpScoreSource[] = [
+    {
+      id: 'scamalytics',
+      label: 'Scamalytics',
+      riskScore: scamRisk,
+      score: toPurityScore(scamRisk),
+    },
+    {
+      id: 'ipquery',
+      label: 'ipquery',
+      riskScore: ipqueryRisk,
+      score: toPurityScore(ipqueryRisk),
+    },
+    {
+      id: 'proxycheck',
+      label: 'proxycheck.io',
+      riskScore: proxycheckRisk,
+      score: toPurityScore(proxycheckRisk),
+    },
+    {
+      id: 'ipapi',
+      label: 'ipapi',
+      riskScore: ipapiRisk,
+      score: toPurityScore(ipapiRisk),
+    },
+  ]
+
+  // 全部来源均失败时返回空数组，以便 UI 展示统一的空状态提示；至少有一个有效源时补齐至 3 条
+  const valid = allSources.filter((s) => s.score !== null)
+  if (valid.length === 0) return []
+  const invalid = allSources.filter((s) => s.score === null)
+  return [...valid, ...invalid].slice(0, 3)
 }
