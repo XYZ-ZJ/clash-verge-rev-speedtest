@@ -12,12 +12,16 @@ use smartstring::alias::String;
 
 /// Toggle proxy profile
 pub async fn toggle_proxy_profile(profile_index: String) {
-    if let Err(err) = cmd::patch_profiles_config_by_profile_index(profile_index.clone()).await {
-        logging!(
-            error,
-            Type::Config,
-            "toggle proxy profile {profile_index} failed: {err}"
-        );
+    match cmd::patch_profiles_config_by_profile_index(profile_index.clone()).await {
+        Ok(outcome) if outcome.is_valid() => super::close_connections_if_enabled("toggle proxy profile").await,
+        Ok(_) => {}
+        Err(err) => {
+            logging!(
+                error,
+                Type::Config,
+                "toggle proxy profile {profile_index} failed: {err}"
+            );
+        }
     }
 }
 
@@ -47,6 +51,7 @@ pub async fn switch_proxy_node(group_name: &str, proxy_name: &str) {
     {
         Ok(_) => {
             record_switched_node(group_name, proxy_name).await;
+            super::close_connections_if_enabled("switch proxy node").await;
             announce(Refresh::Proxies);
             let _ = tray::Tray::global().update_menu().await;
         }
@@ -204,7 +209,10 @@ pub async fn update_profile(uid: &String, option: Option<&PrfOption>, is_mannual
     if should_refresh {
         logging!(debug, Type::Config, "[订阅更新] 更新内核配置");
         match CoreManager::global().update_config_with_force(is_mannual_trigger).await {
-            Ok(outcome) if outcome.is_valid() => announce(Refresh::Clash),
+            Ok(outcome) if outcome.is_valid() => {
+                super::close_connections_if_enabled("update profile").await;
+                announce(Refresh::Clash);
+            }
             Ok(outcome @ (ValidationOutcome::Skipped { .. } | ValidationOutcome::Busy)) if !is_mannual_trigger => {
                 logging!(info, Type::Config, "[订阅更新] 本次配置刷新已跳过: {}", outcome);
             }

@@ -101,7 +101,8 @@
         "copySuccess": "تم النسخ بنجاح",
         "saveSuccess": "Configuration saved successfully",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "فشل التحديث"
+        "refreshFailed": "فشل التحديث",
+        "busy": "العملية قيد التنفيذ، يرجى المحاولة لاحقًا"
       }
     },
     "validation": {

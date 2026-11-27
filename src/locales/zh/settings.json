@@ -661,7 +661,9 @@
         "restartFailed": "重启内核失败",
         "startFailed": "启动内核失败",
         "serviceCoreStopped": "服务运行的内核意外停止",
-        "stopFailed": "停止内核失败"
+        "stopFailed": "停止内核失败",
+        "upgradeFailed": "升级内核失败",
+        "dnsOverrideUpdateFailed": "更新 DNS 覆写设置失败"
       },
       "clashService": {
         "installFailed": "安装服务失败",

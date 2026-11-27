@@ -85,5 +85,8 @@ pub mod tun {
         "dns-mode",
         "strict-route",
         "mtu",
+        "inet4-route-address",
+        "inet6-route-address",
+        "interface-name",
     ];
 }

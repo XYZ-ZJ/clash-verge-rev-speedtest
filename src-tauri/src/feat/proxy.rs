@@ -85,6 +85,7 @@ pub async fn toggle_tun_mode(not_save_file: Option<bool>) -> bool {
     .await
     {
         Ok(_) => {
+            super::close_connections_if_enabled("toggle tun mode").await;
             announce(Refresh::Verge);
             // Reconciliation may immediately disable unavailable TUN; report the resulting state.
             Config::verge().await.latest_arc().enable_tun_mode.unwrap_or(false)

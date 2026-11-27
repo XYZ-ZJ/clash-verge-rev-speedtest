@@ -661,7 +661,9 @@
         "restartFailed": "Falha ao reiniciar o núcleo",
         "startFailed": "Falha ao iniciar o núcleo",
         "serviceCoreStopped": "O núcleo do serviço parou inesperadamente",
-        "stopFailed": "Falha ao parar o núcleo"
+        "stopFailed": "Falha ao parar o núcleo",
+        "upgradeFailed": "Falha ao atualizar o núcleo",
+        "dnsOverrideUpdateFailed": "Falha ao atualizar a configuração de substituição de DNS"
       },
       "clashService": {
         "installFailed": "Falha ao instalar o serviço",

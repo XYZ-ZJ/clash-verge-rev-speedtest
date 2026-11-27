@@ -1,4 +1,4 @@
-use crate::{process::AsyncHandler, utils::tmpl};
+use crate::utils::tmpl;
 
 use super::field::use_lowercase;
 use anyhow::{Error, Result};
@@ -14,6 +14,8 @@ const MAX_OUTPUT_SIZE: usize = 1024 * 1024; // 1MB
 const MAX_JSON_SIZE: usize = 10 * 1024 * 1024; // 10MB
 const MAX_LOOP_ITERATIONS: u64 = 10_000_000;
 const SCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const MAX_CONCURRENT_SCRIPTS: usize = 2;
+static SCRIPT_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MAX_CONCURRENT_SCRIPTS);
 
 type ScriptResult = (Mapping, Vec<String>, Vec<(String, String)>);
 type EvalOutcome = (Result<Mapping, std::string::String>, Vec<(String, String)>);
@@ -25,7 +27,12 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
         return (use_lowercase(&config), vec![], vec![]);
     }
 
-    let json = match serde_json::to_string(&use_lowercase(&config)) {
+    let serialized = if needs_lowercase_normalization(&config) {
+        serde_json::to_string(&use_lowercase(&config))
+    } else {
+        serde_json::to_string(&config)
+    };
+    let json = match serialized {
         Ok(json) if json.len() <= MAX_JSON_SIZE => json,
         Ok(_) => {
             let message = "Configuration size exceeds maximum allowed size";
@@ -34,20 +41,41 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
         Err(err) => return (config, vec![], vec![("exception".into(), err.to_string().into())]),
     };
 
+    if script.len() > MAX_JSON_SIZE {
+        let message = "Script size exceeds maximum allowed size";
+        return (config, vec![], vec![("exception".into(), message.into())]);
+    }
+
+    let Ok(_permit) = tokio::time::timeout(SCRIPT_TIMEOUT, SCRIPT_SEMAPHORE.acquire()).await else {
+        let msg = format!("script execution timed out waiting for worker slot after {SCRIPT_TIMEOUT:?}");
+        return (config, vec![], vec![("exception".into(), msg.into())]);
+    };
+
     let name_for_log = name.clone();
-    let evaluated = AsyncHandler::spawn_blocking(move || eval_script(&script, &json, &name));
-    let (outcome, mut logs) = match tokio::time::timeout(SCRIPT_TIMEOUT, evaluated).await {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    if let Err(err) = std::thread::Builder::new()
+        .name("verge-script-eval".to_owned())
+        .spawn(move || {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| eval_script(&script, &json, &name)));
+            let outcome = match res {
+                Ok(evaluated) => evaluated,
+                Err(_) => (Err("script task panicked".to_owned()), vec![]),
+            };
+            let _ = tx.send(outcome);
+        })
+    {
+        let msg = format!("failed to spawn script worker: {err}");
+        return (config, vec![], vec![("exception".into(), msg.into())]);
+    }
+
+    let (outcome, mut logs) = match tokio::time::timeout(SCRIPT_TIMEOUT, rx).await {
         Ok(Ok(evaluated)) => evaluated,
-        Ok(Err(join_err)) => (Err(format!("script task panicked: {join_err}")), vec![]),
+        Ok(Err(_)) => (Err("script worker exited unexpectedly".to_owned()), vec![]),
         Err(_elapsed) => {
-            // Dropping the JoinHandle only detaches the blocking task: the
-            // Boa evaluation keeps running on the blocking pool (its
-            // iteration limit cannot bound single heavy operations), so make
-            // the leaked worker visible in the logs.
             logging!(
                 warn,
                 Type::Config,
-                "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; worker keeps running"
+                "script \"{name_for_log}\" timed out after {SCRIPT_TIMEOUT:?}; isolated worker keeps running"
             );
             let msg = format!("script execution timed out after {SCRIPT_TIMEOUT:?}");
             (Err(msg), vec![])
@@ -79,9 +107,12 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
 fn eval_script(script: &str, config_json: &str, name: &String) -> EvalOutcome {
     let mut context = Context::default();
 
-    context
-        .runtime_limits_mut()
-        .set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
+    {
+        let limits = context.runtime_limits_mut();
+        limits.set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
+        limits.set_recursion_limit(256);
+        limits.set_stack_size_limit(4096);
+    }
 
     let outputs = Arc::new(Mutex::new(vec![]));
     let total_size = Arc::new(Mutex::new(0usize));
@@ -178,6 +209,21 @@ fn eval_script(script: &str, config_json: &str, name: &String) -> EvalOutcome {
         Err(_) => return bail("Failed to convert JS string to std string".to_owned()),
     };
 
+    if let Some(err_msg) = result.strip_prefix("__error_flag__") {
+        let err_msg = err_msg.trim_start();
+        let reason = if err_msg.is_empty() {
+            "Script execution failed".to_owned()
+        } else {
+            err_msg.to_owned()
+        };
+        logging!(
+            error,
+            Type::Config,
+            "Script execution error: {reason}. Script name: {name}"
+        );
+        return bail(reason);
+    }
+
     if result.len() > MAX_JSON_SIZE {
         return bail("Script result exceeds maximum allowed size".to_owned());
     }
@@ -193,6 +239,12 @@ fn eval_script(script: &str, config_json: &str, name: &String) -> EvalOutcome {
             bail("Script execution failed".to_owned())
         }
     }
+}
+
+fn needs_lowercase_normalization(mapping: &Mapping) -> bool {
+    mapping
+        .keys()
+        .any(|k| k.as_str().is_none_or(|s| s.bytes().any(|b| b.is_ascii_uppercase())))
 }
 
 fn parse_json_safely(json_str: &str) -> Result<Mapping, Error> {

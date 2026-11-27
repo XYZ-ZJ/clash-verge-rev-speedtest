@@ -636,12 +636,52 @@ const toPurityScore = (riskScore: number | null): number | null => {
   return 100 - clampedRisk
 }
 
+const IP_PURITY_CACHE_TTL_MS = 60_000
+const ipPurityCache = new Map<
+  string,
+  { expiresAt: number; data: IpScoreSource[] }
+>()
+const ipPurityInflight = new Map<string, Promise<IpScoreSource[]>>()
+
 // 并发查询多个权威风控源，返回最多 3 个不同来源的 IP 纯净度评分（0-100，越高越纯净）
 export const fetchIpPurityScores = async (
   ip: string,
 ): Promise<IpScoreSource[]> => {
   const trimmedIp = ip.trim()
   if (!trimmedIp) return []
+
+  const now = Date.now()
+  const cached = ipPurityCache.get(trimmedIp)
+  if (cached && cached.expiresAt > now) {
+    return cached.data
+  }
+
+  const inflight = ipPurityInflight.get(trimmedIp)
+  if (inflight) {
+    return inflight
+  }
+
+  const request = fetchIpPurityScoresUncached(trimmedIp)
+    .then((result) => {
+      if (result.length > 0) {
+        ipPurityCache.set(trimmedIp, {
+          expiresAt: Date.now() + IP_PURITY_CACHE_TTL_MS,
+          data: result,
+        })
+      }
+      return result
+    })
+    .finally(() => {
+      ipPurityInflight.delete(trimmedIp)
+    })
+
+  ipPurityInflight.set(trimmedIp, request)
+  return request
+}
+
+const fetchIpPurityScoresUncached = async (
+  trimmedIp: string,
+): Promise<IpScoreSource[]> => {
   const encodedIp = encodeURIComponent(trimmedIp)
 
   const [scamText, ipqueryText, proxycheckText, ipapiText] = await Promise.all([

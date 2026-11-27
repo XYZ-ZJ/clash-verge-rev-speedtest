@@ -4,7 +4,7 @@ import {
   WebviewWindow,
 } from '@tauri-apps/api/webviewWindow'
 import { Theme as TauriOsTheme } from '@tauri-apps/api/window'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo } from 'react'
 
 import { useVerge } from '@/hooks/use-verge'
 import { defaultDarkTheme, defaultTheme } from '@/pages/_theme'
@@ -13,7 +13,6 @@ import { useSetThemeMode, useThemeMode } from '@/services/states'
 const CSS_INJECTION_SCOPE_ROOT = '[data-css-injection-root]'
 const CSS_INJECTION_SCOPE_LIMIT =
   ':is(.monaco-editor .view-lines, .monaco-editor .view-line, .monaco-editor .margin, .monaco-editor .margin-view-overlays, .monaco-editor .view-overlays, .monaco-editor [class^="mtk"], .monaco-editor [class*=" mtk"])'
-const TOP_LEVEL_AT_RULES = ['@charset', '@import', '@namespace']
 let cssScopeSupport: boolean | null = null
 
 const canUseCssScope = () => {
@@ -50,18 +49,10 @@ const sanitizeBackgroundImageUrl = (rawUrl: string): string => {
 
 const stripUnsafeCssAtRules = (css: string) => {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
-  return withoutComments
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .split(';')
-        .filter((stmt) => {
-          const trimmed = stmt.trim().toLowerCase()
-          return !TOP_LEVEL_AT_RULES.some((rule) => trimmed.startsWith(rule))
-        })
-        .join(';'),
-    )
-    .join('\n')
+  return withoutComments.replace(
+    /@(?:charset|import|namespace)\b[^;{}]*(?:;|\r?\n|$)/gi,
+    '',
+  )
 }
 
 const wrapCssInjectionWithScope = (css?: string) => {
@@ -221,6 +212,13 @@ export const useCustomTheme = () => {
       })
     }
 
+    return muiTheme
+  }, [mode, theme_setting])
+
+  useLayoutEffect(() => {
+    const setting = theme_setting || {}
+    const dt = mode === 'light' ? defaultTheme : defaultDarkTheme
+
     const rootEle = document.documentElement
     if (rootEle) {
       const backgroundColor = mode === 'light' ? '#ECECEC' : dt.background_color
@@ -232,10 +230,10 @@ export const useCustomTheme = () => {
       rootEle.style.setProperty('--background-color', backgroundColor)
       rootEle.style.setProperty('--selection-color', selectColor)
       rootEle.style.setProperty('--scroller-color', scrollColor)
-      rootEle.style.setProperty('--primary-main', muiTheme.palette.primary.main)
+      rootEle.style.setProperty('--primary-main', theme.palette.primary.main)
       rootEle.style.setProperty(
         '--background-color-alpha',
-        alpha(muiTheme.palette.primary.main, 0.1),
+        alpha(theme.palette.primary.main, 0.1),
       )
       rootEle.style.setProperty(
         '--window-border-color',
@@ -329,9 +327,7 @@ export const useCustomTheme = () => {
 
       styleElement.textContent = effectiveInjectedCss + globalStyles
     }
-
-    return muiTheme
-  }, [mode, theme_setting, userBackgroundImage, hasUserBackground])
+  }, [mode, theme, theme_setting, userBackgroundImage, hasUserBackground])
 
   useEffect(() => {
     const id = setTimeout(() => {

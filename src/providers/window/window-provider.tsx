@@ -45,6 +45,7 @@ export const WindowProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return () => {
       isUnmounted = true
+      checkMaximized.cancel()
       unlistenPromise
         .then((unlisten) => unlisten())
         .catch((err) => console.warn('[WindowProvider] 清理监听器失败:', err))

@@ -101,7 +101,8 @@
         "copySuccess": "コピー成功",
         "saveSuccess": "ランダム設定を保存完了",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "更新に失敗しました"
+        "refreshFailed": "更新に失敗しました",
+        "busy": "操作が進行中です。しばらくしてからもう一度お試しください"
       }
     },
     "validation": {

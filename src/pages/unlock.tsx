@@ -95,6 +95,7 @@ const UnlockPage = () => {
 
   const [unlockItems, setUnlockItems] = useState<UnlockItem[]>([])
   const unlockItemsRef = useRef<UnlockItem[]>([])
+  const mountedRef = useRef(true)
   const [isCheckingAll, setIsCheckingAll] = useState(false)
   const [loadingItems, setLoadingItems] = useState<string[]>([])
 
@@ -107,6 +108,7 @@ const UnlockPage = () => {
   }
 
   useEffect(() => {
+    mountedRef.current = true
     let storedItems: UnlockItem[] = []
     try {
       const itemsJson = localStorage.getItem(UNLOCK_RESULTS_STORAGE_KEY)
@@ -131,12 +133,16 @@ const UnlockPage = () => {
         const sortedItems = mergedItems.sort((a, b) =>
           a.name.localeCompare(b.name),
         )
+        if (!mountedRef.current) return
         unlockItemsRef.current = sortedItems
         setUnlockItems(sortedItems)
       } catch (err: any) {
         console.error('Failed to get unlock items:', err)
       }
     })()
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
 
   // 执行全部项目检测
@@ -146,25 +152,35 @@ const UnlockPage = () => {
         item.name === result.name ? result : item,
       )
       unlockItemsRef.current = updatedItems
+      if (!mountedRef.current) return
       setUnlockItems(updatedItems)
       setLoadingItems((items) => items.filter((name) => name !== result.name))
     })
 
     try {
       setIsCheckingAll(true)
-      setLoadingItems(unlockItems.map((item) => item.name))
+      setLoadingItems(unlockItemsRef.current.map((item) => item.name))
       const result = await checkMediaUnlock(onComplete)
-      const sortedItems = result.sort((a, b) => a.name.localeCompare(b.name))
+      const resultMap = new Map(result.map((item) => [item.name, item]))
+      const mergedItems = unlockItemsRef.current
+        .map((item) => resultMap.get(item.name) ?? item)
+        .sort((a, b) => a.name.localeCompare(b.name))
 
-      unlockItemsRef.current = sortedItems
-      setUnlockItems(sortedItems)
-      saveResultsToStorage(sortedItems)
+      unlockItemsRef.current = mergedItems
+      saveResultsToStorage(mergedItems)
+      if (mountedRef.current) {
+        setUnlockItems(mergedItems)
+      }
     } catch (err: any) {
-      showNotice.error('tests.unlock.page.messages.detectionTimeout', err)
+      if (mountedRef.current) {
+        showNotice.error('tests.unlock.page.messages.detectionTimeout', err)
+      }
       console.error('Failed to check media unlock:', err)
     } finally {
-      setLoadingItems([])
-      setIsCheckingAll(false)
+      if (mountedRef.current) {
+        setLoadingItems([])
+        setIsCheckingAll(false)
+      }
     }
   })
 
@@ -178,17 +194,23 @@ const UnlockPage = () => {
       )
 
       unlockItemsRef.current = updatedItems
-      setUnlockItems(updatedItems)
       saveResultsToStorage(updatedItems)
+      if (mountedRef.current) {
+        setUnlockItems(updatedItems)
+      }
     } catch (err: any) {
-      showNotice.error(
-        'tests.unlock.page.messages.detectionFailedWithName',
-        { name },
-        err,
-      )
+      if (mountedRef.current) {
+        showNotice.error(
+          'tests.unlock.page.messages.detectionFailedWithName',
+          { name },
+          err,
+        )
+      }
       console.error(`Failed to check ${name}:`, err)
     } finally {
-      setLoadingItems((items) => items.filter((item) => item !== name))
+      if (mountedRef.current) {
+        setLoadingItems((items) => items.filter((item) => item !== name))
+      }
     }
   }
 

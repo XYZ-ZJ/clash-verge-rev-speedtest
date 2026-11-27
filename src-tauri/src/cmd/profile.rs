@@ -210,19 +210,12 @@ pub async fn delete_profile(index: std::string::String) -> CmdResult {
 
 async fn restore_previous_profile(prev_profile: &String) -> CmdResult<()> {
     logging!(info, Type::Cmd, "尝试恢复到之前的配置: {}", prev_profile);
-    let restore_profiles = IProfiles {
-        current: Some(prev_profile.to_owned()),
-        items: None,
-    };
-    Config::profiles()
+    commit_current_profile(&Config::profiles().await, Some(prev_profile.to_owned()))
         .await
-        .edit_draft(|d| d.patch_config(&restore_profiles));
-    Config::profiles().await.apply();
-    crate::process::AsyncHandler::spawn(|| async move {
-        if let Err(e) = profiles_save_file_safe().await {
-            logging!(warn, Type::Cmd, "异步保存恢复配置文件失败: {e:#}");
-        }
-    });
+        .stringify_err()?;
+    if let Err(e) = profiles_save_file_safe().await {
+        logging!(warn, Type::Cmd, "保存恢复配置文件失败: {e:#}");
+    }
     Ok(())
 }
 
@@ -484,6 +477,7 @@ pub async fn view_profile(index: std::string::String) -> CmdResult {
         .as_ref()
         .ok_or_else(|| coded_error("PROFILE_OPEN_FAILED", "the file field is null"))?;
 
+    IProfiles::validate_profile_file(file.as_str()).with_error_code("PROFILE_OPEN_FAILED")?;
     let path = dirs::app_profiles_dir()
         .with_error_code("PROFILE_OPEN_FAILED")?
         .join(file.as_str());
@@ -505,7 +499,10 @@ pub async fn view_profile(index: std::string::String) -> CmdResult {
         ));
     }
 
-    help::open_file(path).with_error_code("PROFILE_OPEN_FAILED")
+    crate::process::AsyncHandler::spawn_blocking(move || help::open_file(path))
+        .await
+        .with_error_code("PROFILE_OPEN_FAILED")?
+        .with_error_code("PROFILE_OPEN_FAILED")
 }
 
 #[tauri::command]
@@ -525,6 +522,7 @@ pub async fn read_profile_file(index: std::string::String) -> CmdResult<std::str
     };
 
     if let Some(file) = item.file.as_ref() {
+        IProfiles::validate_profile_file(file.as_str()).with_error_code("PROFILE_READ_FAILED")?;
         let path = dirs::app_profiles_dir()
             .with_error_code("PROFILE_READ_FAILED")?
             .join(file.as_str());

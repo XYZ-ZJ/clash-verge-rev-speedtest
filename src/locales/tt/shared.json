@@ -101,7 +101,8 @@
         "copySuccess": "Күчерелде",
         "saveSuccess": "Configuration saved successfully",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "Refresh failed"
+        "refreshFailed": "Refresh failed",
+        "busy": "Операция башкарыла, соңрак кабатлап карагыз"
       }
     },
     "validation": {

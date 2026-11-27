@@ -77,9 +77,7 @@ impl NetworkManager {
         let mut builder = Client::builder()
             .tls_backend_rustls()
             .redirect(reqwest::redirect::Policy::limited(10))
-            .tcp_keepalive(Duration::from_secs(60))
-            .pool_max_idle_per_host(0)
-            .pool_idle_timeout(None);
+            .tcp_keepalive(Duration::from_secs(60));
 
         if matches!(tls_root_mode, TlsRootMode::StaticWebpkiRoots) {
             builder = builder.tls_backend_preconfigured(Self::build_static_webpki_tls_config()?);
@@ -113,10 +111,14 @@ impl NetworkManager {
     }
 
     fn build_static_webpki_tls_config() -> Result<rustls::ClientConfig> {
+        static STATIC_TLS_CONFIG: std::sync::OnceLock<rustls::ClientConfig> = std::sync::OnceLock::new();
+        if let Some(config) = STATIC_TLS_CONFIG.get() {
+            return Ok(config.clone());
+        }
         let mut config = build_webpki_rooted_tls_config()?;
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-        Ok(config)
+        Ok(STATIC_TLS_CONFIG.get_or_init(|| config).clone())
     }
 
     fn should_retry_with_static_webpki_roots(err: &anyhow::Error) -> bool {

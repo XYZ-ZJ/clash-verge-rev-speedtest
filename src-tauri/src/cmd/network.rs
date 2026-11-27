@@ -12,10 +12,13 @@ use tauri_plugin_clash_verge_sysinfo;
 pub async fn get_sys_proxy() -> CmdResult<SystemProxy> {
     Sysopt::global().wait_idle().await;
     // With no network service there is no proxy configured anywhere, which reads as disabled.
-    let sys_proxy = match Sysproxy::get_system_proxy() {
-        Err(error) if proxy_control::is_missing_network_service(&error) => Sysproxy::default(),
-        other => other.stringify_err()?,
-    };
+    let sys_proxy = crate::process::AsyncHandler::spawn_blocking(|| match Sysproxy::get_system_proxy() {
+        Err(error) if proxy_control::is_missing_network_service(&error) => Ok(Sysproxy::default()),
+        other => other,
+    })
+    .await
+    .stringify_err()?
+    .stringify_err()?;
     let Sysproxy {
         host,
         bypass,
@@ -34,10 +37,13 @@ pub async fn get_sys_proxy() -> CmdResult<SystemProxy> {
 #[specta::specta]
 pub async fn get_auto_proxy() -> CmdResult<AutoProxy> {
     Sysopt::global().wait_idle().await;
-    let auto_proxy = match Autoproxy::get_auto_proxy() {
-        Err(error) if proxy_control::is_missing_network_service(&error) => Autoproxy::default(),
-        other => other.stringify_err()?,
-    };
+    let auto_proxy = crate::process::AsyncHandler::spawn_blocking(|| match Autoproxy::get_auto_proxy() {
+        Err(error) if proxy_control::is_missing_network_service(&error) => Ok(Autoproxy::default()),
+        other => other,
+    })
+    .await
+    .stringify_err()?
+    .stringify_err()?;
     let Autoproxy { enable, url } = auto_proxy;
 
     Ok(AutoProxy { enable, url })

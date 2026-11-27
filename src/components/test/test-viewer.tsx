@@ -84,16 +84,23 @@ export const TestViewer = forwardRef<TestViewerRef, Props>(
     useImperativeHandle(ref, () => ({
       create: () => {
         clearResetTimer()
+        formIns.reset({
+          uid: undefined,
+          name: '',
+          icon: '',
+          url: '',
+        })
         setOpenType('new')
         setOpen(true)
       },
       edit: (item) => {
         clearResetTimer()
-        if (item) {
-          Object.entries(item).forEach(([key, value]) => {
-            formIns.setValue(key as any, value)
-          })
-        }
+        formIns.reset({
+          uid: item?.uid ?? undefined,
+          name: item?.name ?? '',
+          icon: item?.icon ?? '',
+          url: item?.url ?? '',
+        })
         setOpenType('edit')
         setOpen(true)
       },

@@ -661,7 +661,9 @@
         "restartFailed": "Ядрону яңадан башлап булмады",
         "startFailed": "Ядрону башлап булмады",
         "serviceCoreStopped": "Хезмәт эшләткән ядро көтмәгәндә туктады",
-        "stopFailed": "Ядрону туктатып булмады"
+        "stopFailed": "Ядрону туктатып булмады",
+        "upgradeFailed": "Төшне яңартып булмады",
+        "dnsOverrideUpdateFailed": "DNS алыштыру көйләвен яңартып булмады"
       },
       "clashService": {
         "installFailed": "Хезмәтне урнаштырып булмады",

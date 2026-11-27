@@ -561,6 +561,10 @@ export const ProxyChain = ({
         },
       )
       if (!selectResult.ok) {
+        await mutate(() => updateProxyChainConfigInRuntime(null), {
+          id: 'update-proxy-chain-runtime',
+          errorNotice: false,
+        }).catch(() => {})
         showNotice.info('shared.feedback.notifications.common.busy')
         return
       }
@@ -574,6 +578,10 @@ export const ProxyChain = ({
       await refreshProxy()
       debugLog('Successfully connected to proxy chain')
     } catch (error) {
+      await mutate(() => updateProxyChainConfigInRuntime(null), {
+        id: 'update-proxy-chain-runtime',
+        errorNotice: false,
+      }).catch(() => {})
       console.error('Failed to connect to proxy chain:', error)
       showNotice.error(t('proxies.page.chain.connectFailed'))
     } finally {

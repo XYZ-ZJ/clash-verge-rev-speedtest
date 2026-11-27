@@ -24,3 +24,19 @@ pub use profile::*;
 pub use proxy::*;
 pub use tun::*;
 pub use window::*;
+
+pub(super) async fn close_connections_if_enabled(context: &str) {
+    if crate::config::Config::verge()
+        .await
+        .latest_arc()
+        .auto_close_connection
+        .unwrap_or(false)
+        && let Err(err) = crate::core::handle::Handle::mihomo().close_all_connections().await
+    {
+        clash_verge_logging::logging!(
+            error,
+            clash_verge_logging::Type::Config,
+            "{context}: failed to close all connections: {err}"
+        );
+    }
+}

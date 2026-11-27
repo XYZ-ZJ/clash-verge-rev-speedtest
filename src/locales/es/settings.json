@@ -661,7 +661,9 @@
         "restartFailed": "No se pudo reiniciar el núcleo",
         "startFailed": "No se pudo iniciar el núcleo",
         "serviceCoreStopped": "El núcleo ejecutado por el servicio se detuvo inesperadamente",
-        "stopFailed": "No se pudo detener el núcleo"
+        "stopFailed": "No se pudo detener el núcleo",
+        "upgradeFailed": "Error al actualizar el núcleo",
+        "dnsOverrideUpdateFailed": "Error al actualizar la configuración de anulación de DNS"
       },
       "clashService": {
         "installFailed": "No se pudo instalar el servicio",

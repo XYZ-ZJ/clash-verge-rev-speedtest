@@ -661,7 +661,9 @@
         "restartFailed": "Gagal memulai ulang core",
         "startFailed": "Gagal memulai core",
         "serviceCoreStopped": "Core yang dijalankan layanan berhenti secara tak terduga",
-        "stopFailed": "Gagal menghentikan core"
+        "stopFailed": "Gagal menghentikan core",
+        "upgradeFailed": "Gagal memperbarui core",
+        "dnsOverrideUpdateFailed": "Gagal memperbarui pengaturan penimpaan DNS"
       },
       "clashService": {
         "installFailed": "Gagal memasang layanan",

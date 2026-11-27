@@ -661,7 +661,9 @@
         "restartFailed": "코어를 재시작하지 못했습니다",
         "startFailed": "코어를 시작하지 못했습니다",
         "serviceCoreStopped": "서비스에서 실행 중인 코어가 예기치 않게 중지되었습니다",
-        "stopFailed": "코어를 중지하지 못했습니다"
+        "stopFailed": "코어를 중지하지 못했습니다",
+        "upgradeFailed": "코어 업그레이드에 실패했습니다",
+        "dnsOverrideUpdateFailed": "DNS 재정의 설정 업데이트에 실패했습니다"
       },
       "clashService": {
         "installFailed": "서비스를 설치하지 못했습니다",

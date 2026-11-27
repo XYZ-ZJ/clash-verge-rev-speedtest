@@ -169,12 +169,15 @@ export const ProxyGroupTools = memo(function ProxyGroupTools(props: Props) {
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (!headState.open)
-            // eslint-disable-next-line @eslint-react/dom-no-flush-sync
-            flushSync(() => onHeadState({ open: true }))
+          const nextState: Partial<HeadState> = !headState.open
+            ? { open: true }
+            : {}
           // Remind the user that it is custom test url
           if (testUrl?.trim() && textState !== 'filter') {
-            onHeadState({ textState: 'url' })
+            nextState.textState = 'url'
+          }
+          if (Object.keys(nextState).length > 0) {
+            onHeadState(nextState)
           }
           if (testUrl?.trim() && !isValidUrl(testUrl)) {
             showNotice.warning('proxies.feedback.warnings.invalidTestUrl')
@@ -199,10 +202,8 @@ export const ProxyGroupTools = memo(function ProxyGroupTools(props: Props) {
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (!headState.open)
-            // eslint-disable-next-line @eslint-react/dom-no-flush-sync
-            flushSync(() => onHeadState({ open: true }))
           onHeadState({
+            ...(!headState.open && { open: true }),
             sortType: ((sortType + 1) % 3) as ProxySortType,
           })
         }}
@@ -243,10 +244,10 @@ export const ProxyGroupTools = memo(function ProxyGroupTools(props: Props) {
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (!headState.open)
-            // eslint-disable-next-line @eslint-react/dom-no-flush-sync
-            flushSync(() => onHeadState({ open: true }))
-          onHeadState({ showType: !showType })
+          onHeadState({
+            ...(!headState.open && { open: true }),
+            showType: !showType,
+          })
         }}
       >
         {showType ? (
@@ -263,10 +264,10 @@ export const ProxyGroupTools = memo(function ProxyGroupTools(props: Props) {
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (!headState.open && textState !== 'filter')
-            // eslint-disable-next-line @eslint-react/dom-no-flush-sync
-            flushSync(() => onHeadState({ open: true }))
-          onHeadState({ textState: textState === 'filter' ? null : 'filter' })
+          onHeadState({
+            ...(!headState.open && textState !== 'filter' && { open: true }),
+            textState: textState === 'filter' ? null : 'filter',
+          })
           setTimeout(() => inputRef.current?.focus())
         }}
       >

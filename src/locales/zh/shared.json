@@ -101,7 +101,8 @@
         "copySuccess": "复制成功",
         "saveSuccess": "配置保存成功",
         "saveFailed": "配置保存失败",
-        "refreshFailed": "刷新失败"
+        "refreshFailed": "刷新失败",
+        "busy": "操作正在进行中，请稍后再试"
       }
     },
     "validation": {

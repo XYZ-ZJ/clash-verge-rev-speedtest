@@ -95,22 +95,27 @@ export const ProxyRender = memo(function ProxyRender(props: RenderProps) {
         block="name"
         sx={{ flex: '0 1 auto', mr: toolsOnLeft ? 1 : 0 }}
       >
-        {enable_group_icon && group.icon?.trim().startsWith('http') && (
-          <img
-            src={iconCachePath === '' ? group.icon : iconCachePath}
-            alt={group.name}
-            width="32px"
-            style={{ marginRight: '12px', borderRadius: '6px' }}
-          />
-        )}
-        {enable_group_icon && group.icon?.trim().startsWith('data') && (
-          <img
-            src={group.icon}
-            alt={group.name}
-            width="32px"
-            style={{ marginRight: '12px', borderRadius: '6px' }}
-          />
-        )}
+        {enable_group_icon &&
+          group.icon?.trim().startsWith('http') &&
+          iconCachePath !== '' && (
+            <img
+              src={iconCachePath}
+              alt={group.name}
+              width="32px"
+              style={{ marginRight: '12px', borderRadius: '6px' }}
+            />
+          )}
+        {enable_group_icon &&
+          /^data:image\/(png|jpe?g|webp|gif|bmp|x-icon|vnd\.microsoft\.icon);/i.test(
+            group.icon?.trim() ?? '',
+          ) && (
+            <img
+              src={group.icon?.trim()}
+              alt={group.name}
+              width="32px"
+              style={{ marginRight: '12px', borderRadius: '6px' }}
+            />
+          )}
         {enable_group_icon && group.icon?.trim().startsWith('<svg') && (
           <img
             src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(group.icon)}`}

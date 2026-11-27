@@ -661,7 +661,9 @@
         "restartFailed": "コアの再起動に失敗しました",
         "startFailed": "コアの起動に失敗しました",
         "serviceCoreStopped": "サービスで実行中のコアが予期せず停止しました",
-        "stopFailed": "コアの停止に失敗しました"
+        "stopFailed": "コアの停止に失敗しました",
+        "upgradeFailed": "コアのアップグレードに失敗しました",
+        "dnsOverrideUpdateFailed": "DNS オーバーライド設定の更新に失敗しました"
       },
       "clashService": {
         "installFailed": "サービスのインストールに失敗しました",

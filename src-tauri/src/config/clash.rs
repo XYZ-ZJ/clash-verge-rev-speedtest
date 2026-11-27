@@ -145,6 +145,15 @@ impl IClashTemp {
 
     pub fn patch_config(&mut self, patch: &Mapping) {
         for (key, value) in patch.iter() {
+            if key.as_str() == Some("tun")
+                && let Some(Value::Mapping(existing_tun)) = self.0.get_mut(key)
+                && let Some(patch_tun) = value.as_mapping()
+            {
+                for (tun_key, tun_val) in patch_tun.iter() {
+                    existing_tun.insert(tun_key.to_owned(), tun_val.to_owned());
+                }
+                continue;
+            }
             self.0.insert(key.to_owned(), value.to_owned());
         }
     }

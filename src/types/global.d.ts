@@ -44,6 +44,9 @@ interface IConfigData {
     'route-exclude-address'?: string[]
     'strict-route': boolean
     mtu: number
+    'inet4-route-address'?: string[]
+    'inet6-route-address'?: string[]
+    'interface-name'?: string
   }
   dns?: {
     enable?: boolean

@@ -34,6 +34,8 @@ pub async fn save_profile_file(
         _ => None,
     };
 
+    let _profile_write_guard = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
+
     // 在异步操作前获取必要元数据并释放锁
     let (rel_path, is_merge_file, is_script_file, affects_runtime) = {
         let profiles = Config::profiles().await;
@@ -41,6 +43,7 @@ pub async fn save_profile_file(
         let item = profiles_guard.get_item(&index).stringify_err()?;
         let is_merge = item.itype.as_ref().is_some_and(|t| t == "merge");
         let path = item.file.clone().ok_or("file field is null")?;
+        IProfiles::validate_profile_file(path.as_str()).stringify_err()?;
         let is_script = item.itype.as_ref().is_some_and(|t| t == "script") || path.ends_with(".js");
         let affects_runtime = profile_affects_runtime(&profiles_guard, &index);
         (path, is_merge, is_script, affects_runtime)

@@ -43,16 +43,12 @@ const LogPage = () => {
     // Server-side filtering handles level filtering via query parameters
     // We only need to apply search filtering here
     return logData.filter((data) => {
-      // 构建完整的搜索文本，包含时间、类型和内容
+      if (logState !== 'all' && !data.type.includes(logState)) {
+        return false
+      }
       const searchText =
         `${data.time || ''} ${data.type} ${data.payload}`.toLowerCase()
-
-      const matchesSearch = match(searchText)
-
-      return (
-        (logState == 'all' ? true : data.type.includes(logState)) &&
-        matchesSearch
-      )
+      return match(searchText)
     })
   }, [logData, logState, match])
 
@@ -71,7 +67,7 @@ const LogPage = () => {
       scrollRef.current.isNearBottom
     ) {
       virtuosoRef.current?.scrollToIndex(filteredLogs.length - 1, {
-        behavior: 'smooth',
+        behavior: 'auto',
       })
     }
   }, [isDescending, filteredLogs])

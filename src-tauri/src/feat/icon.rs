@@ -202,6 +202,28 @@ fn is_supported_icon_content(content: &[u8]) -> bool {
     tauri::image::Image::from_bytes(content).is_ok() || (looks_like_svg(content) && is_safe_svg(content))
 }
 
+fn shared_icon_client() -> CmdResult<&'static reqwest::Client> {
+    static ICON_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = ICON_CLIENT.get() {
+        return Ok(client);
+    }
+    let built = reqwest::Client::builder()
+        .use_rustls_tls()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 3 {
+                return attempt.error("too many icon redirects");
+            }
+            if let Err(err) = validate_external_icon_url(attempt.url().as_str()) {
+                return attempt.error(err.to_string());
+            }
+            attempt.follow()
+        }))
+        .build()
+        .stringify_err()?;
+    Ok(ICON_CLIENT.get_or_init(|| built))
+}
+
 pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String> {
     let parsed_url = validate_external_icon_url(url.as_str())?;
     let icon_cache_dir = dirs::app_home_dir().stringify_err()?.join("icons").join("cache");
@@ -219,27 +241,26 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
     let temp_name = format!("{icon_name}.downloading");
     let temp_path = ensure_icon_cache_target(&icon_cache_dir, temp_name.as_str())?;
 
-    let client = reqwest::Client::builder()
-        .use_rustls_tls()
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 3 {
-                return attempt.error("too many icon redirects");
-            }
-            if let Err(err) = validate_external_icon_url(attempt.url().as_str()) {
-                return attempt.error(err.to_string());
-            }
-            attempt.follow()
-        }))
-        .build()
-        .stringify_err()?;
-    let response = client.get(parsed_url).send().await.stringify_err()?;
+    let client = shared_icon_client()?;
+    let mut response = client.get(parsed_url).send().await.stringify_err()?;
     validate_external_icon_url(response.url().as_str())?;
-    let response = response.error_for_status().stringify_err()?;
+    response = response.error_for_status().stringify_err()?;
     if response.content_length().is_some_and(|len| len > MAX_ICON_BYTES as u64) {
         return Err("Icon download exceeds maximum allowed size".into());
     }
-    let content = response.bytes().await.stringify_err()?;
+
+    let mut content = Vec::with_capacity(
+        response
+            .content_length()
+            .map(|len| usize::try_from(len).unwrap_or(MAX_ICON_BYTES).min(MAX_ICON_BYTES))
+            .unwrap_or(8192),
+    );
+    while let Some(chunk) = response.chunk().await.stringify_err()? {
+        if content.len().saturating_add(chunk.len()) > MAX_ICON_BYTES {
+            return Err("Icon download exceeds maximum allowed size".into());
+        }
+        content.extend_from_slice(&chunk);
+    }
 
     if !is_supported_icon_content(&content) {
         let _ = temp_path.remove_if_exists().await;
@@ -295,10 +316,10 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
     if let Some(Component::Prefix(prefix)) = file_path.components().next()
         && matches!(
             prefix.kind(),
-            std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _)
+            std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _) | std::path::Prefix::DeviceNS(_)
         )
     {
-        return Err("refusing UNC icon path".into());
+        return Err("refusing UNC or device icon path".into());
     }
 
     let ext: String = match file_path.extension() {
@@ -313,6 +334,10 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
     let dest_path = ensure_icon_cache_target(&icon_dir, dest_file_name.as_str())?;
 
     if file_path.exists() {
+        let meta = fs::metadata(file_path).await.stringify_err()?;
+        if !meta.is_file() || meta.len() > MAX_ICON_BYTES as u64 {
+            return Err("Icon file is invalid or exceeds maximum allowed size".into());
+        }
         if ext == "svg" {
             let bytes = fs::read(file_path).await.stringify_err()?;
             if !is_supported_icon_content(&bytes) {

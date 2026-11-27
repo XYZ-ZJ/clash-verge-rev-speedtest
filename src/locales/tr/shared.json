@@ -101,7 +101,8 @@
         "copySuccess": "Kopyalama Başarılı",
         "saveSuccess": "Yapılandırma başarıyla kaydedildi",
         "saveFailed": "Yapılandırma kaydedilemedi",
-        "refreshFailed": "Yenileme başarısız"
+        "refreshFailed": "Yenileme başarısız",
+        "busy": "İşlem devam ediyor, lütfen daha sonra tekrar deneyin"
       }
     },
     "validation": {

@@ -902,11 +902,13 @@ export interface TranslationResources {
         errors: {
           clash: {
             configUpdateFailed: string
+            dnsOverrideUpdateFailed: string
             modeUpdateFailed: string
             restartFailed: string
             serviceCoreStopped: string
             startFailed: string
             stopFailed: string
+            upgradeFailed: string
           }
           clashService: {
             coreAlreadyRunning: string
@@ -1545,6 +1547,7 @@ export interface TranslationResources {
         }
         notifications: {
           common: {
+            busy: string
             copySuccess: string
             refreshFailed: string
             saveFailed: string

@@ -15,22 +15,31 @@ use tauri::{AppHandle, ipc::Channel};
 #[specta::specta]
 pub async fn open_app_dir() -> CmdResult<()> {
     let app_dir = dirs::app_home_dir().stringify_err()?;
-    open::that(app_dir).stringify_err()
+    crate::process::AsyncHandler::spawn_blocking(move || open::that(app_dir))
+        .await
+        .stringify_err()?
+        .stringify_err()
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn open_core_dir() -> CmdResult<()> {
     let core_dir = tauri::utils::platform::current_exe().stringify_err()?;
-    let core_dir = core_dir.parent().ok_or("failed to get core dir")?;
-    open::that(core_dir).stringify_err()
+    let core_dir = core_dir.parent().ok_or("failed to get core dir")?.to_path_buf();
+    crate::process::AsyncHandler::spawn_blocking(move || open::that(core_dir))
+        .await
+        .stringify_err()?
+        .stringify_err()
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn open_logs_dir() -> CmdResult<()> {
     let log_dir = dirs::app_logs_dir().stringify_err()?;
-    open::that(log_dir).stringify_err()
+    crate::process::AsyncHandler::spawn_blocking(move || open::that(log_dir))
+        .await
+        .stringify_err()?
+        .stringify_err()
 }
 
 #[tauri::command]

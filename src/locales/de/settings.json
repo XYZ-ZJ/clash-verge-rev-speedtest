@@ -661,7 +661,9 @@
         "restartFailed": "Kern konnte nicht neu gestartet werden",
         "startFailed": "Kern konnte nicht gestartet werden",
         "serviceCoreStopped": "Der vom Dienst ausgeführte Kern wurde unerwartet beendet",
-        "stopFailed": "Kern konnte nicht gestoppt werden"
+        "stopFailed": "Kern konnte nicht gestoppt werden",
+        "upgradeFailed": "Core-Upgrade fehlgeschlagen",
+        "dnsOverrideUpdateFailed": "DNS-Überschreibungseinstellung konnte nicht aktualisiert werden"
       },
       "clashService": {
         "installFailed": "Dienst konnte nicht installiert werden",

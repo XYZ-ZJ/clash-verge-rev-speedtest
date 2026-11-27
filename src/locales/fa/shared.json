@@ -101,7 +101,8 @@
         "copySuccess": "کپی با موفقیت انجام شد",
         "saveSuccess": "Configuration saved successfully",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "به‌روزرسانی ناموفق بود"
+        "refreshFailed": "به‌روزرسانی ناموفق بود",
+        "busy": "عملیات در حال انجام است، لطفاً بعداً دوباره تلاش کنید"
       }
     },
     "validation": {

@@ -101,7 +101,8 @@
         "copySuccess": "Copia exitosa",
         "saveSuccess": "Configuración aleatoria guardada correctamente",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "Error al actualizar"
+        "refreshFailed": "Error al actualizar",
+        "busy": "Operación en curso, inténtelo de nuevo más tarde"
       }
     },
     "validation": {

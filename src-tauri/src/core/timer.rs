@@ -131,7 +131,6 @@ impl Timer {
         }
 
         if let Err(e) = self.refresh().await {
-            self.initialized.store(false, Ordering::SeqCst);
             logging!(error, Type::Timer, "Failed to initialize timer: {e:#}");
             return Err(e);
         }

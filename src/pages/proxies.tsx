@@ -82,7 +82,10 @@ const ProxyPage = () => {
         id: 'update-proxy-chain-runtime',
         errorNotice: false,
       })
-      if (!result.ok) return
+      if (!result.ok) {
+        showNotice.info('shared.feedback.notifications.common.busy')
+        return
+      }
       debugLog('Chain configuration cleared successfully')
     } catch (error) {
       console.error('Failed to clear chain configuration:', error)

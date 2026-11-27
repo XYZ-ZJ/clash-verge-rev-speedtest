@@ -149,11 +149,20 @@ function useProxyRenderState(
 
   const saveScrollPosition = useCallback(
     (scrollTop: number) => {
-      const scrollPositions = localStorage.getItem('proxy-scroll-positions')
-        ? JSON.parse(localStorage.getItem('proxy-scroll-positions') ?? '{}')
-        : {}
-      scrollPositions[scrollPositionKey] = scrollTop
       try {
+        const raw = localStorage.getItem('proxy-scroll-positions')
+        let scrollPositions: Record<string, number> = {}
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object') {
+              scrollPositions = parsed as Record<string, number>
+            }
+          } catch {
+            scrollPositions = {}
+          }
+        }
+        scrollPositions[scrollPositionKey] = scrollTop
         localStorage.setItem(
           'proxy-scroll-positions',
           JSON.stringify(scrollPositions),

@@ -304,7 +304,10 @@ impl CoreManager {
             proxy_control::stop_guard().await;
             self.core_stopped();
             return match child.kill() {
-                Ok(()) => Err(readiness_error),
+                Ok(()) => {
+                    let _ = self.wait_for_sidecar_exit().await;
+                    Err(readiness_error)
+                }
                 Err(kill_error) => Err(anyhow::anyhow!(
                     "{readiness_error:#}; failed to terminate unready sidecar PID {pid}: {kill_error:#}"
                 )),

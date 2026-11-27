@@ -661,7 +661,9 @@
         "restartFailed": "Failed to restart the core",
         "startFailed": "Failed to start the core",
         "serviceCoreStopped": "The service's core stopped unexpectedly",
-        "stopFailed": "Failed to stop the core"
+        "stopFailed": "Failed to stop the core",
+        "upgradeFailed": "Failed to upgrade the core",
+        "dnsOverrideUpdateFailed": "Failed to update DNS override setting"
       },
       "clashService": {
         "installFailed": "Failed to install the service",

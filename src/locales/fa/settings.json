@@ -661,7 +661,9 @@
         "restartFailed": "راه‌اندازی مجدد هسته ناموفق بود",
         "startFailed": "راه‌اندازی هسته ناموفق بود",
         "serviceCoreStopped": "هسته‌ای که سرویس اجرا می‌کرد به‌طور غیرمنتظره متوقف شد",
-        "stopFailed": "توقف هسته ناموفق بود"
+        "stopFailed": "توقف هسته ناموفق بود",
+        "upgradeFailed": "ارتقای هسته ناموفق بود",
+        "dnsOverrideUpdateFailed": "به‌روزرسانی تنظیمات بازنویسی DNS ناموفق بود"
       },
       "clashService": {
         "installFailed": "نصب سرویس ناموفق بود",

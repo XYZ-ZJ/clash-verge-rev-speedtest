@@ -661,7 +661,9 @@
         "restartFailed": "تعذّر إعادة تشغيل النواة",
         "startFailed": "تعذّر تشغيل النواة",
         "serviceCoreStopped": "توقفت النواة التي تشغّلها الخدمة بشكل غير متوقع",
-        "stopFailed": "تعذّر إيقاف النواة"
+        "stopFailed": "تعذّر إيقاف النواة",
+        "upgradeFailed": "فشل ترقية النواة",
+        "dnsOverrideUpdateFailed": "فشل تحديث إعداد تجاوز DNS"
       },
       "clashService": {
         "installFailed": "تعذّر تثبيت الخدمة",

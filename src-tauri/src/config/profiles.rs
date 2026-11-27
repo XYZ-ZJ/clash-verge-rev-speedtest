@@ -24,7 +24,7 @@ use std::{
     path::{Component, Path},
     sync::{
         LazyLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -32,6 +32,7 @@ use tauri_plugin_mihomo::models::{Proxies, ProxyType};
 use tokio::task::JoinHandle;
 
 pub(crate) static PROFILE_WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static PROFILES_LOAD_FAILED: AtomicBool = AtomicBool::new(false);
 
 static ACTIVATE_SELECTED_TASK: LazyLock<Mutex<Option<JoinHandle<()>>>> = LazyLock::new(|| Mutex::new(None));
 static ACTIVATE_SELECTED_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -103,8 +104,9 @@ impl IProfiles {
 
         match help::read_yaml::<Self>(&path).await {
             Ok(mut profiles) => {
+                PROFILES_LOAD_FAILED.store(false, Ordering::Release);
                 let items = profiles.items.get_or_insert_with(Vec::new);
-                let mut home_changed = false;
+                let mut changed = false;
                 for item in items.iter_mut() {
                     if item.uid.is_none() {
                         item.uid = Some(help::get_uid("d").into());
@@ -116,22 +118,37 @@ impl IProfiles {
                             .get_or_insert(true);
                     }
 
+                    if let Some(file) = item.file.as_deref()
+                        && Self::validate_profile_file(file).is_err()
+                    {
+                        logging!(
+                            warn,
+                            Type::Config,
+                            "Cleared unsafe profile file reference {file:?} while loading profiles.yaml"
+                        );
+                        item.file = None;
+                        changed = true;
+                    }
+
                     if item
                         .home
                         .as_deref()
                         .is_some_and(|home| normalize_profile_home_url(home).is_none())
                     {
                         item.home = None;
-                        home_changed = true;
+                        changed = true;
                     }
                 }
 
-                if home_changed && let Err(err) = profiles.save_file().await {
+                if changed && let Err(err) = profiles.save_file().await {
                     logging!(error, Type::Config, "无法保存已清理的 profiles.yaml: {err:#}");
                 }
                 profiles
             }
             Err(err) => {
+                if path.exists() {
+                    PROFILES_LOAD_FAILED.store(true, Ordering::Release);
+                }
                 logging!(error, Type::Config, "failed to read profiles.yaml: {err:#}");
                 Self::default()
             }
@@ -139,7 +156,16 @@ impl IProfiles {
     }
 
     pub async fn save_file(&self) -> Result<()> {
-        help::save_yaml(&dirs::profiles_path()?, self, Some("# Profiles Config for Clash Verge")).await
+        let path = dirs::profiles_path()?;
+        if PROFILES_LOAD_FAILED.load(Ordering::Acquire)
+            && self.items.as_ref().is_none_or(Vec::is_empty)
+            && path.exists()
+        {
+            bail!("refusing to overwrite unreadable profiles.yaml with an empty profile list");
+        }
+        help::save_yaml(&path, self, Some("# Profiles Config for Clash Verge")).await?;
+        PROFILES_LOAD_FAILED.store(false, Ordering::Release);
+        Ok(())
     }
 
     /// 只修改current，valid和chain
@@ -189,6 +215,7 @@ impl IProfiles {
                 .file
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("file field is required when file_data is provided"))?;
+            Self::validate_profile_file(file.as_str())?;
             let path = dirs::app_profiles_dir()?.join(file.as_str());
 
             // Atomic temp+rename: a crash mid-write must not truncate an
@@ -257,7 +284,7 @@ impl IProfiles {
         bail!("failed to find the profile item \"uid:{uid}\"")
     }
 
-    fn validate_profile_file(file: &str) -> Result<()> {
+    pub(crate) fn validate_profile_file(file: &str) -> Result<()> {
         let mut components = Path::new(file).components();
         if file.is_empty()
             || file.contains('/')

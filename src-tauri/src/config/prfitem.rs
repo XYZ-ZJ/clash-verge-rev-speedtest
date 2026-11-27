@@ -476,6 +476,7 @@ impl PrfItem {
             .file
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("could not find the file"))?;
+        profiles::IProfiles::validate_profile_file(file.as_str())?;
         let path = dirs::app_profiles_dir()?.join(file.as_str());
         let content = fs::read_to_string(&path)
             .await

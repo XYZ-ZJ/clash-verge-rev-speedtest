@@ -47,7 +47,7 @@ export const useSystemProxyState = () => {
 
   // Coalesce rapid clicks so only the latest requested state is applied.
   const pendingRef = useRef<boolean | null>(null)
-  const busyRef = useRef(false)
+  const activeLoopRef = useRef<Promise<void> | null>(null)
 
   const toggleSystemProxy = async (enabled: boolean) => {
     // Roll failed optimistic writes back to the latest confirmed state.
@@ -57,60 +57,69 @@ export const useSystemProxyState = () => {
     )
     pendingRef.current = enabled
 
-    if (busyRef.current) return
-    busyRef.current = true
+    if (activeLoopRef.current) {
+      return activeLoopRef.current
+    }
 
-    try {
-      while (pendingRef.current !== null) {
-        const target = pendingRef.current
+    const runLoop = (async () => {
+      try {
+        while (pendingRef.current !== null) {
+          const target = pendingRef.current
+          pendingRef.current = null
+          await mutate(
+            () => patchVergeConfig({ enable_system_proxy: target }),
+            {
+              id: 'toggle-system-proxy',
+              errorNotice: false,
+            },
+          )
+          confirmed = target
+          if (!target && verge?.auto_close_connection) {
+            await mutate(() => closeAllConnections(), {
+              id: 'close-all-connections',
+              errorNotice: false,
+            }).catch(() => {})
+          }
+        }
+      } catch (error) {
+        mutateVerge((prev) =>
+          prev ? { ...prev, enable_system_proxy: confirmed } : prev,
+        )
+        // Queued requests were based on a state that never landed.
         pendingRef.current = null
-        await mutate(() => patchVergeConfig({ enable_system_proxy: target }), {
-          id: 'toggle-system-proxy',
-          errorNotice: false,
-        })
-        confirmed = target
-        if (!target && verge?.auto_close_connection) {
-          await mutate(() => closeAllConnections(), {
-            id: 'close-all-connections',
-            errorNotice: false,
-          }).catch(() => {})
+        throw error
+      } finally {
+        activeLoopRef.current = null
+        // Refreshing cached state is not part of the toggle's result: a failed read must not
+        // turn a write that landed into a reported failure.
+        try {
+          await revalidateQueries([['getVergeConfig']])
+        } catch (error) {
+          console.warn(
+            '[system-proxy] rereading the config after a toggle failed:',
+            error,
+          )
+        }
+        // Kept separate so an unreadable config cannot discard OS state that did read.
+        try {
+          await revalidateQueries([['getSystemProxy'], ['getAutoProxy']])
+        } catch (error) {
+          console.warn(
+            '[system-proxy] rereading the OS proxy after a toggle failed:',
+            error,
+          )
+          // The indicator reports observed OS state, so an unreadable one must read as inactive
+          // rather than stay live from a stale cache.
+          await Promise.all([
+            removeCacheData(['getSystemProxy']),
+            removeCacheData(['getAutoProxy']),
+          ])
         }
       }
-    } catch (error) {
-      mutateVerge((prev) =>
-        prev ? { ...prev, enable_system_proxy: confirmed } : prev,
-      )
-      // Queued requests were based on a state that never landed.
-      pendingRef.current = null
-      throw error
-    } finally {
-      busyRef.current = false
-      // Refreshing cached state is not part of the toggle's result: a failed read must not
-      // turn a write that landed into a reported failure.
-      try {
-        await revalidateQueries([['getVergeConfig']])
-      } catch (error) {
-        console.warn(
-          '[system-proxy] rereading the config after a toggle failed:',
-          error,
-        )
-      }
-      // Kept separate so an unreadable config cannot discard OS state that did read.
-      try {
-        await revalidateQueries([['getSystemProxy'], ['getAutoProxy']])
-      } catch (error) {
-        console.warn(
-          '[system-proxy] rereading the OS proxy after a toggle failed:',
-          error,
-        )
-        // The indicator reports observed OS state, so an unreadable one must read as inactive
-        // rather than stay live from a stale cache.
-        await Promise.all([
-          removeCacheData(['getSystemProxy']),
-          removeCacheData(['getAutoProxy']),
-        ])
-      }
-    }
+    })()
+
+    activeLoopRef.current = runLoop
+    return runLoop
   }
 
   const invalidateProxyState = () =>

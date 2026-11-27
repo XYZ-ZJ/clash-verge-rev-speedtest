@@ -106,12 +106,11 @@ fn sanitize_restored_profiles(restored_profiles: &mut IProfiles) {
 /// Reloads restored configs into memory while preserving WebDAV credentials
 /// and stripping executable startup/CSS injection fields from untrusted archives.
 async fn finalize_restored_verge_config(
+    config_write: tokio::sync::MutexGuard<'_, ()>,
     webdav_url: Option<String>,
     webdav_username: Option<String>,
     webdav_password: Option<String>,
 ) -> Result<()> {
-    let config_write = Config::lock_config_write().await;
-
     // A broken restored `verge.yaml` is a restore failure, not a reason to load defaults.
     let mut restored = help::read_yaml::<IVerge>(&verge_path()?).await?;
     sanitize_restored_verge(&mut restored, webdav_url, webdav_username, webdav_password);
@@ -194,7 +193,7 @@ pub async fn create_backup_and_upload_webdav() -> Result<()> {
     Ok(())
 }
 
-pub async fn list_wevdav_backup() -> Result<Vec<ListFile>> {
+pub async fn list_webdav_backup() -> Result<Vec<ListFile>> {
     backup::WebDavClient::global().list().await.map_err(|err| {
         logging!(error, Type::Backup, "Failed to list WebDAV backup files: {err:#}");
         err
@@ -247,7 +246,18 @@ fn is_allowed_backup_rel_path(rel_path: &std::path::Path, is_dir: bool) -> bool 
     }
 }
 
-fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> Result<()> {
+fn validate_backup_archive_name(filename: &str) -> Result<()> {
+    validate_backup_name(filename)?;
+    if !filename.to_ascii_lowercase().ends_with(".zip") {
+        return Err(anyhow!("backup archive must be a .zip file: {filename:?}"));
+    }
+    Ok(())
+}
+
+fn stage_backup_archive(
+    path: &std::path::Path,
+    home_dir: &std::path::Path,
+) -> Result<(PathBuf, Vec<(PathBuf, PathBuf)>)> {
     use std::io::Read as _;
 
     let file = std::fs::File::open(path)?;
@@ -261,7 +271,7 @@ fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> 
 
     let staging_dir = home_dir.join(format!(".restore-staging-{}", nanoid::nanoid!(8)));
     std::fs::create_dir_all(&staging_dir)?;
-    let cleanup_staging = scopeguard::guard(&staging_dir, |dir| {
+    let cleanup_on_err = scopeguard::guard(staging_dir, |dir| {
         let _ = std::fs::remove_dir_all(dir);
     });
 
@@ -290,7 +300,7 @@ fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> 
             continue;
         }
 
-        let staged_file = cleanup_staging.join(&rel_path);
+        let staged_file = cleanup_on_err.join(&rel_path);
         if let Some(parent) = staged_file.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -307,20 +317,24 @@ fn extract_staged_backup(path: &std::path::Path, home_dir: &std::path::Path) -> 
         files_to_apply.push((staged_file, home_dir.join(&rel_path)));
     }
 
-    let staged_verge = staging_dir.join(crate::utils::dirs::VERGE_CONFIG);
+    let staged_verge = cleanup_on_err.join(crate::utils::dirs::VERGE_CONFIG);
     if staged_verge.is_file() {
         let reader = std::fs::File::open(&staged_verge)?;
         let _: IVerge =
             serde_yaml_ng::from_reader(reader).map_err(|err| anyhow!("restored verge.yaml is invalid: {err}"))?;
     }
 
+    let staging_dir = scopeguard::ScopeGuard::into_inner(cleanup_on_err);
+    Ok((staging_dir, files_to_apply))
+}
+
+fn apply_staged_backup(files_to_apply: &[(PathBuf, PathBuf)]) -> Result<()> {
     for (staged, target) in files_to_apply {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(&staged, &target)?;
+        std::fs::copy(staged, target)?;
     }
-
     Ok(())
 }
 
@@ -337,32 +351,43 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     };
 
     let home_dir = app_home_dir()?;
-    AsyncHandler::spawn_blocking(move || extract_staged_backup(&path, &home_dir))
+    let (staging_dir, files_to_apply) = AsyncHandler::spawn_blocking(move || stage_backup_archive(&path, &home_dir))
         .await
         .map_err(|join| anyhow!("backup extraction task failed: {join}"))??;
+    let _cleanup_staging = scopeguard::guard(staging_dir, |dir| {
+        let _ = std::fs::remove_dir_all(dir);
+    });
 
     let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
-    finalize_restored_verge_config(webdav_url, webdav_username, webdav_password).await
+    let config_write = Config::lock_config_write().await;
+    AsyncHandler::spawn_blocking(move || apply_staged_backup(&files_to_apply))
+        .await
+        .map_err(|join| anyhow!("backup apply task failed: {join}"))??;
+
+    finalize_restored_verge_config(config_write, webdav_url, webdav_username, webdav_password).await
+}
+
+fn webdav_restore_temp_path() -> PathBuf {
+    std::env::temp_dir().join(format!("clash-verge-webdav-restore-{}.zip", nanoid::nanoid!(8)))
 }
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename))]
 pub async fn restore_webdav_backup(filename: String) -> Result<()> {
-    validate_backup_name(filename.as_str())?;
-    let backup_storage_path = app_home_dir()
-        .map_err(|e| anyhow::anyhow!("Failed to get app home dir: {e}"))?
-        .join(filename.as_str());
+    validate_backup_archive_name(filename.as_str())?;
+    let backup_storage_path = webdav_restore_temp_path();
     let name = filename.to_string();
-    backup::WebDavClient::global()
+    let download_res = backup::WebDavClient::global()
         .download(filename, backup_storage_path.clone())
-        .await
-        .map_err(|err| {
-            logging!(
-                error,
-                Type::Backup,
-                "Failed to download WebDAV backup file {name}: {err:#}"
-            );
-            err
-        })?;
+        .await;
+    if let Err(err) = download_res {
+        let _ = backup_storage_path.remove_if_exists().await;
+        logging!(
+            error,
+            Type::Backup,
+            "Failed to download WebDAV backup file {name}: {err:#}"
+        );
+        return Err(err);
+    }
 
     let res = restore_backup_archive(backup_storage_path.clone()).await;
     let _ = backup_storage_path.remove_if_exists().await;
@@ -528,7 +553,7 @@ pub async fn delete_local_backup(filename: String) -> Result<()> {
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename))]
 pub async fn restore_local_backup(filename: String) -> Result<()> {
-    validate_backup_name(filename.as_str())?;
+    validate_backup_archive_name(filename.as_str())?;
     let backup_dir = local_backup_dir()?;
     let target_path = backup_dir.join(filename.as_str());
     if !target_path.exists() {
@@ -574,7 +599,9 @@ pub async fn export_local_backup(filename: String, destination: String) -> Resul
 mod tests {
     use std::path::Path;
 
-    use super::{is_allowed_backup_rel_path, validate_backup_name};
+    use super::{
+        is_allowed_backup_rel_path, validate_backup_archive_name, validate_backup_name, webdav_restore_temp_path,
+    };
 
     #[test]
     fn backup_filename_validation_blocks_traversal_and_separators() {
@@ -585,6 +612,12 @@ mod tests {
         assert!(validate_backup_name("dir/backup.zip").is_err());
         assert!(validate_backup_name("dir\\backup.zip").is_err());
         assert!(validate_backup_name("bad\0.zip").is_err());
+        assert!(validate_backup_archive_name("config.yaml").is_err());
+        assert!(validate_backup_archive_name("backup-2026.zip").is_ok());
+        assert_eq!(
+            webdav_restore_temp_path().parent(),
+            Some(std::env::temp_dir().as_path())
+        );
     }
 
     #[test]

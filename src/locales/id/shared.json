@@ -101,7 +101,8 @@
         "copySuccess": "Salin Berhasil",
         "saveSuccess": "Configuration saved successfully",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "Penyegaran gagal"
+        "refreshFailed": "Penyegaran gagal",
+        "busy": "Operasi sedang berlangsung, silakan coba lagi nanti"
       }
     },
     "validation": {

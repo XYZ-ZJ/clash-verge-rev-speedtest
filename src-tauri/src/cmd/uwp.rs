@@ -24,5 +24,7 @@ mod platform {
 #[tauri::command]
 #[specta::specta]
 pub async fn invoke_uwp_tool() -> CmdResult {
-    platform::invoke_uwp_tool()
+    crate::process::AsyncHandler::spawn_blocking(platform::invoke_uwp_tool)
+        .await
+        .map_err(|err| format!("failed to join UWP tool task: {err}"))?
 }

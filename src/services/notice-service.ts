@@ -66,6 +66,9 @@ const CODED_ERROR_TRANSLATION_KEYS: Readonly<Record<string, TranslationKey>> = {
   CLASH_MODE_UPDATE_FAILED: 'settings.feedback.errors.clash.modeUpdateFailed',
   CORE_CHANGE_FAILED: 'settings.feedback.notifications.clash.changeFailed',
   CORE_RESTART_FAILED: 'settings.feedback.errors.clash.restartFailed',
+  CORE_UPGRADE_FAILED: 'settings.feedback.errors.clash.upgradeFailed',
+  DNS_OVERRIDE_UPDATE_FAILED:
+    'settings.feedback.errors.clash.dnsOverrideUpdateFailed',
   CORE_START_FAILED: 'settings.feedback.errors.clash.startFailed',
   CORE_STOP_FAILED: 'settings.feedback.errors.clash.stopFailed',
   PROFILE_CREATE_FAILED: 'profiles.page.feedback.errors.createFailed',

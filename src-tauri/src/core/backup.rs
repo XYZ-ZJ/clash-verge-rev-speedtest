@@ -1,20 +1,19 @@
 use crate::constants::files::DNS_CONFIG;
 use crate::{config::Config, process::AsyncHandler, utils::dirs};
 use anyhow::Error;
-use arc_swap::{ArcSwap, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use backon::{ConstantBuilder, Retryable as _};
 use clash_verge_logging::{Type, logging};
 use reqwest_dav::list_cmd::{ListEntity, ListFile, ListMultiStatus};
 use smartstring::alias::String;
 use std::{
-    collections::HashMap,
     env::{consts::OS, temp_dir},
     io::Write as _,
     path::PathBuf,
     sync::{Arc, OnceLock},
     time::Duration,
 };
-use tokio::{fs, time::timeout};
+use tokio::{fs, io::AsyncWriteExt as _, time::timeout};
 use zip::write::SimpleFileOptions;
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -23,6 +22,7 @@ const TIMEOUT_UPLOAD: u64 = 300;
 const TIMEOUT_DOWNLOAD: u64 = 300;
 const TIMEOUT_LIST: u64 = 30;
 const TIMEOUT_DELETE: u64 = 30;
+const MAX_DOWNLOAD_BYTES: u64 = 128 * 1024 * 1024;
 
 #[derive(Clone)]
 struct WebDavConfig {
@@ -31,28 +31,10 @@ struct WebDavConfig {
     password: String,
 }
 
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-enum Operation {
-    Upload,
-    Download,
-    List,
-    Delete,
-}
-
-impl Operation {
-    const fn timeout(&self) -> u64 {
-        match self {
-            Self::Upload => TIMEOUT_UPLOAD,
-            Self::Download => TIMEOUT_DOWNLOAD,
-            Self::List => TIMEOUT_LIST,
-            Self::Delete => TIMEOUT_DELETE,
-        }
-    }
-}
-
 pub struct WebDavClient {
     config: ArcSwapOption<WebDavConfig>,
-    clients: ArcSwap<HashMap<Operation, reqwest_dav::Client>>,
+    client: ArcSwapOption<reqwest_dav::Client>,
+    init_lock: tokio::sync::Mutex<()>,
 }
 
 impl WebDavClient {
@@ -60,16 +42,21 @@ impl WebDavClient {
         static WEBDAV_CLIENT: OnceLock<WebDavClient> = OnceLock::new();
         WEBDAV_CLIENT.get_or_init(|| Self {
             config: ArcSwapOption::new(None),
-            clients: ArcSwap::new(Arc::new(HashMap::new())),
+            client: ArcSwapOption::new(None),
+            init_lock: tokio::sync::Mutex::new(()),
         })
     }
 
-    async fn get_client(&self, op: Operation) -> Result<reqwest_dav::Client, Error> {
-        {
-            let clients_map = self.clients.load();
-            if let Some(client) = clients_map.get(&op) {
-                return Ok(client.clone());
-            }
+    async fn get_client(&self) -> Result<reqwest_dav::Client, Error> {
+        let cached = self.client.load_full();
+        if let Some(client) = cached {
+            return Ok((*client).clone());
+        }
+
+        let _guard = self.init_lock.lock().await;
+        let cached = self.client.load_full();
+        if let Some(client) = cached {
+            return Ok((*client).clone());
         }
 
         let config = {
@@ -103,11 +90,15 @@ impl WebDavClient {
 
         let parsed_base_url = tauri::Url::parse(config.url.as_str())
             .map_err(|e| anyhow::Error::msg(format!("Invalid WebDAV URL: {e}")))?;
+        let max_timeout = TIMEOUT_UPLOAD
+            .max(TIMEOUT_DOWNLOAD)
+            .max(TIMEOUT_LIST)
+            .max(TIMEOUT_DELETE);
         let client = reqwest_dav::ClientBuilder::new()
             .set_agent(
                 reqwest::Client::builder()
                     .use_rustls_tls()
-                    .timeout(Duration::from_secs(op.timeout()))
+                    .timeout(Duration::from_secs(max_timeout))
                     .user_agent(format!("clash-verge/{APP_VERSION} ({OS} WebDAV-Client)"))
                     .redirect(build_webdav_redirect_policy(&parsed_base_url))
                     .build()?,
@@ -123,13 +114,7 @@ impl WebDavClient {
             logging!(info, Type::Backup, "Successfully created backup directory");
         }
 
-        {
-            self.clients.rcu(|clients_map| {
-                let mut new_map = (**clients_map).clone();
-                new_map.insert(op, client.clone());
-                Arc::new(new_map)
-            });
-        }
+        self.client.store(Some(Arc::new(client.clone())));
 
         Ok(client)
     }
@@ -178,11 +163,11 @@ impl WebDavClient {
 
     pub fn reset(&self) {
         self.config.store(None);
-        self.clients.store(Arc::new(HashMap::new()));
+        self.client.store(None);
     }
 
     pub async fn upload(&self, file_path: PathBuf, file_name: String) -> Result<(), Error> {
-        let client = self.get_client(Operation::Upload).await?;
+        let client = self.get_client().await?;
         let webdav_path: String = format!("{}/{}", dirs::BACKUP_DIR, file_name).into();
 
         let file_content = fs::read(&file_path).await?;
@@ -207,22 +192,50 @@ impl WebDavClient {
     }
 
     pub async fn download(&self, filename: String, storage_path: PathBuf) -> Result<(), Error> {
-        let client = self.get_client(Operation::Download).await?;
+        let client = self.get_client().await?;
         let path = format!("{}/{}", dirs::BACKUP_DIR, filename);
 
         let fut = async {
-            let response = client.get(path.as_str()).await?;
-            let content = response.bytes().await?;
-            fs::write(&storage_path, &content).await?;
+            let mut response = client.get(path.as_str()).await?;
+            let status = response.status();
+            if !status.is_success() {
+                anyhow::bail!("WebDAV download failed with status {status}");
+            }
+            if response.content_length().is_some_and(|len| len > MAX_DOWNLOAD_BYTES) {
+                anyhow::bail!("WebDAV backup exceeds maximum allowed size ({MAX_DOWNLOAD_BYTES} bytes)");
+            }
+
+            let mut file = fs::File::create(&storage_path).await?;
+            let mut total: u64 = 0;
+            while let Some(chunk) = response.chunk().await? {
+                total = total
+                    .checked_add(chunk.len() as u64)
+                    .filter(|&sum| sum <= MAX_DOWNLOAD_BYTES)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("WebDAV backup exceeds maximum allowed size ({MAX_DOWNLOAD_BYTES} bytes)")
+                    })?;
+                file.write_all(&chunk).await?;
+            }
+            file.flush().await?;
             Ok::<(), Error>(())
         };
 
-        timeout(Duration::from_secs(TIMEOUT_DOWNLOAD), fut).await??;
-        Ok(())
+        let result = timeout(Duration::from_secs(TIMEOUT_DOWNLOAD), fut).await;
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => {
+                let _ = fs::remove_file(&storage_path).await;
+                Err(err)
+            }
+            Err(elapsed) => {
+                let _ = fs::remove_file(&storage_path).await;
+                Err(elapsed.into())
+            }
+        }
     }
 
     pub async fn list(&self) -> Result<Vec<ListFile>, Error> {
-        let client = self.get_client(Operation::List).await?;
+        let client = self.get_client().await?;
         let path = format!("{}/", dirs::BACKUP_DIR);
 
         let fut = async {
@@ -252,7 +265,7 @@ impl WebDavClient {
     }
 
     pub async fn delete(&self, file_name: String) -> Result<(), Error> {
-        let client = self.get_client(Operation::Delete).await?;
+        let client = self.get_client().await?;
         let path = format!("{}/{}", dirs::BACKUP_DIR, file_name);
 
         let fut = client.delete(&path);
@@ -288,34 +301,9 @@ fn parse_webdav_list(xml: &str) -> Result<Vec<ListEntity>, reqwest_dav::Error> {
     multi_status.responses.into_iter().map(ListEntity::try_from).collect()
 }
 
-pub async fn create_backup() -> Result<(String, PathBuf), Error> {
-    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let suffix = nanoid::nanoid!(8);
-    let zip_file_name: String = format!("{OS}-backup-{now}-{suffix}.zip").into();
-    let zip_path = temp_dir().join(zip_file_name.as_str());
-
-    let value = zip_path.clone();
-    let file = AsyncHandler::spawn_blocking(move || -> Result<std::fs::File, std::io::Error> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&value)
-        }
-        #[cfg(not(unix))]
-        {
-            std::fs::OpenOptions::new().write(true).create_new(true).open(&value)
-        }
-    })
-    .await??;
-    let mut zip = zip::ZipWriter::new(file);
-    zip.add_directory("profiles/", SimpleFileOptions::default())?;
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-
-    if let Ok(mut entries) = fs::read_dir(dirs::app_profiles_dir()?).await {
+async fn collect_dir_entries(dir: PathBuf, prefix: &str) -> Result<Vec<(std::string::String, Vec<u8>)>, Error> {
+    let mut collected = Vec::new();
+    if let Ok(mut entries) = fs::read_dir(dir).await {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
@@ -323,34 +311,103 @@ pub async fn create_backup() -> Result<(String, PathBuf), Error> {
                 let file_name = file_name_os
                     .to_str()
                     .ok_or_else(|| anyhow::Error::msg("Invalid file name encoding"))?;
-                let backup_path = format!("profiles/{}", file_name);
-                zip.start_file(backup_path, options)?;
-                let file_content = fs::read(&path).await?;
-                zip.write_all(&file_content)?;
+                let content = fs::read(&path).await?;
+                collected.push((format!("{prefix}/{file_name}"), content));
             }
         }
     }
-    zip.start_file(dirs::CLASH_CONFIG, options)?;
-    zip.write_all(fs::read(dirs::clash_path()?).await?.as_slice())?;
+    Ok(collected)
+}
 
-    let verge_text = fs::read_to_string(dirs::verge_path()?).await?;
+pub async fn create_backup() -> Result<(String, PathBuf), Error> {
+    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let suffix = nanoid::nanoid!(8);
+    let zip_file_name: String = format!("{OS}-backup-{now}-{suffix}.zip").into();
+    let zip_path = temp_dir().join(zip_file_name.as_str());
+
+    let (profile_entries, icon_entries, clash_bytes, verge_text, dns_bytes, profiles_bytes) = {
+        let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
+        let _config_write = Config::lock_config_write().await;
+
+        let profile_entries = collect_dir_entries(dirs::app_profiles_dir()?, "profiles").await?;
+        let icon_entries = collect_dir_entries(dirs::app_icons_dir()?, "icons").await?;
+        let clash_bytes = fs::read(dirs::clash_path()?).await?;
+        let verge_text = fs::read_to_string(dirs::verge_path()?).await?;
+        let dns_config_path = dirs::app_home_dir()?.join(DNS_CONFIG);
+        let dns_bytes = if dns_config_path.exists() {
+            Some(fs::read(&dns_config_path).await?)
+        } else {
+            None
+        };
+        let profiles_bytes = fs::read(dirs::profiles_path()?).await?;
+        (
+            profile_entries,
+            icon_entries,
+            clash_bytes,
+            verge_text,
+            dns_bytes,
+            profiles_bytes,
+        )
+    };
+
     let mut verge_config: serde_json::Value = serde_yaml_ng::from_str(&verge_text)?;
     if let Some(obj) = verge_config.as_object_mut() {
         obj.remove("webdav_username");
         obj.remove("webdav_password");
         obj.remove("webdav_url");
     }
-    zip.start_file(dirs::VERGE_CONFIG, options)?;
-    zip.write_all(serde_yaml_ng::to_string(&verge_config)?.as_bytes())?;
+    let verge_yaml = serde_yaml_ng::to_string(&verge_config)?;
 
-    let dns_config_path = dirs::app_home_dir()?.join(DNS_CONFIG);
-    if dns_config_path.exists() {
-        zip.start_file(DNS_CONFIG, options)?;
-        zip.write_all(fs::read(&dns_config_path).await?.as_slice())?;
-    }
+    let value = zip_path.clone();
+    AsyncHandler::spawn_blocking(move || -> Result<(), Error> {
+        let file = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt as _;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&value)?
+            }
+            #[cfg(windows)]
+            {
+                crate::core::owner_identity::create_private_current_user_file(&value).map_err(std::io::Error::other)?
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                std::fs::OpenOptions::new().write(true).create_new(true).open(&value)?
+            }
+        };
+        let mut zip = zip::ZipWriter::new(file);
+        zip.add_directory("profiles/", SimpleFileOptions::default())?;
+        if !icon_entries.is_empty() {
+            zip.add_directory("icons/", SimpleFileOptions::default())?;
+        }
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    zip.start_file(dirs::PROFILE_YAML, options)?;
-    zip.write_all(fs::read(dirs::profiles_path()?).await?.as_slice())?;
-    zip.finish()?;
+        for (backup_path, content) in profile_entries {
+            zip.start_file(backup_path, options)?;
+            zip.write_all(&content)?;
+        }
+        for (backup_path, content) in icon_entries {
+            zip.start_file(backup_path, options)?;
+            zip.write_all(&content)?;
+        }
+        zip.start_file(dirs::CLASH_CONFIG, options)?;
+        zip.write_all(&clash_bytes)?;
+        zip.start_file(dirs::VERGE_CONFIG, options)?;
+        zip.write_all(verge_yaml.as_bytes())?;
+        if let Some(dns_bytes) = dns_bytes {
+            zip.start_file(DNS_CONFIG, options)?;
+            zip.write_all(&dns_bytes)?;
+        }
+        zip.start_file(dirs::PROFILE_YAML, options)?;
+        zip.write_all(&profiles_bytes)?;
+        zip.finish()?;
+        Ok(())
+    })
+    .await??;
+
     Ok((zip_file_name, zip_path))
 }

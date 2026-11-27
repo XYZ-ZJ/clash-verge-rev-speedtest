@@ -208,8 +208,18 @@ async fn collect_profile_items(profiles: &IProfiles) -> Result<ProfileItems> {
     } = ProfileItems::default();
 
     let (merge_item, script_item, rules_item, proxies_item, groups_item, global_merge, global_script) = tokio::join!(
-        chain_item_or_default(profiles.get_item(&merge_uid).ok(), || default_merge),
-        chain_item_or_default(profiles.get_item(&script_uid).ok(), || default_script),
+        chain_item_or_default(
+            (merge_uid != "Merge")
+                .then(|| profiles.get_item(&merge_uid).ok())
+                .flatten(),
+            || default_merge
+        ),
+        chain_item_or_default(
+            (script_uid != "Script")
+                .then(|| profiles.get_item(&script_uid).ok())
+                .flatten(),
+            || default_script
+        ),
         chain_item_or_default(profiles.get_item(&rules_uid).ok(), || default_rules),
         chain_item_or_default(profiles.get_item(&proxies_uid).ok(), || default_proxies),
         chain_item_or_default(profiles.get_item(&groups_uid).ok(), || default_groups),
@@ -239,7 +249,9 @@ async fn process_override_items(
     profile_name: &String,
     authoritative: &AuthoritativeFields,
 ) -> (Mapping, Vec<String>, HashMap<String, ResultLog>) {
-    if let ChainType::Merge(merge) = merge_item.data {
+    if !merge_item.uid.is_empty()
+        && let ChainType::Merge(merge) = merge_item.data
+    {
         exists_keys.extend(use_keys(&merge));
         let before = authoritative.current(&config);
         config = use_merge(&merge, config);
@@ -253,7 +265,9 @@ async fn process_override_items(
         }
     }
 
-    if let ChainType::Script(script) = script_item.data {
+    if !script_item.uid.is_empty()
+        && let ChainType::Script(script) = script_item.data
+    {
         let before = authoritative.current(&config);
         let (res_config, changed_keys, mut logs) = use_script(script, config, profile_name.clone()).await;
         exists_keys.extend(changed_keys);

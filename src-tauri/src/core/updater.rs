@@ -549,6 +549,7 @@ impl SilentUpdater {
             }
         };
 
+        let safe_version = serde_json::to_string(version).unwrap_or_else(|_| "\"\"".to_owned());
         let js = format!(
             r#"
             document.documentElement.innerHTML = `
@@ -576,9 +577,11 @@ impl SilentUpdater {
                 <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
               <div class="title">Installing Update...</div>
-              <div class="sub">v{version}</div>
+              <div class="sub" id="verge-update-version"></div>
               <div class="bar"><div class="fill"></div></div>
             </body>`;
+            const verEl = document.getElementById("verge-update-version");
+            if (verEl) verEl.textContent = "v" + {safe_version};
             "#
         );
 

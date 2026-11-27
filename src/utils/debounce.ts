@@ -1,12 +1,26 @@
+export type DebouncedFn<T extends (...args: any[]) => void> = T & {
+  cancel: () => void
+}
+
 export default function debounce<T extends (...args: any[]) => void>(
   func: T,
   wait: number,
-): T {
+): DebouncedFn<T> {
   let timeout: ReturnType<typeof setTimeout> | null = null
-  return function (this: any, ...args: Parameters<T>) {
+  const debounced = function (this: any, ...args: Parameters<T>) {
     if (timeout !== null) {
       clearTimeout(timeout)
     }
-    timeout = setTimeout(() => func.apply(this, args), wait)
-  } as T
+    timeout = setTimeout(() => {
+      timeout = null
+      func.apply(this, args)
+    }, wait)
+  } as DebouncedFn<T>
+  debounced.cancel = () => {
+    if (timeout !== null) {
+      clearTimeout(timeout)
+      timeout = null
+    }
+  }
+  return debounced
 }

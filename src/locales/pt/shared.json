@@ -101,7 +101,8 @@
         "copySuccess": "Copiado com sucesso",
         "saveSuccess": "Configuração salva com sucesso",
         "saveFailed": "Falha ao salvar a configuração",
-        "refreshFailed": "Falha ao atualizar; exibindo o último valor carregado"
+        "refreshFailed": "Falha ao atualizar; exibindo o último valor carregado",
+        "busy": "Operação em andamento, tente novamente mais tarde"
       }
     },
     "validation": {

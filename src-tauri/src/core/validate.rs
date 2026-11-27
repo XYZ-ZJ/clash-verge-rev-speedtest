@@ -35,13 +35,26 @@ async fn validation_fingerprint(yaml: &str) -> u64 {
             .iter()
             .map(move |asset| dir.join(asset))
     });
-    for path in binary.chain(geo) {
-        match std::fs::metadata(&path) {
-            Ok(meta) => {
-                meta.len().hash(&mut hasher);
-                meta.modified().ok().hash(&mut hasher);
+    let paths: Vec<std::path::PathBuf> = binary.chain(geo).collect();
+    let file_stamps = crate::process::AsyncHandler::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|path| match std::fs::metadata(&path) {
+                Ok(meta) => Some((meta.len(), meta.modified().ok())),
+                Err(_) => None,
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+
+    for stamp in file_stamps {
+        match stamp {
+            Some((len, modified)) => {
+                len.hash(&mut hasher);
+                modified.hash(&mut hasher);
             }
-            Err(_) => 0u8.hash(&mut hasher),
+            None => 0u8.hash(&mut hasher),
         }
     }
     hasher.finish()
@@ -441,10 +454,11 @@ impl CoreConfigValidator {
 
         let check_path = dirs::app_home_dir()?.join(crate::constants::files::CHECK_CONFIG);
         help::save_yaml_str(&check_path, yaml).await?;
-        let outcome = Self::validate_config_internal_outcome(dirs::path_to_str(&check_path)?).await?;
+        let outcome = Self::validate_config_internal_outcome(dirs::path_to_str(&check_path)?).await;
+        let _ = fs::remove_file(&check_path).await;
+        let outcome = outcome?;
         if outcome.is_valid() {
             *LAST_VALIDATED.lock() = Some(fingerprint);
-            let _ = fs::remove_file(&check_path).await;
         }
         Ok(outcome)
     }

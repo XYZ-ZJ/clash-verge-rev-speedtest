@@ -340,7 +340,7 @@ pub(super) async fn init_dns_config() -> Result<()> {
         ("listen".into(), Value::String(":53".into())),
         ("enhanced-mode".into(), Value::String("fake-ip".into())),
         ("fake-ip-range".into(), Value::String("198.18.0.1/16".into())),
-        ("fake-ip-range6".into(), Value::String("fdfe:dcba:9876::1/64".into())),
+        ("fake-ip-range6".into(), Value::String("2001:2::0/64".into())),
         ("fake-ip-filter-mode".into(), Value::String("blacklist".into())),
         ("prefer-h3".into(), Value::Bool(false)),
         ("respect-rules".into(), Value::Bool(false)),
@@ -349,15 +349,22 @@ pub(super) async fn init_dns_config() -> Result<()> {
         (
             "fake-ip-filter".into(),
             Value::Sequence(vec![
+                Value::String("localhost".into()),
+                Value::String("*.localhost".into()),
                 Value::String("*.lan".into()),
                 Value::String("*.local".into()),
                 Value::String("*.arpa".into()),
+                Value::String("*.home.arpa".into()),
                 Value::String("time.*.com".into()),
                 Value::String("ntp.*.com".into()),
+                Value::String("stun.*".into()),
+                Value::String("+.stun.*.*".into()),
                 Value::String("+.market.xiaomi.com".into()),
                 Value::String("localhost.ptlogin2.qq.com".into()),
                 Value::String("*.msftncsi.com".into()),
                 Value::String("www.msftconnecttest.com".into()),
+                Value::String("captive.apple.com".into()),
+                Value::String("connectivitycheck.gstatic.com".into()),
             ]),
         ),
         (
@@ -384,8 +391,20 @@ pub(super) async fn init_dns_config() -> Result<()> {
             "nameserver-policy".into(),
             Value::Mapping(serde_yaml_ng::Mapping::new()),
         ),
-        ("proxy-server-nameserver".into(), Value::Sequence(vec![])),
-        ("direct-nameserver".into(), Value::Sequence(vec![])),
+        (
+            "proxy-server-nameserver".into(),
+            Value::Sequence(vec![
+                Value::String("223.5.5.5".into()),
+                Value::String("119.29.29.29".into()),
+            ]),
+        ),
+        (
+            "direct-nameserver".into(),
+            Value::Sequence(vec![
+                Value::String("223.5.5.5".into()),
+                Value::String("119.29.29.29".into()),
+            ]),
+        ),
         ("direct-nameserver-follow-policy".into(), Value::Bool(false)),
         (
             "fallback-filter".into(),

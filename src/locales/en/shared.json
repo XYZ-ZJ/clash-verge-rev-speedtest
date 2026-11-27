@@ -101,7 +101,8 @@
         "copySuccess": "Copy Success",
         "saveSuccess": "Configuration saved successfully",
         "saveFailed": "Failed to save configuration",
-        "refreshFailed": "Refresh failed; showing last loaded value"
+        "refreshFailed": "Refresh failed; showing last loaded value",
+        "busy": "Operation in progress, please try again later"
       }
     },
     "validation": {

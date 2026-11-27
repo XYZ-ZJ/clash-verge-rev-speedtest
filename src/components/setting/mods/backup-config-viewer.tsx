@@ -39,13 +39,29 @@ export const BackupConfigViewer = memo(
     const passwordRef = useRef<HTMLInputElement>(null)
     const urlRef = useRef<HTMLInputElement>(null)
 
-    const { register, handleSubmit, watch } = useForm<IWebDavConfig>({
+    const {
+      register,
+      handleSubmit,
+      watch,
+      reset,
+      formState: { isDirty },
+    } = useForm<IWebDavConfig>({
       defaultValues: {
         url: webdav_url ?? '',
         username: webdav_username ?? '',
         password: webdav_password ?? '',
       },
     })
+
+    useEffect(() => {
+      if (!isDirty) {
+        reset({
+          url: webdav_url ?? '',
+          username: webdav_username ?? '',
+          password: webdav_password ?? '',
+        })
+      }
+    }, [isDirty, reset, webdav_url, webdav_username, webdav_password])
     const url = watch('url')
     const username = watch('username')
     const password = watch('password')
@@ -116,7 +132,7 @@ export const BackupConfigViewer = memo(
             errorNotice: false,
           },
         )
-        await mutateVerge((current) =>
+        mutateVerge((current) =>
           current
             ? {
                 ...current,

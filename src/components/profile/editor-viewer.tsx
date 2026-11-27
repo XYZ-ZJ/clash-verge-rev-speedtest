@@ -179,7 +179,10 @@ export const EditorViewer = ({
     const unlistenResized = appWindow.onResized(onResized)
 
     return () => {
-      unlistenResized.then((unlisten) => unlisten())
+      onResized.cancel()
+      unlistenResized
+        .then((unlisten) => unlisten())
+        .catch((err) => console.warn('[EditorViewer] 清理监听器失败:', err))
     }
   }, [open, syncMaximizedState])
 

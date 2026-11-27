@@ -811,7 +811,7 @@ impl CoreManager {
     }
 
     #[tracing::instrument(skip_all, level = "info", fields(core = %clash_core))]
-    pub async fn change_core(&self, clash_core: &String) -> Result<()> {
+    pub async fn change_core(&self, clash_core: &String) -> Result<Option<String>> {
         if !IVerge::VALID_CLASH_CORES.contains(&clash_core.as_str()) {
             anyhow::bail!("invalid clash core: {clash_core}");
         }
@@ -837,22 +837,38 @@ impl CoreManager {
         };
 
         if let Err(err) = self.update_config_checked().await {
-            let verge = Config::verge().await;
-            verge.edit_draft(|d| {
-                d.clash_core = prev_core;
-            });
-            verge.apply();
-            if let Err(rollback_err) = verge.latest_arc().save_file().await {
-                logging!(
-                    warn,
-                    Type::Core,
-                    "failed to persist clash_core rollback after core switch error: {rollback_err:#}"
-                );
-            }
+            self.restore_clash_core_locked(prev_core).await;
             return Err(err);
         }
 
-        Ok(())
+        Ok(prev_core)
+    }
+
+    pub async fn rollback_core(&self, prev_core: Option<String>) {
+        let _config_write = Config::lock_config_write().await;
+        self.restore_clash_core_locked(prev_core).await;
+        if let Err(err) = self.update_config_checked().await {
+            logging!(
+                warn,
+                Type::Core,
+                "failed to re-apply config after clash_core rollback: {err:#}"
+            );
+        }
+    }
+
+    async fn restore_clash_core_locked(&self, prev_core: Option<String>) {
+        let verge = Config::verge().await;
+        verge.edit_draft(|d| {
+            d.clash_core = prev_core;
+        });
+        verge.apply();
+        if let Err(rollback_err) = verge.latest_arc().save_file().await {
+            logging!(
+                warn,
+                Type::Core,
+                "failed to persist clash_core rollback after core switch error: {rollback_err:#}"
+            );
+        }
     }
 
     async fn prepare_startup(&self) -> StartupDecision {

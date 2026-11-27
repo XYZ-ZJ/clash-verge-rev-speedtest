@@ -101,7 +101,8 @@
         "copySuccess": "Kopieren erfolgreich",
         "saveSuccess": "Konfiguration erfolgreich gespeichert",
         "saveFailed": "Konfiguration konnte nicht gespeichert werden",
-        "refreshFailed": "Aktualisierung fehlgeschlagen"
+        "refreshFailed": "Aktualisierung fehlgeschlagen",
+        "busy": "Vorgang läuft bereits, bitte versuchen Sie es später erneut"
       }
     },
     "validation": {

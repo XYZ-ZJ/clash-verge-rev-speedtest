@@ -20,8 +20,6 @@ import {
   Switch,
 } from '@/components/base'
 import { useClash } from '@/hooks/use-clash'
-import { enhanceProfiles } from '@/services/cmds'
-import { mutate } from '@/services/mutate'
 import { showNotice } from '@/services/notice-service'
 import getSystem from '@/utils/get-system'
 import { areValidIpCidrs } from '@/utils/network'
@@ -61,8 +59,8 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
     routeExcludeAddress: '',
     autoRedirect: false,
     autoDetectInterface: true,
-    dnsHijack: ['any:53'],
-    strictRoute: false,
+    dnsHijack: ['any:53', 'tcp://any:53'],
+    strictRoute: true,
     mtu: 1500,
     dnsMode: '',
   })
@@ -94,8 +92,8 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
         ),
         autoRedirect: computedAutoRedirect,
         autoDetectInterface: clash?.tun['auto-detect-interface'] ?? true,
-        dnsHijack: clash?.tun['dns-hijack'] ?? ['any:53'],
-        strictRoute: clash?.tun['strict-route'] ?? false,
+        dnsHijack: clash?.tun['dns-hijack'] ?? ['any:53', 'tcp://any:53'],
+        strictRoute: clash?.tun['strict-route'] ?? true,
         mtu: clash?.tun.mtu ?? 1500,
         dnsMode: clash?.tun['dns-mode'] ?? '',
       })
@@ -145,18 +143,15 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
       await mutateClash(
         (old) => ({
           ...old!,
-          tun,
+          tun: {
+            ...old?.tun,
+            ...tun,
+          },
         }),
         false,
       )
       setOpen(false)
       showNotice.success('settings.modals.tun.messages.applied')
-      void mutate(() => enhanceProfiles(), {
-        id: 'enhance-profiles',
-        errorNotice: false,
-      }).catch((err: any) => {
-        showNotice.error(err)
-      })
     } catch (err: any) {
       showNotice.error(err)
     }
@@ -182,10 +177,10 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
                     }
                   : {}),
                 'auto-detect-interface': true,
-                'dns-hijack': ['any:53'],
+                'dns-hijack': ['any:53', 'tcp://any:53'],
                 'route-exclude-address': [],
                 'dns-mode': '',
-                'strict-route': false,
+                'strict-route': true,
                 mtu: 1500,
               }
               setValues({
@@ -195,8 +190,8 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
                 routeExcludeAddress: '',
                 autoRedirect: false,
                 autoDetectInterface: true,
-                dnsHijack: ['any:53'],
-                strictRoute: false,
+                dnsHijack: ['any:53', 'tcp://any:53'],
+                strictRoute: true,
                 mtu: 1500,
                 dnsMode: '',
               })
@@ -204,7 +199,10 @@ export function TunViewer({ ref }: { ref?: Ref<DialogRef> }) {
               await mutateClash(
                 (old) => ({
                   ...old!,
-                  tun,
+                  tun: {
+                    ...old?.tun,
+                    ...tun,
+                  },
                 }),
                 false,
               )

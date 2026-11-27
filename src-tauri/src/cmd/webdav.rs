@@ -40,7 +40,7 @@ pub async fn create_webdav_backup() -> CmdResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_webdav_backup() -> CmdResult<Vec<crate::ipc::WebDavFile>> {
-    feat::list_wevdav_backup()
+    feat::list_webdav_backup()
         .await
         .map(|files| files.into_iter().map(Into::into).collect())
         .stringify_err()

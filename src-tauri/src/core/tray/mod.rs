@@ -345,8 +345,6 @@ impl Tray {
             return Ok(());
         }
         let verge = Config::verge().await.data_arc();
-        let app_handle = handle::Handle::app_handle();
-        self.update_menu_internal(app_handle, false).await?;
         AsyncHandler::spawn(|| async {
             logging_error!(Type::Tray, Self::global().update_menu().await);
         });

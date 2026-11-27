@@ -58,7 +58,7 @@ pub async fn change_clash_core(clash_core: std::string::String) -> CmdResult<Opt
     logging!(info, Type::Config, "changing core to {clash_core}");
 
     match CoreManager::global().change_core(&clash_core).await {
-        Ok(_) => {
+        Ok(prev_core) => {
             logging_error!(Type::Core, profiles_save_file_safe().await);
 
             match CoreManager::global().restart_core().await {
@@ -68,6 +68,8 @@ pub async fn change_clash_core(clash_core: std::string::String) -> CmdResult<Opt
                     Ok(None)
                 }
                 Err(err) => {
+                    CoreManager::global().rollback_core(prev_core).await;
+                    let _ = CoreManager::global().restart_core().await;
                     let failed = err.context("core changed but failed to restart");
                     let error_msg: String = format!("{failed:#}").into();
                     handle::Handle::notice(NoticeStatus::ConfigCoreChangeError, error_msg.as_str());

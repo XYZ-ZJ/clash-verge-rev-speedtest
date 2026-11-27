@@ -80,12 +80,12 @@ macro_rules! logging {
 macro_rules! logging_error {
     ($type:expr, $expr:expr) => {
         if let Err(err) = $expr {
-            log::error!(target: "app", "[{}] {}", $type, err);
+            log::error!(target: "app", "{} {}", $type, err);
         }
     };
 
     ($type:expr, $fmt:literal $(, $arg:expr)*) => {
-        log::error!(target: "app", "[{}] {}", $type, format_args!($fmt $(, $arg)*));
+        log::error!(target: "app", "{} {}", $type, format_args!($fmt $(, $arg)*));
     };
 }
 
@@ -280,7 +280,7 @@ impl Logger {
             WRITE_FLUSH_INTERVAL,
         ))
         .rotate(
-            Criterion::Size(log_max_size * 1024),
+            Criterion::Size(log_max_size.saturating_mul(1024)),
             ROTATE_NAMING,
             Cleanup::KeepLogFiles(log_max_count),
         )
