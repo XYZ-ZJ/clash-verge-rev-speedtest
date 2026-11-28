@@ -4,7 +4,7 @@
 Linux, distributed from
 <https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases>.
 
-**Last updated:** 2026-11-27
+**Last updated:** 2026-11-28
 
 Clash Verge Rev is a free and open-source graphical client for the
 [mihomo](https://github.com/MetaCubeX/mihomo) proxy core, maintained by
@@ -130,8 +130,9 @@ one randomly chosen service from:
 When opening detailed IP Info, Egress Analysis, or triggering the DNS Leak
 card, the application queries specialised analysis endpoints on demand:
 - **Detailed IP lookup & fraud/risk scoring:** `https://ipinfo.io/widget/demo/…`,
-  `https://ipinfo.check.place/…`, `https://api.ipquery.io/…`,
-  `https://proxycheck.io/v2/…`, `https://scamalytics.com/ip/…`.
+  `https://ipinfo.check.place/…`, `https://api.ipapi.is/…`,
+  `https://api.ipquery.io/…`, `https://proxycheck.io/v2/…`,
+  `https://scamalytics.com/ip/…`.
 - **Direct & proxy egress detection:** `https://4.ipw.cn`,
   `https://api.bilibili.com/x/web-interface/zone`, `https://api.ip.sb/geoip`,
   `https://1.1.1.1/cdn-cgi/trace`, `https://speed.cloudflare.com/meta`, plus
@@ -178,8 +179,8 @@ configuration.
 ### 4.10 WebDAV backup — *disabled until you configure it*
 
 If you set up backup, the application uploads a ZIP archive to the WebDAV server
-you specify. The archive contains your profiles, `profiles.yaml`, `config.yaml`,
-the DNS configuration and `verge.yaml`; **WebDAV credentials are stripped from
+you specify. The archive contains your profiles, icons, `profiles.yaml`,
+`config.yaml`, the DNS configuration and `verge.yaml`; **WebDAV credentials are stripped from
 `verge.yaml` before upload, but proxy servers, passwords and subscription URLs
 inside your profiles are not**. Treat a backup as sensitive and use a server you
 trust. Backups are only transferred to that server.

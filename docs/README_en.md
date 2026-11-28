@@ -45,8 +45,9 @@ Language: [简体中文](../README.md) | English
 
 ### 7. Security & Stability Hardening
 - Strict WebDAV TLS verification (blocking cross-origin/scheme-downgrade redirects with credentials), AES-256-GCM disk encryption for saved credentials, and SHA-256 summaries for local cache keys.
-- Backup restore allowlist + archive size/count limits, automatic stripping of `startup_script` / `css_injection` / untrusted core fields, and atomic profile file writes.
-- Explicit WebView CSP, narrowed filesystem scope, safe CSS injection (`textContent` + `@scope`), quoted Windows Deep-Link registry entries with interactive confirmation dialog, blocked direct `.js` shell execution, and UNC/path-traversal guards in provider/runtime bundle collection.
+- Backup restore allowlist + archive size/count limits, staged validation with automatic rollback on failure, automatic stripping of `startup_script` / `css_injection` / untrusted core fields, and atomic profile file writes.
+- SSRF-hardened icon fetching and direct delay probing (DNS-pinned resolution, hop-by-hop redirect validation, and SVG script/event sanitization), plus mandatory SHA-256 release digest/checksum verification and automatic rollback on core upgrades.
+- Explicit WebView CSP, narrowed filesystem scope, thread-isolated JS script sandbox with recursion/stack bounds, circular `dialer-proxy` chain detection, route-scoped error boundary reset, quoted Windows Deep-Link registry entries with interactive confirmation dialog, and UNC/device-path guards in provider/runtime bundle collection.
 
 ---
 
