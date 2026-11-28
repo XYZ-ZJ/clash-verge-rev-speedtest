@@ -2,7 +2,7 @@ use super::CmdResult;
 use crate::{cmd::StringifyErr as _, config::Config, core::CoreManager, utils::yaml_emitter};
 use anyhow::{Context as _, anyhow};
 use smartstring::alias::String;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[tauri::command]
 #[specta::specta]
@@ -62,23 +62,32 @@ pub async fn get_runtime_proxy_chain_config(
         .stringify_err()?;
 
     if let Some(serde_yaml_ng::Value::Sequence(proxies)) = config.get("proxies") {
-        let mut proxy_name = Some(Some(proxy_chain_exit_node.as_str()));
+        let mut proxy_name = Some(proxy_chain_exit_node.as_str());
         let mut proxies_chain = Vec::new();
+        let mut visited = HashSet::from([proxy_chain_exit_node.as_str()]);
 
-        while let Some(proxy) = proxies.iter().find(|proxy| {
-            if let serde_yaml_ng::Value::Mapping(proxy_map) = proxy {
-                proxy_map.get("name").map(|x| x.as_str()) == proxy_name && proxy_map.get("dialer-proxy").is_some()
-            } else {
-                false
-            }
-        }) {
+        while let Some(current_name) = proxy_name
+            && let Some(proxy) = proxies.iter().find(|proxy| {
+                proxy.as_mapping().is_some_and(|proxy_map| {
+                    proxy_map.get("name").and_then(|x| x.as_str()) == Some(current_name)
+                        && proxy_map.get("dialer-proxy").is_some()
+                })
+            })
+        {
             proxies_chain.push(proxy);
-            proxy_name = proxy.get("dialer-proxy").map(|x| x.as_str());
+            let next_name = proxy.get("dialer-proxy").and_then(|x| x.as_str());
+            if let Some(next_name) = next_name
+                && !visited.insert(next_name)
+            {
+                return Err("circular dialer-proxy reference detected".into());
+            }
+            proxy_name = next_name;
         }
 
-        if let Some(entry_proxy) = proxies
-            .iter()
-            .find(|proxy| proxy.get("name").map(|x| x.as_str()) == proxy_name)
+        if let Some(current_name) = proxy_name
+            && let Some(entry_proxy) = proxies
+                .iter()
+                .find(|proxy| proxy.get("name").and_then(|x| x.as_str()) == Some(current_name))
             && !proxies_chain.is_empty()
         {
             proxies_chain.push(entry_proxy);

@@ -2,7 +2,7 @@ import { Paper, ThemeProvider } from '@mui/material'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { useCallback, useEffect, useMemo } from 'react'
-import { Outlet, useNavigate } from 'react-router'
+import { Outlet, useLocation, useNavigate } from 'react-router'
 
 import { BaseErrorBoundary } from '@/components/base'
 import { LayoutSidebar } from '@/components/layout/layout-sidebar'
@@ -43,6 +43,7 @@ const Layout = () => {
   const navCollapsed = verge?.collapse_navbar ?? false
   const { switchLanguage } = useI18n()
   const navigate = useNavigate()
+  const location = useLocation()
   const themeReady = useMemo(() => Boolean(theme), [theme])
   const { decorated } = useWindowDecorations()
 
@@ -155,7 +156,7 @@ const Layout = () => {
           <div className="layout-content__right">
             <div className="the-bar"></div>
             <div className="the-content">
-              <BaseErrorBoundary>
+              <BaseErrorBoundary key={location.pathname}>
                 <Outlet />
               </BaseErrorBoundary>
             </div>
