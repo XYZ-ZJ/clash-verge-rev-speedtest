@@ -153,15 +153,10 @@ async fn get_refresh_token(client: &Client, assertion: &str) -> Result<String, U
 }
 
 async fn is_unavailable(client: &Client) -> bool {
-    client
-        .get("https://disneyplus.com")
-        .send()
-        .await
-        .map(|response| {
-            let url = response.url().as_str();
-            url.contains("preview") || url.contains("unavailable")
-        })
-        .unwrap_or(true)
+    client.get("https://disneyplus.com").send().await.is_ok_and(|response| {
+        let url = response.url().as_str();
+        url.contains("preview") || url.contains("unavailable")
+    })
 }
 
 async fn fallback_region(client: &Client) -> Option<UnlockItem> {

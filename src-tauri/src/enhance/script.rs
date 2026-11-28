@@ -15,7 +15,8 @@ const MAX_JSON_SIZE: usize = 10 * 1024 * 1024; // 10MB
 const MAX_LOOP_ITERATIONS: u64 = 10_000_000;
 const SCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_CONCURRENT_SCRIPTS: usize = 2;
-static SCRIPT_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MAX_CONCURRENT_SCRIPTS);
+static SCRIPT_SEMAPHORE: std::sync::LazyLock<Arc<tokio::sync::Semaphore>> =
+    std::sync::LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCRIPTS)));
 
 type ScriptResult = (Mapping, Vec<String>, Vec<(String, String)>);
 type EvalOutcome = (Result<Mapping, std::string::String>, Vec<(String, String)>);
@@ -46,9 +47,16 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
         return (config, vec![], vec![("exception".into(), message.into())]);
     }
 
-    let Ok(_permit) = tokio::time::timeout(SCRIPT_TIMEOUT, SCRIPT_SEMAPHORE.acquire()).await else {
+    let Ok(permit) = tokio::time::timeout(SCRIPT_TIMEOUT, Arc::clone(&SCRIPT_SEMAPHORE).acquire_owned()).await else {
         let msg = format!("script execution timed out waiting for worker slot after {SCRIPT_TIMEOUT:?}");
         return (config, vec![], vec![("exception".into(), msg.into())]);
+    };
+    let Ok(permit) = permit else {
+        return (
+            config,
+            vec![],
+            vec![("exception".into(), "script semaphore closed".into())],
+        );
     };
 
     let name_for_log = name.clone();
@@ -56,6 +64,7 @@ pub(super) async fn use_script(script: String, config: Mapping, name: String) ->
     if let Err(err) = std::thread::Builder::new()
         .name("verge-script-eval".to_owned())
         .spawn(move || {
+            let _permit = permit;
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| eval_script(&script, &json, &name)));
             let outcome = match res {
                 Ok(evaluated) => evaluated,
@@ -181,16 +190,26 @@ fn eval_script(script: &str, config_json: &str, name: &String) -> EvalOutcome {
         return bail(format!("failed to bind config for script: {err}"));
     }
 
-    // 仅处理 name 参数中的特殊字符
-    let safe_name = escape_js_string_for_single_quote(name);
-    if safe_name.len() > 1024 {
-        return bail("Name parameter too long".to_owned());
+    let bounded_name = bound_profile_name(name);
+    if let Err(err) = context.register_global_property(
+        js_string!("__verge_profile_name__"),
+        JsValue::from(JsString::from(bounded_name)),
+        Attribute::all(),
+    ) {
+        return bail(format!("failed to bind profile name for script: {err}"));
     }
 
     let code = format!(
         r"try{{
-        {script};
-        JSON.stringify(main(JSON.parse(globalThis.__verge_config__),'{safe_name}')||'')
+        {script}
+        ;const __verge_out__ = main(JSON.parse(globalThis.__verge_config__),globalThis.__verge_profile_name__)||'';
+        let __verge_bytes__ = 0;
+        JSON.stringify(__verge_out__, function(_k, v) {{
+          if (typeof v === 'string') __verge_bytes__ += v.length;
+          else __verge_bytes__ += 8;
+          if (__verge_bytes__ > {MAX_JSON_SIZE}) throw new Error('Script result exceeds maximum allowed size');
+          return v;
+        }})
       }} catch(err) {{
         `__error_flag__ ${{err.toString()}}`
       }}"
@@ -198,7 +217,8 @@ fn eval_script(script: &str, config_json: &str, name: &String) -> EvalOutcome {
 
     let result = match context.eval(Source::from_bytes(code.as_str())) {
         Ok(result) if result.is_string() => result,
-        _ => return bail("main function should return object".to_owned()),
+        Ok(_) => return bail("main function should return object".to_owned()),
+        Err(err) => return bail(format!("Script execution error: {err}")),
     };
     let result = match result.to_string(&mut context) {
         Ok(result) => result,
@@ -271,25 +291,14 @@ fn strip_outer_quotes(s: &str) -> &str {
     }
 }
 
-// 安全地转义字符串
-fn escape_js_string_for_single_quote(s: &str) -> String {
-    // 限制处理的字符串长度。切片必须落在字符边界上：订阅服务器控制
-    // profile 名，超长的多字节名称会让 `s[..10240]` 落在 UTF-8 字符中间
-    // 而 panic（表现为 Script 链被静默跳过）。
-    let bounded = if s.len() > 10240 {
-        let mut cut = 10240;
+fn bound_profile_name(s: &str) -> &str {
+    if s.len() > 1024 {
+        let mut cut = 1024;
         while !s.is_char_boundary(cut) {
             cut -= 1;
         }
         &s[..cut]
     } else {
         s
-    };
-
-    bounded
-        .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('\n', "\\n") // 添加换行符转义
-        .replace('\r', "\\r") // 添加回车符转义
-        .into()
+    }
 }

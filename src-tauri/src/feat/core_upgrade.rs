@@ -18,7 +18,6 @@ use std::{
     ffi::OsStr,
     fs::File,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -48,7 +47,7 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     let target = managed_core_path(&core)?;
 
     // A core already broken by the in-place updater cannot report a version; upgrading is the repair.
-    let installed = read_core_version(&target).unwrap_or_else(|error| {
+    let installed = read_core_version(&target).await.unwrap_or_else(|error| {
         logging!(warn, Type::Core, "core upgrade: unreadable installed core: {error:#}");
         std::string::String::new()
     });
@@ -77,20 +76,30 @@ pub async fn upgrade_core(force: bool) -> Result<CoreUpgradeReport> {
     let package_url_string = package_url(alpha, &latest)?;
     let package = download_package(proxy, &package_url_string).await?;
     verify_package_digest(proxy, &package_url_string, &package).await?;
-    let staged = stage_core(&target, &package, &latest)?;
+    let staged = stage_core(&target, package, &latest).await?;
 
     // A hard link keeps the previous core reachable without touching the inode the running
     // core executes from, so publishing below stays one atomic rename.
     let rollback = target.with_file_name(format!(".{core}.rollback"));
-    let _ = std::fs::remove_file(&rollback);
-    // Nothing to roll back to when the core we are replacing could not report a version.
-    let restorable = !installed.is_empty() && std::fs::hard_link(&target, &rollback).is_ok();
+    let target_for_link = target.clone();
+    let rollback_for_link = rollback.clone();
+    let installed_non_empty = !installed.is_empty();
+    let restorable = tokio::task::spawn_blocking(move || {
+        let _ = std::fs::remove_file(&rollback_for_link);
+        installed_non_empty && std::fs::hard_link(&target_for_link, &rollback_for_link).is_ok()
+    })
+    .await
+    .unwrap_or(false);
 
     // Decided before anything can crash: after a failed restart the mode reads NotRunning, which
     // says nothing about whether this upgrade went through the Service.
     let service_mode = matches!(*CoreManager::global().get_running_mode(), RunningMode::Service);
 
-    let mut result = staged.publish(&target);
+    let target_for_publish = target.clone();
+    let mut result = tokio::task::spawn_blocking(move || staged.publish(&target_for_publish))
+        .await
+        .map_err(|join| anyhow!("core publish task failed: {join}"))
+        .and_then(|res| res);
     // The Service executes its own administrator-approved copy, never this file; hand the new
     // bytes over before the restart below asks for them, or a service-mode restart would keep
     // running the previous core while the app reports the new version. Sidecar mode runs the
@@ -137,10 +146,7 @@ async fn rollback_failed_upgrade(
     // new core also restores: leaving the new file would make a retry read the new version
     // and report nothing to do while the service keeps running the old core.
     let core_is_down = matches!(*CoreManager::global().get_running_mode(), RunningMode::NotRunning);
-    if restorable
-        && (matches!(service_staging, ServiceStaging::Refused) || core_is_down || !target.exists())
-        && std::fs::rename(rollback, target).is_ok()
-    {
+    if restorable && std::fs::rename(rollback, target).is_ok() {
         logging!(warn, Type::Core, "core upgrade: rolled back to {installed:?}");
         // Only a staging that SUCCEEDED left the failing bytes in the approved copy, and only
         // then must the restore reach it too — otherwise the restart below would spawn the
@@ -384,16 +390,13 @@ async fn verify_package_digest(proxy: ProxyType, package_url: &str, bytes: &[u8]
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
-    let Some(published) = published else {
-        logging!(
-            warn,
-            Type::Core,
-            "core upgrade: release metadata for {tag} is missing sha256 digest for {asset}; skipping digest check"
-        );
-        return Ok(());
-    };
-    let Some(expected) = published.strip_prefix("sha256:") else {
-        anyhow::bail!("core upgrade: unsupported digest format {published} for {asset}");
+    let expected = if let Some(published) = published {
+        published
+            .strip_prefix("sha256:")
+            .map(str::to_owned)
+            .ok_or_else(|| anyhow!("core upgrade: unsupported digest format {published} for {asset}"))?
+    } else {
+        fetch_checksum_from_release_assets(proxy, &payload, asset, tag).await?
     };
 
     let digest = Sha256::digest(bytes);
@@ -429,39 +432,113 @@ impl Drop for StagedCore {
     }
 }
 
-/// Unpacks, permits, signs and runs the new core before it is allowed anywhere near the
-/// live path, so a bad download can never replace a working core.
-fn stage_core(target: &Path, package: &[u8], version: &str) -> Result<StagedCore> {
-    let directory = target
-        .parent()
-        .with_context(|| format!("the managed core has no parent directory: {}", target.display()))?;
-    let core_name = target
-        .file_name()
-        .with_context(|| format!("the managed core has no file name: {}", target.display()))?;
+async fn fetch_checksum_from_release_assets(
+    proxy: ProxyType,
+    payload: &serde_json::Value,
+    asset: &str,
+    tag: &str,
+) -> Result<std::string::String> {
+    let checksum_url = payload
+        .get("assets")
+        .and_then(|assets| assets.as_array())
+        .and_then(|assets| {
+            assets.iter().find_map(|entry| {
+                let name = entry.get("name").and_then(|v| v.as_str())?;
+                let lower = name.to_ascii_lowercase();
+                if lower == format!("{asset}.sha256").to_ascii_lowercase()
+                    || lower == "sha256sums"
+                    || lower == "sha256sums.txt"
+                    || lower == "sha256sum.txt"
+                {
+                    entry
+                        .get("browser_download_url")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| anyhow!("core upgrade: release metadata for {tag} is missing sha256 digest for {asset}"))?;
 
-    let (path, mut file) = create_staging_file(directory, core_name)?;
-    let staged = StagedCore { path };
+    let response = NetworkManager::new()
+        .get(
+            &checksum_url,
+            proxy,
+            Some(VERSION_TIMEOUT_SECS),
+            Some("clash-verge".into()),
+            false,
+        )
+        .await
+        .with_context(|| format!("failed to download checksum asset for {tag}"))?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "checksum asset for {tag} returned status {}",
+        response.status()
+    );
 
-    unpack(package, &mut file).with_context(|| format!("failed to unpack the core package for {version}"))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let mut permissions = file
-            .metadata()
-            .with_context(|| format!("failed to inspect {}", staged.path.display()))?
-            .permissions();
-        permissions.set_mode(0o755);
-        file.set_permissions(permissions)
-            .with_context(|| format!("failed to make {} executable", staged.path.display()))?;
+    for line in response.text().lines() {
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else {
+            continue;
+        };
+        if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        match parts.next() {
+            Some(file) if file.trim_start_matches('*') == asset => return Ok(hash.to_ascii_lowercase()),
+            None if checksum_url.to_ascii_lowercase().ends_with(".sha256") => {
+                return Ok(hash.to_ascii_lowercase());
+            }
+            _ => {}
+        }
     }
 
-    file.sync_all()
-        .with_context(|| format!("failed to flush {}", staged.path.display()))?;
-    drop(file);
+    bail!("core upgrade: checksum asset for {tag} did not contain a valid sha256 for {asset}")
+}
 
-    let staged_version = read_core_version(&staged.path).context("the staged core is not runnable")?;
+/// Unpacks, permits, signs and runs the new core before it is allowed anywhere near the
+/// live path, so a bad download can never replace a working core.
+async fn stage_core(target: &Path, package: Vec<u8>, version: &str) -> Result<StagedCore> {
+    let target_owned = target.to_path_buf();
+    let version_owned = version.to_owned();
+    let staged = tokio::task::spawn_blocking(move || -> Result<StagedCore> {
+        let directory = target_owned
+            .parent()
+            .with_context(|| format!("the managed core has no parent directory: {}", target_owned.display()))?;
+        let core_name = target_owned
+            .file_name()
+            .with_context(|| format!("the managed core has no file name: {}", target_owned.display()))?;
+
+        let (path, mut file) = create_staging_file(directory, core_name)?;
+        let staged = StagedCore { path };
+
+        unpack(&package, &mut file)
+            .with_context(|| format!("failed to unpack the core package for {version_owned}"))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            let mut permissions = file
+                .metadata()
+                .with_context(|| format!("failed to inspect {}", staged.path.display()))?
+                .permissions();
+            permissions.set_mode(0o755);
+            file.set_permissions(permissions)
+                .with_context(|| format!("failed to make {} executable", staged.path.display()))?;
+        }
+
+        file.sync_all()
+            .with_context(|| format!("failed to flush {}", staged.path.display()))?;
+        Ok(staged)
+    })
+    .await
+    .map_err(|join| anyhow!("core staging task failed: {join}"))??;
+
+    let staged_version = read_core_version(&staged.path)
+        .await
+        .context("the staged core is not runnable")?;
     if staged_version != version {
         bail!("the staged core reports {staged_version}, expected {version}");
     }
@@ -564,27 +641,34 @@ impl StagedCore {
     }
 }
 
-/// Keeps the `-v` probe and codesign from flashing a console window.
+/// Keeps the `-v` probe from flashing a console window.
 #[cfg(windows)]
-fn new_command(program: impl AsRef<OsStr>) -> Command {
-    use std::os::windows::process::CommandExt as _;
-
+fn new_async_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = Command::new(program);
+    let mut command = tokio::process::Command::new(program);
     command.creation_flags(CREATE_NO_WINDOW);
     command
 }
 
 #[cfg(not(windows))]
-fn new_command(program: impl AsRef<OsStr>) -> Command {
-    Command::new(program)
+fn new_async_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    tokio::process::Command::new(program)
 }
 
 /// Parses the version out of `Mihomo Meta v1.19.30 darwin arm64 with go1.22.12 ...`.
-fn read_core_version(path: &Path) -> Result<std::string::String> {
-    let output = new_command(path)
+async fn read_core_version(path: &Path) -> Result<std::string::String> {
+    const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+    let mut command = new_async_command(path);
+    command
         .arg("-v")
-        .output()
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
+        .await
+        .map_err(|_| anyhow!("{} -v timed out after {}s", path.display(), PROBE_TIMEOUT.as_secs()))?
         .with_context(|| format!("failed to run {} -v", path.display()))?;
 
     if !output.status.success() {

@@ -24,14 +24,21 @@ export const createStoreReads = (
 
   const readRunState = (): Promise<RunState> => {
     const revision = ++runRevision
-    const read: Promise<RunState> = getRuntimeState().then((runState) => {
-      if (revision === runRevision) {
-        current = runState
-        dispatch({ type: 'runState/loaded', runState })
-      }
-      if (latestRead && latestRead !== read) return latestRead
-      return current ?? runState
-    })
+    const read: Promise<RunState> = getRuntimeState()
+      .then((runState) => {
+        if (revision === runRevision) {
+          current = runState
+          dispatch({ type: 'runState/loaded', runState })
+        }
+        if (latestRead && latestRead !== read) return latestRead
+        return current ?? runState
+      })
+      .catch((error) => {
+        if (latestRead === read) {
+          latestRead = null
+        }
+        throw error
+      })
     latestRead = read
     return read
   }

@@ -101,7 +101,7 @@ fn is_disallowed_direct_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-fn validate_direct_delay_target(host: &str) -> anyhow::Result<()> {
+async fn resolve_safe_direct_addr(host: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
     let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
     if lower_host == "localhost"
         || lower_host.ends_with(".localhost")
@@ -110,16 +110,45 @@ fn validate_direct_delay_target(host: &str) -> anyhow::Result<()> {
     {
         anyhow::bail!("Refusing direct delay probe to local/internal host without proxy");
     }
-    if lower_host
-        .parse::<std::net::IpAddr>()
-        .is_ok_and(is_disallowed_direct_ip)
-    {
-        anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
+    if let Ok(ip) = lower_host.parse::<std::net::IpAddr>() {
+        if is_disallowed_direct_ip(ip) {
+            anyhow::bail!("Refusing direct delay probe to private/loopback IP without proxy");
+        }
+        return Ok(std::net::SocketAddr::new(ip, port));
     }
-    Ok(())
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((lower_host.as_str(), port)).await?.collect();
+    if addrs.is_empty() {
+        anyhow::bail!("Failed to resolve host for direct delay probe");
+    }
+    if addrs.iter().any(|addr| is_disallowed_direct_ip(addr.ip())) {
+        anyhow::bail!("Refusing direct delay probe to resolved private/loopback IP without proxy");
+    }
+    Ok(addrs[0])
 }
 
-async fn probe_https_delay(host: &str, port: u16, proxy_port: Option<u16>) -> anyhow::Result<()> {
+fn is_http_connect_ok(buf: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(buf) else {
+        return false;
+    };
+    let Some(status_line) = text.lines().next() else {
+        return false;
+    };
+    let mut parts = status_line.split_whitespace();
+    let Some(version) = parts.next() else {
+        return false;
+    };
+    let Some(code) = parts.next() else {
+        return false;
+    };
+    version.starts_with("HTTP/1.") && code == "200"
+}
+
+async fn probe_https_delay(
+    host: &str,
+    port: u16,
+    proxy_port: Option<u16>,
+    direct_addr: Option<std::net::SocketAddr>,
+) -> anyhow::Result<()> {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::TcpStream;
 
@@ -130,12 +159,15 @@ async fn probe_https_delay(host: &str, port: u16, proxy_port: Option<u16>) -> an
             s.write_all(format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n").as_bytes())
                 .await?;
             s.read_buf(&mut buf).await?;
-            if !buf.windows(3).any(|w| w == b"200") {
+            if !is_http_connect_ok(&buf) {
                 return Err(anyhow::anyhow!("Proxy CONNECT failed"));
             }
             s
         }
-        None => TcpStream::connect(format!("{host}:{port}")).await?,
+        None => {
+            let addr = direct_addr.ok_or_else(|| anyhow::anyhow!("Missing resolved direct address"))?;
+            TcpStream::connect(addr).await?
+        }
     };
     let connector = tokio_rustls::TlsConnector::from(Arc::clone(&TLS_CONFIG));
     let server_name = rustls::pki_types::ServerName::try_from(host)
@@ -145,7 +177,12 @@ async fn probe_https_delay(host: &str, port: u16, proxy_port: Option<u16>) -> an
     Ok(())
 }
 
-async fn probe_http_delay(url: &str, host: &str, port: u16, proxy_port: Option<u16>) -> anyhow::Result<()> {
+async fn probe_http_delay(
+    url: &str,
+    host: &str,
+    proxy_port: Option<u16>,
+    direct_addr: Option<std::net::SocketAddr>,
+) -> anyhow::Result<()> {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::TcpStream;
 
@@ -155,10 +192,13 @@ async fn probe_http_delay(url: &str, host: &str, port: u16, proxy_port: Option<u
             TcpStream::connect(format!("127.0.0.1:{pp}")).await?,
             format!("HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
         ),
-        None => (
-            TcpStream::connect(format!("{host}:{port}")).await?,
-            format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
-        ),
+        None => {
+            let addr = direct_addr.ok_or_else(|| anyhow::anyhow!("Missing resolved direct address"))?;
+            (
+                TcpStream::connect(addr).await?,
+                format!("HEAD / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+            )
+        }
     };
     stream.write_all(req.as_bytes()).await?;
     let _ = stream.read(&mut buf).await?;
@@ -191,16 +231,18 @@ pub async fn test_delay(url: String) -> anyhow::Result<u32> {
         None
     };
 
-    if proxy_port.is_none() {
-        validate_direct_delay_target(&host)?;
-    }
+    let direct_addr = if proxy_port.is_none() {
+        Some(resolve_safe_direct_addr(&host, port).await?)
+    } else {
+        None
+    };
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let start = Instant::now();
         if is_https {
-            probe_https_delay(&host, port, proxy_port).await?;
+            probe_https_delay(&host, port, proxy_port, direct_addr).await?;
         } else {
-            probe_http_delay(&url, &host, port, proxy_port).await?;
+            probe_http_delay(&url, &host, proxy_port, direct_addr).await?;
         }
         Ok((start.elapsed().as_millis() as u32).max(1))
     })

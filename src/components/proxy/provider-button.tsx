@@ -102,15 +102,21 @@ export const ProviderButton = () => {
       )
       setUpdating(newUpdating)
 
+      const failedProviders: string[] = []
       for (const name of allProviders) {
         try {
-          await mutate(() => updateProxyProvider(name), {
+          const result = await mutate(() => updateProxyProvider(name), {
             id: `update-proxy-provider-${name}`,
             errorNotice: false,
           })
-          setUpdating((prev) => ({ ...prev, [name]: false }))
+          if (!result.ok) {
+            failedProviders.push(name)
+          }
         } catch (err) {
           console.error(`更新 ${name} 失败`, err)
+          failedProviders.push(name)
+        } finally {
+          setUpdating((prev) => ({ ...prev, [name]: false }))
         }
       }
 
@@ -120,7 +126,16 @@ export const ProviderButton = () => {
         errorNotice: false,
       })
 
-      showNotice.success('proxies.feedback.notifications.provider.allUpdated')
+      if (failedProviders.length > 0) {
+        showNotice.error(
+          'proxies.feedback.notifications.provider.genericError',
+          {
+            message: failedProviders.join(', '),
+          },
+        )
+      } else {
+        showNotice.success('proxies.feedback.notifications.provider.allUpdated')
+      }
     } catch (err) {
       showNotice.error('proxies.feedback.notifications.provider.genericError', {
         message: String(err),

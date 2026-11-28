@@ -1,4 +1,10 @@
-import { createElement, isValidElement, ReactNode, useRef } from 'react'
+import {
+  createElement,
+  isValidElement,
+  ReactNode,
+  useEffect,
+  useRef,
+} from 'react'
 
 import noop from '@/utils/noop'
 
@@ -30,7 +36,19 @@ export function GuardState<T>(props: Props<T>) {
   const lockRef = useRef(false)
   const saveRef = useRef(value)
   const lastRef = useRef(0)
-  const timeRef = useRef<any>(undefined)
+  const timeRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (timeRef.current !== undefined) {
+        clearTimeout(timeRef.current)
+        timeRef.current = undefined
+      }
+    }
+  }, [])
 
   if (!isValidElement(children)) {
     return children as any
@@ -40,8 +58,7 @@ export function GuardState<T>(props: Props<T>) {
 
   childProps[valueProps] = value
   childProps[onChangeProps] = async (...args: any[]) => {
-    if (lockRef.current) return
-    lockRef.current = true
+    if (waitTime <= 0 && lockRef.current) return
 
     try {
       const newValue = onFormat ? onFormat(...args) : (args[0] as T)
@@ -56,17 +73,28 @@ export function GuardState<T>(props: Props<T>) {
       lastRef.current = now
 
       if (waitTime <= 0) {
-        await onGuard(newValue, value!)
-        lockRef.current = false
+        lockRef.current = true
+        try {
+          await onGuard(newValue, value!)
+        } finally {
+          lockRef.current = false
+        }
       } else {
-        clearTimeout(timeRef.current)
+        if (timeRef.current !== undefined) {
+          clearTimeout(timeRef.current)
+        }
 
         timeRef.current = setTimeout(async () => {
+          timeRef.current = undefined
+          if (!mountedRef.current || lockRef.current) return
+          lockRef.current = true
           try {
             await onGuard(newValue, saveRef.current!)
           } catch (err: any) {
-            onChange(saveRef.current!)
-            onCatch(err)
+            if (mountedRef.current) {
+              onChange(saveRef.current!)
+              onCatch(err)
+            }
           } finally {
             lockRef.current = false
           }

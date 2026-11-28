@@ -16,7 +16,14 @@ import {
 } from '@mui/material'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useLockFn } from 'ahooks'
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BaseLoadingOverlay, MonacoEditor } from '@/components/base'
@@ -71,6 +78,35 @@ export const EditorViewer = ({
   const editorRef = useRef<MonacoEditorInstance | null>(null)
 
   const resolvedTitle = title ?? t('profiles.components.menu.editFile')
+  const editorOptions = useMemo(
+    () => ({
+      automaticLayout: true,
+      tabSize: 2,
+      minimap: {
+        enabled:
+          typeof document !== 'undefined' &&
+          document.documentElement.clientWidth >= 1500,
+      },
+      mouseWheelZoom: true,
+      readOnly,
+      readOnlyMessage: {
+        value: t('profiles.modals.editor.messages.readOnly'),
+      },
+      renderValidationDecorations: 'on' as const,
+      quickSuggestions: {
+        strings: true,
+        comments: true,
+        other: true,
+      },
+      padding: {
+        top: 33,
+      },
+      fontFamily: MONACO_FONT_FAMILY,
+      fontLigatures: false,
+      smoothScrolling: true,
+    }),
+    [readOnly, t],
+  )
   const disableSave = loading || saveDisabled || dirty === false
 
   const syncEditorValue = useCallback(() => {
@@ -231,32 +267,7 @@ export const EditorViewer = ({
               }}
               onChange={(nextValue) => onChange?.(nextValue ?? '')}
               onValidate={onValidate}
-              options={{
-                automaticLayout: true,
-                tabSize: 2,
-                minimap: {
-                  enabled:
-                    typeof document !== 'undefined' &&
-                    document.documentElement.clientWidth >= 1500,
-                },
-                mouseWheelZoom: true,
-                readOnly,
-                readOnlyMessage: {
-                  value: t('profiles.modals.editor.messages.readOnly'),
-                },
-                renderValidationDecorations: 'on',
-                quickSuggestions: {
-                  strings: true,
-                  comments: true,
-                  other: true,
-                },
-                padding: {
-                  top: 33,
-                },
-                fontFamily: MONACO_FONT_FAMILY,
-                fontLigatures: false,
-                smoothScrolling: true,
-              }}
+              options={editorOptions}
             />
           )}
         </div>

@@ -73,12 +73,16 @@ export function LiteModeViewer({ ref }: { ref?: Ref<DialogRef> }) {
               color: 'primary.main',
               '&:hover': { textDecoration: 'underline' },
             }}
-            onClick={async () =>
-              await mutate(() => entry_lightweight_mode(), {
-                id: 'entry-lightweight-mode',
-                errorNotice: false,
-              })
-            }
+            onClick={async () => {
+              try {
+                await mutate(() => entry_lightweight_mode(), {
+                  id: 'entry-lightweight-mode',
+                  errorNotice: false,
+                })
+              } catch (err) {
+                showNotice.error(err)
+              }
+            }}
           >
             {t('shared.actions.enable')}
           </Typography>

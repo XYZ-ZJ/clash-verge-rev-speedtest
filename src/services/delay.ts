@@ -132,7 +132,7 @@ class DelayManager {
     const cached = this.groupSetSnapshots.get(groupKey)
     if (cached) return cached
 
-    const names = groupKey ? groupKey.split(' ') : []
+    const names = groupKey ? groupKey.split('\0') : []
     const snapshots = new Map(
       names.map((name) => [name, this.groupDelays(name)]),
     )

@@ -144,8 +144,12 @@ const HomeSettingsDialog = ({
   }
 
   const handleSave = async () => {
-    await patchVerge({ home_cards: cards })
-    onClose()
+    try {
+      await patchVerge({ home_cards: cards })
+      onClose()
+    } catch (err) {
+      showNotice.error(err)
+    }
   }
 
   return (

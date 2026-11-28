@@ -1178,13 +1178,7 @@ type IVergeConfig = Omit<
   Partial<import('@/services/bindings').IVerge_Serialize>,
   'theme_setting'
 > & {
-  theme_setting?:
-    | (import('@/services/bindings').IVergeTheme & {
-        background_image?: string
-        background_blend_mode?: string
-        background_opacity?: number
-      })
-    | null
+  theme_setting?: import('@/services/bindings').IVergeTheme | null
 }
 
 type IWebDavFile = import('@/services/bindings').WebDavFile & {

@@ -251,12 +251,12 @@ const SettingClash = ({ onError }: Props) => {
           onCatch={onError}
           onFormat={(e: any) => e.target.value}
           onChange={(e) => onChangeData({ 'log-level': e })}
-          onGuard={(e) => {
+          onGuard={async (e) => {
+            await patchClash({ 'log-level': e })
             setClashLog((pre) => ({
               ...pre!,
               logLevel: e.toUpperCase() as LogLevel,
             }))
-            return patchClash({ 'log-level': e })
           }}
         >
           <Select size="small" sx={{ width: 100, '> div': { py: '7.5px' } }}>

@@ -20,27 +20,39 @@ pub enum ServiceInstallOutcome {
 
 async fn execute_service_operation_sync(status: ServiceStatus, error_code: &str) -> CmdResult<ServiceInstallOutcome> {
     let manager = CoreManager::global();
-    if matches!(
+    let is_reinstall = matches!(
         &status,
         ServiceStatus::ReinstallRequired | ServiceStatus::ForceReinstallRequired
-    ) {
-        let _lifecycle = manager.lifecycle_lock.lock().await;
+    );
+    let lifecycle = if is_reinstall {
+        let guard = manager.lifecycle_lock.lock().await;
         manager
             .controlled_stop_core_inner()
             .await
             .map_err(|error| proxy_aware_coded_error(&error, error_code))?;
-    }
+        Some(guard)
+    } else {
+        None
+    };
     let result = SERVICE_MANAGER.handle_service_status(status).await;
     #[cfg(windows)]
-    return finish_service_installation(result, error_code, |reason| async move {
-        manager.continue_with_sidecar(Some(&reason)).await
-    })
-    .await;
+    {
+        drop(lifecycle);
+        return finish_service_installation(result, error_code, |reason| async move {
+            manager.continue_with_sidecar(Some(&reason)).await
+        })
+        .await;
+    }
 
     #[cfg(not(windows))]
-    result
-        .map(|()| ServiceInstallOutcome::Installed)
-        .map_err(|error| proxy_aware_coded_error(&error, error_code))
+    {
+        result.map_err(|error| proxy_aware_coded_error(&error, error_code))?;
+        drop(lifecycle);
+        if is_reinstall && matches!(*manager.get_running_mode(), RunningMode::NotRunning) {
+            let _ = manager.start_core_during_config_update().await;
+        }
+        Ok(ServiceInstallOutcome::Installed)
+    }
 }
 
 #[cfg(any(windows, test))]

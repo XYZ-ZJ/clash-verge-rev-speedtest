@@ -236,12 +236,16 @@ async fn setup_light_weight_timer() {
     AsyncHandler::spawn(move || async move {
         tokio::select! {
             _ = sleep(Duration::from_secs(once_by_minutes.saturating_mul(60))) => {
-                logging!(info, Type::Timer, "Lightweight mode timer expired, entering lightweight mode");
                 {
                     let mut guard = CANCEL_TX.lock();
                     *guard = None;
                 }
-                entry_lightweight_mode().await;
+                if WindowManager::is_main_window_focused(WindowManager::get_main_window().as_ref()) {
+                    logging!(debug, Type::Timer, "Main window is focused, skipping lightweight mode entry");
+                } else {
+                    logging!(info, Type::Timer, "Lightweight mode timer expired, entering lightweight mode");
+                    entry_lightweight_mode().await;
+                }
             }
             _ = rx => {
                 logging!(debug, Type::Timer, "Received cancel signal, stopping lightweight mode timer");

@@ -118,6 +118,7 @@ mod app_init {
         logging!(debug, Type::Setup, "初始化窗口状态管理...");
         let window_state_plugin = tauri_plugin_window_state::Builder::new()
             .with_filename(files::WINDOW_STATE)
+            .with_denylist(&["update-splash"])
             .with_state_flags(tauri_plugin_window_state::StateFlags::default())
             .build();
         app.handle().plugin(window_state_plugin)?;
@@ -304,9 +305,20 @@ pub fn run() -> std::process::ExitCode {
             }
         }
 
+        static FOCUS_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
         pub fn handle_window_focus(focused: bool) {
+            let generation = FOCUS_GENERATION
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                .wrapping_add(1);
             AsyncHandler::spawn(move || async move {
+                if FOCUS_GENERATION.load(std::sync::atomic::Ordering::Acquire) != generation {
+                    return;
+                }
                 let is_enable_global_hotkey = Config::verge().await.data_arc().enable_global_hotkey.unwrap_or(true);
+                if FOCUS_GENERATION.load(std::sync::atomic::Ordering::Acquire) != generation {
+                    return;
+                }
 
                 if focused {
                     #[cfg(target_os = "macos")]
@@ -328,12 +340,16 @@ pub fn run() -> std::process::ExitCode {
                 #[cfg(target_os = "macos")]
                 {
                     use crate::core::hotkey::SystemHotkey;
-                    let _ = hotkey::Hotkey::global().unregister_system_hotkey(SystemHotkey::CmdQ);
-                    let _ = hotkey::Hotkey::global().unregister_system_hotkey(SystemHotkey::CmdW);
+                    let _ = hotkey::Hotkey::global()
+                        .unregister_system_hotkey(SystemHotkey::CmdQ)
+                        .await;
+                    let _ = hotkey::Hotkey::global()
+                        .unregister_system_hotkey(SystemHotkey::CmdW)
+                        .await;
                 }
 
                 if !is_enable_global_hotkey {
-                    let _ = hotkey::Hotkey::global().reset();
+                    let _ = hotkey::Hotkey::global().reset().await;
                 }
             });
         }
@@ -342,11 +358,15 @@ pub fn run() -> std::process::ExitCode {
         pub fn handle_window_destroyed() {
             use crate::core::hotkey::SystemHotkey;
             AsyncHandler::spawn(move || async move {
-                let _ = hotkey::Hotkey::global().unregister_system_hotkey(SystemHotkey::CmdQ);
-                let _ = hotkey::Hotkey::global().unregister_system_hotkey(SystemHotkey::CmdW);
+                let _ = hotkey::Hotkey::global()
+                    .unregister_system_hotkey(SystemHotkey::CmdQ)
+                    .await;
+                let _ = hotkey::Hotkey::global()
+                    .unregister_system_hotkey(SystemHotkey::CmdW)
+                    .await;
                 let is_enable_global_hotkey = Config::verge().await.data_arc().enable_global_hotkey.unwrap_or(true);
                 if !is_enable_global_hotkey {
-                    let _ = hotkey::Hotkey::global().reset();
+                    let _ = hotkey::Hotkey::global().reset().await;
                 }
             });
         }

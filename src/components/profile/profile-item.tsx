@@ -548,7 +548,7 @@ const ProfileItemBase = (props: ProfileItemProps) => {
         id: `save-profile-file:${docUid}`,
         errorNotice: false,
       })
-      if (!(result.ok && result.value === true)) {
+      if (!(result.ok && result.value.status === 'valid')) {
         await doc.reload()
         return
       }

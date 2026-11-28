@@ -22,11 +22,13 @@ pub async fn save_webdav_config(
         webdav_password: Some(password),
         ..IVerge::default()
     };
-    Config::verge().await.edit_draft(|e| e.patch_config(&patch));
-    Config::verge().await.apply();
-
-    let verge_data = Config::verge().await.data_arc();
+    let _config_write = Config::lock_config_write().await;
+    let verge = Config::verge().await;
+    let transaction = clash_verge_draft::DraftTransaction::begin(vec![&verge]).stringify_err()?;
+    verge.edit_draft(|e| e.patch_config(&patch));
+    let verge_data = verge.latest_arc();
     verge_data.save_file().await.stringify_err()?;
+    transaction.commit();
     core::backup::WebDavClient::global().reset();
     Ok(())
 }

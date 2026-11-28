@@ -3,6 +3,7 @@ import {
   forwardRef,
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -76,6 +77,9 @@ export const StickyVirtualList = forwardRef(function StickyVirtualListInner<
     overscan = 8,
   } = props
   const scrollParentRef = useRef<HTMLDivElement>(null)
+  const scrollEndIntervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(
+    new Set(),
+  )
   const getEstimatedItemHeight = useCallback(
     (index: number) =>
       isGroupItem(items[index], index)
@@ -169,6 +173,14 @@ export const StickyVirtualList = forwardRef(function StickyVirtualListInner<
     [getVirtualOffset],
   )
 
+  useEffect(() => {
+    const intervals = scrollEndIntervalsRef.current
+    return () => {
+      intervals.forEach((interval) => clearInterval(interval))
+      intervals.clear()
+    }
+  }, [])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -186,12 +198,14 @@ export const StickyVirtualList = forwardRef(function StickyVirtualListInner<
           const interval = setInterval(() => {
             if (!rowVirtualizer.isScrolling || maxCheckCount < 0) {
               clearInterval(interval)
+              scrollEndIntervalsRef.current.delete(interval)
               resolve()
               return
             }
 
             maxCheckCount -= 1
           }, 100)
+          scrollEndIntervalsRef.current.add(interval)
         })
       },
     }),

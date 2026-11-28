@@ -129,13 +129,13 @@ pub async fn test_delay(url: std::string::String) -> CmdResult<u32> {
 #[tauri::command]
 #[specta::specta]
 pub async fn save_dns_config(dns_config: crate::ipc::YamlMapping) -> CmdResult {
-    use crate::utils::dirs;
-    use tokio::fs;
+    use crate::utils::{dirs, help};
 
+    let _config_write = Config::lock_config_write().await;
     let dns_path = dirs::app_home_dir().stringify_err()?.join(constants::files::DNS_CONFIG);
 
     let yaml_str = yaml_emitter::to_mihomo_config_string(&dns_config.0).stringify_err()?;
-    fs::write(&dns_path, yaml_str).await.stringify_err()?;
+    help::save_yaml_str(&dns_path, &yaml_str).await.stringify_err()?;
     logging!(info, Type::Config, "DNS config saved to {dns_path:?}");
 
     Ok(())

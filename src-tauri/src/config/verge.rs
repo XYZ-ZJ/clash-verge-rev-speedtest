@@ -262,6 +262,11 @@ pub struct IVergeTheme {
     pub font_family: Option<String>,
     #[specta(type = Option<std::string::String>)]
     pub css_injection: Option<String>,
+    #[specta(type = Option<std::string::String>)]
+    pub background_image: Option<String>,
+    #[specta(type = Option<std::string::String>)]
+    pub background_blend_mode: Option<String>,
+    pub background_opacity: Option<f64>,
 }
 
 impl IVerge {

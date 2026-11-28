@@ -272,10 +272,16 @@ export const SysproxyViewer = forwardRef<DialogRef>((props, ref) => {
     const hostnameRegex =
       /^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])$/
 
+    const trimmedHost = value.proxy_host.trim()
+    const normalizedHost =
+      trimmedHost.startsWith('[') && trimmedHost.endsWith(']')
+        ? trimmedHost.slice(1, -1)
+        : trimmedHost
+
     if (
-      !ipv4Regex.test(value.proxy_host) &&
-      !ipv6Regex.test(value.proxy_host) &&
-      !hostnameRegex.test(value.proxy_host)
+      !ipv4Regex.test(normalizedHost) &&
+      !ipv6Regex.test(normalizedHost) &&
+      !hostnameRegex.test(normalizedHost)
     ) {
       showNotice.error('settings.modals.sysproxy.messages.invalidProxyHost')
       return
@@ -310,12 +316,8 @@ export const SysproxyViewer = forwardRef<DialogRef>((props, ref) => {
       patch.pac_file_content = value.pac_content
     }
 
-    let proxyHost = value.proxy_host
-    if (
-      ipv6Regex.test(proxyHost) &&
-      !proxyHost.startsWith('[') &&
-      !proxyHost.endsWith(']')
-    ) {
+    let proxyHost = normalizedHost
+    if (ipv6Regex.test(proxyHost)) {
       proxyHost = `[${proxyHost}]`
     }
 

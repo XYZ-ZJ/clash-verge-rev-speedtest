@@ -126,6 +126,10 @@ fn is_safe_svg(content: &[u8]) -> bool {
         || text.contains("<iframe")
         || text.contains("<object")
         || text.contains("<embed")
+        || text.contains("<set ")
+        || text.contains("<set/")
+        || text.contains("<set>")
+        || text.contains("<animate")
         || has_svg_event_handler(&text))
 }
 
@@ -169,7 +173,7 @@ fn has_svg_event_handler(lower_svg: &str) -> bool {
                 i += 1;
             }
             _ => {
-                let is_attr_boundary = i > 0 && bytes[i - 1].is_ascii_whitespace();
+                let is_attr_boundary = i > 0 && (bytes[i - 1].is_ascii_whitespace() || bytes[i - 1] == b'/');
                 if is_attr_boundary
                     && i + 3 < bytes.len()
                     && bytes[i] == b'o'
@@ -202,26 +206,63 @@ fn is_supported_icon_content(content: &[u8]) -> bool {
     tauri::image::Image::from_bytes(content).is_ok() || (looks_like_svg(content) && is_safe_svg(content))
 }
 
-fn shared_icon_client() -> CmdResult<&'static reqwest::Client> {
-    static ICON_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    if let Some(client) = ICON_CLIENT.get() {
-        return Ok(client);
-    }
-    let built = reqwest::Client::builder()
+fn build_pinned_icon_client(pinned: Option<(&str, &[std::net::SocketAddr])>) -> CmdResult<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
         .use_rustls_tls()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 3 {
-                return attempt.error("too many icon redirects");
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some((host, addrs)) = pinned {
+        builder = builder.resolve_to_addrs(host, addrs);
+    }
+    builder.build().stringify_err()
+}
+
+async fn ensure_resolved_icon_host_safe(
+    parsed_url: &tauri::Url,
+) -> CmdResult<Option<(std::string::String, Vec<std::net::SocketAddr>)>> {
+    let Some(host) = parsed_url.host_str() else {
+        return Err("icon url missing host".into());
+    };
+    let lower_host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    if lower_host.parse::<std::net::IpAddr>().is_ok() {
+        return Ok(None);
+    }
+    let port = parsed_url.port_or_known_default().unwrap_or(443);
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((lower_host.as_str(), port))
+        .await
+        .stringify_err()?
+        .collect();
+    if addrs.is_empty() || addrs.iter().any(|addr| is_disallowed_ip(addr.ip())) {
+        return Err("refusing private or loopback resolved icon IP".into());
+    }
+    Ok(Some((lower_host, addrs)))
+}
+
+async fn fetch_icon_with_safe_redirects(initial_url: tauri::Url) -> CmdResult<reqwest::Response> {
+    const MAX_REDIRECTS: usize = 3;
+    let mut current_url = initial_url;
+
+    for hop in 0..=MAX_REDIRECTS {
+        let pinned = ensure_resolved_icon_host_safe(&current_url).await?;
+        let client = build_pinned_icon_client(pinned.as_ref().map(|(host, addrs)| (host.as_str(), addrs.as_slice())))?;
+        let response = client.get(current_url.clone()).send().await.stringify_err()?;
+        if response.status().is_redirection() {
+            if hop >= MAX_REDIRECTS {
+                return Err("too many icon redirects".into());
             }
-            if let Err(err) = validate_external_icon_url(attempt.url().as_str()) {
-                return attempt.error(err.to_string());
-            }
-            attempt.follow()
-        }))
-        .build()
-        .stringify_err()?;
-    Ok(ICON_CLIENT.get_or_init(|| built))
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| "icon redirect missing location".to_owned())?;
+            let next_url = current_url.join(location).map_err(|_| "invalid icon redirect url")?;
+            current_url = validate_external_icon_url(next_url.as_str())?;
+            continue;
+        }
+        return response.error_for_status().stringify_err();
+    }
+
+    Err("too many icon redirects".into())
 }
 
 pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String> {
@@ -241,10 +282,7 @@ pub async fn download_icon_cache(url: String, name: String) -> CmdResult<String>
     let temp_name = format!("{icon_name}.downloading");
     let temp_path = ensure_icon_cache_target(&icon_cache_dir, temp_name.as_str())?;
 
-    let client = shared_icon_client()?;
-    let mut response = client.get(parsed_url).send().await.stringify_err()?;
-    validate_external_icon_url(response.url().as_str())?;
-    response = response.error_for_status().stringify_err()?;
+    let mut response = fetch_icon_with_safe_redirects(parsed_url).await?;
     if response.content_length().is_some_and(|len| len > MAX_ICON_BYTES as u64) {
         return Err("Icon download exceeds maximum allowed size".into());
     }
@@ -345,10 +383,11 @@ pub async fn copy_icon_file(path: String, icon_info: IconInfo) -> CmdResult<Stri
             }
         }
         if let Some(previous_t) = previous_t {
-            let previous_png = ensure_icon_cache_target(&icon_dir, format!("{icon_name}-{previous_t}.png").as_str())?;
-            previous_png.remove_if_exists().await.unwrap_or_default();
-            let previous_ico = ensure_icon_cache_target(&icon_dir, format!("{icon_name}-{previous_t}.ico").as_str())?;
-            previous_ico.remove_if_exists().await.unwrap_or_default();
+            for prev_ext in ALLOWED_ICON_EXTS {
+                let previous_file =
+                    ensure_icon_cache_target(&icon_dir, format!("{icon_name}-{previous_t}.{prev_ext}").as_str())?;
+                previous_file.remove_if_exists().await.unwrap_or_default();
+            }
         }
 
         logging!(debug, Type::Cmd, "copying icon file: {path} -> {}", dest_path.display());

@@ -49,7 +49,7 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
   const recordSelection = useRecordSelection()
   const forgetSelection = useForgetSelection()
   const { verge } = useVerge()
-  const pendingRequestRef = useRef<ProxyChangeRequest | null>(null)
+  const pendingRequestsRef = useRef<Map<string, ProxyChangeRequest>>(new Map())
   const isProcessingRef = useRef(false)
 
   const { onSuccess, onError } = options
@@ -123,14 +123,16 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
     isProcessingRef.current = true
 
     try {
-      while (pendingRequestRef.current) {
-        const request = pendingRequestRef.current
-        pendingRequestRef.current = null
+      while (pendingRequestsRef.current.size > 0) {
+        const nextEntry = pendingRequestsRef.current.entries().next().value
+        if (!nextEntry) break
+        const [groupKey, request] = nextEntry
+        pendingRequestsRef.current.delete(groupKey)
         await executeChange(request)
       }
     } finally {
       isProcessingRef.current = false
-      if (pendingRequestRef.current) {
+      if (pendingRequestsRef.current.size > 0) {
         void flushChangeQueue()
       }
     }
@@ -143,12 +145,12 @@ export const useProxySelection = (options: ProxySelectionOptions = {}) => {
       previousProxy?: string,
       fixed?: string,
     ) => {
-      pendingRequestRef.current = {
+      pendingRequestsRef.current.set(groupName, {
         groupName,
         proxyName,
         previousProxy,
         fixed,
-      }
+      })
       void flushChangeQueue()
     },
     [flushChangeQueue],

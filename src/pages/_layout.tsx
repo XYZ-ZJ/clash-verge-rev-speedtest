@@ -104,9 +104,11 @@ const Layout = () => {
   return (
     <ThemeProvider theme={theme}>
       {/* 左侧底部窗口控制按钮 */}
-      <NoticeManager position={verge?.notice_position} />
-      <ServiceMigrationDialog />
-      <SysproxyPrivilegeDialog />
+      <BaseErrorBoundary>
+        <NoticeManager position={verge?.notice_position} />
+        <ServiceMigrationDialog />
+        <SysproxyPrivilegeDialog />
+      </BaseErrorBoundary>
       <Paper
         square
         elevation={0}
@@ -146,7 +148,9 @@ const Layout = () => {
         {customTitlebar}
 
         <div className="layout-content">
-          <LayoutSidebar isDark={isDark} isCollapsed={navCollapsed} />
+          <BaseErrorBoundary>
+            <LayoutSidebar isDark={isDark} isCollapsed={navCollapsed} />
+          </BaseErrorBoundary>
 
           <div className="layout-content__right">
             <div className="the-bar"></div>

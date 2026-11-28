@@ -647,6 +647,7 @@ export const ProxyChain = ({
           {currentProxyChain.length > 0 && (
             <IconButton
               size="small"
+              disabled={isConnected || isConnecting}
               onClick={() => {
                 teardownChain().catch(console.error)
               }}

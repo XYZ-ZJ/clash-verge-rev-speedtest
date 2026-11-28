@@ -37,7 +37,7 @@ impl IClashTemp {
                     && let Value::String(s) = val
                     && s.is_empty()
                 {
-                    *s = "set-your-secret".into();
+                    *s = Self::generate_default_secret();
                 }
 
                 Self(Self::guard(map))
@@ -51,6 +51,14 @@ impl IClashTemp {
                 Self::template()
             }
         }
+    }
+
+    fn generate_default_secret() -> String {
+        let mut bytes = [0_u8; 16];
+        if getrandom::fill(&mut bytes).is_ok() {
+            return bytes.iter().map(|b| format!("{b:02x}")).collect();
+        }
+        nanoid::nanoid!(24)
     }
 
     pub fn template() -> Self {
@@ -107,7 +115,7 @@ impl IClashTemp {
             ]
             .into(),
         );
-        map.insert("secret".into(), "set-your-secret".into());
+        map.insert("secret".into(), Self::generate_default_secret().into());
         map.insert("external-controller-cors".into(), cors_map.into());
         map.insert("unified-delay".into(), true.into());
         Self(map)

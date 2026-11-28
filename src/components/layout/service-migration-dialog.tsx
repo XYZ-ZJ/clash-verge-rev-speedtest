@@ -99,8 +99,9 @@ export const ServiceMigrationDialog = () => {
     }
 
     let initialRefreshSucceeded = false
+    let latestRunState: Awaited<ReturnType<typeof refreshRunState>> | undefined
     try {
-      await refreshRunState()
+      latestRunState = await refreshRunState()
       initialRefreshSucceeded = true
     } catch (error) {
       showNotice.error(
@@ -109,6 +110,13 @@ export const ServiceMigrationDialog = () => {
       )
     }
     if (!outcome || !initialRefreshSucceeded) {
+      if (
+        initialRefreshSucceeded &&
+        latestRunState &&
+        !latestRunState.serviceNeedsAttention
+      ) {
+        setWorkflowIncomplete(false)
+      }
       setLoading(false)
       return
     }

@@ -98,9 +98,10 @@ async fn ensure_effect(
         }
         Effect::LogLevel => logger::Logger::global().update_log_level(patch.get_log_level())?,
         Effect::LogFile => {
+            let current = Config::verge().await.latest_arc();
             logger::update_log_config(
-                patch.app_log_max_size.unwrap_or(128),
-                patch.app_log_max_count.unwrap_or(8),
+                patch.app_log_max_size.or(current.app_log_max_size).unwrap_or(128),
+                patch.app_log_max_count.or(current.app_log_max_count).unwrap_or(8),
             )
             .await?;
         }

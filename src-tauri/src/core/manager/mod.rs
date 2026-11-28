@@ -111,7 +111,7 @@ pub struct CoreManager {
 /// keeps it consistent with Service Health and derives PAC availability from it.
 #[derive(Debug, Default)]
 struct State {
-    child_sidecar: ArcSwapOption<CommandChild>,
+    child_sidecar: parking_lot::Mutex<Option<CommandChild>>,
 }
 
 impl Default for CoreManager {
@@ -163,15 +163,11 @@ impl CoreManager {
     }
 
     pub fn take_child_sidecar(&self) -> Option<CommandChild> {
-        self.state
-            .load()
-            .child_sidecar
-            .swap(None)
-            .and_then(|arc| Arc::try_unwrap(arc).ok())
+        self.state.load().child_sidecar.lock().take()
     }
 
     pub fn get_running_sidecar_pid(&self) -> Option<u32> {
-        self.state.load().child_sidecar.load_full().map(|child| child.pid())
+        self.state.load().child_sidecar.lock().as_ref().map(CommandChild::pid)
     }
 
     pub fn get_last_update(&self) -> Option<Arc<Instant>> {
@@ -220,7 +216,7 @@ impl CoreManager {
 
     pub fn set_running_child_sidecar(&self, child: CommandChild) {
         let state = self.state.load();
-        state.child_sidecar.store(Some(Arc::new(child)));
+        *state.child_sidecar.lock() = Some(child);
     }
 
     fn mark_core_ready(&self) -> u64 {

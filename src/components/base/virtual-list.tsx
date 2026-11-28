@@ -60,11 +60,15 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(
       return () => el.removeEventListener('scroll', onScroll)
     }, [onScroll])
 
-    useImperativeHandle(ref, () => ({
-      scrollToIndex: (index, options) =>
-        virtualizer.scrollToIndex(index, options),
-      scrollTo: (options) => parentRef.current?.scrollTo(options),
-    }))
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToIndex: (index, options) =>
+          virtualizer.scrollToIndex(index, options),
+        scrollTo: (options) => parentRef.current?.scrollTo(options),
+      }),
+      [virtualizer],
+    )
 
     return (
       <div ref={parentRef} style={{ ...style, overflow: 'auto' }}>

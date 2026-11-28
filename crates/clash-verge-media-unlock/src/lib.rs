@@ -153,3 +153,26 @@ pub async fn check_media_unlock_item(client: &Client, name: &str) -> Result<Unlo
 
     Ok(check.check_with_timeout(client).await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::utils::{classify_restricted_status, extract_quoted_field};
+    use reqwest::StatusCode;
+
+    #[test]
+    fn extract_quoted_field_skips_null_and_finds_later_string() {
+        let body = r#"{"region": null, "other": 1, "region": "JP"}"#;
+        assert_eq!(extract_quoted_field(body, "region"), Some("JP"));
+    }
+
+    #[test]
+    fn classify_restricted_status_maps_forbidden_and_errors() {
+        assert_eq!(classify_restricted_status(StatusCode::FORBIDDEN), Some("No"));
+        assert_eq!(
+            classify_restricted_status(StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS),
+            Some("No")
+        );
+        assert_eq!(classify_restricted_status(StatusCode::BAD_GATEWAY), Some("Failed"));
+        assert_eq!(classify_restricted_status(StatusCode::OK), None);
+    }
+}

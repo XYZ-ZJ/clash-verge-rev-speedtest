@@ -104,7 +104,7 @@ export const ProfileMore = (props: Props) => {
       id: `save-profile-file:${id}`,
       errorNotice: false,
     })
-    if (!(result.ok && result.value === true)) {
+    if (!(result.ok && result.value.status === 'valid')) {
       await document.reload()
       return
     }
@@ -201,17 +201,7 @@ export const ProfileMore = (props: Props) => {
             <MenuItem
               key={item.label}
               onClick={item.handler}
-              sx={[
-                { minWidth: 120 },
-                (theme) => {
-                  return {
-                    color:
-                      item.label === 'Delete'
-                        ? theme.palette.error.main
-                        : undefined,
-                  }
-                },
-              ]}
+              sx={{ minWidth: 120 }}
               dense
             >
               {t(item.label)}

@@ -85,16 +85,12 @@ export const TestItem = ({ itemData, onEdit, onDelete: removeTest }: Props) => {
         <Box data-sortable-handle sx={{ position: 'relative', cursor: 'move' }}>
           {icon && icon.trim() !== '' ? (
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-              {icon.trim().startsWith('http') && (
-                <img
-                  alt={name!}
-                  src={iconCachePath === '' ? icon : iconCachePath}
-                  height="40px"
-                />
+              {icon.trim().startsWith('http') && iconCachePath !== '' && (
+                <img alt={name!} src={iconCachePath} height="40px" />
               )}
-              {icon.trim().startsWith('data') && (
-                <img alt={name!} src={icon!} height="40px" />
-              )}
+              {/^data:image\/(png|jpe?g|webp|gif|bmp|x-icon|vnd\.microsoft\.icon);/i.test(
+                icon.trim(),
+              ) && <img alt={name!} src={icon.trim()} height="40px" />}
               {icon.trim().startsWith('<svg') && (
                 <img
                   alt={name!}

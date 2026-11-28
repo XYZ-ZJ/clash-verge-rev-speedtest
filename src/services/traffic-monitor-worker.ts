@@ -17,6 +17,7 @@ let config!: ITrafficWorkerInitMessage['config']
 let sampler!: TrafficDataSampler
 let currentRangeMinutes!: number
 let throttleTimer: ReturnType<typeof setTimeout> | null = null
+let rangeCheckIntervalId: ReturnType<typeof setInterval> | null = null
 let lastTimestamp: number | undefined
 let lastBroadcast: ITrafficDataPoint[] = []
 
@@ -53,7 +54,10 @@ ctx.onmessage = (event: MessageEvent<TrafficWorkerRequestMessage>) => {
       currentRangeMinutes = message.config.defaultRangeMinutes
       // Re-broadcast when points age out of the range, not on every tick;
       // no handle needed, worker teardown (terminate) drops pending timers
-      ctx.setInterval(() => {
+      if (rangeCheckIntervalId !== null) {
+        ctx.clearInterval(rangeCheckIntervalId)
+      }
+      rangeCheckIntervalId = ctx.setInterval(() => {
         if (throttleTimer !== null) return
         const slice = sampler.getDataForTimeRange(currentRangeMinutes)
         if (!isSameTrafficData(lastBroadcast, slice)) {

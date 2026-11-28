@@ -643,13 +643,29 @@ pub async fn startup_script() -> Result<()> {
     let parent_dir = script_dir.parent();
     let working_dir = parent_dir.unwrap_or_else(|| script_dir.as_ref());
 
-    app_handle
+    const STARTUP_SCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    let (mut rx, child) = app_handle
         .shell()
         .command(shell_type)
         .current_dir(working_dir)
         .args([script_path.as_str()])
-        .output()
-        .await?;
+        .spawn()?;
+    let wait_exit = async {
+        use tauri_plugin_shell::process::CommandEvent;
+        while let Some(event) = rx.recv().await {
+            if matches!(event, CommandEvent::Terminated(_) | CommandEvent::Error(_)) {
+                break;
+            }
+        }
+    };
+    if tokio::time::timeout(STARTUP_SCRIPT_TIMEOUT, wait_exit).await.is_err() {
+        let _ = child.kill();
+        return Err(anyhow::anyhow!(
+            "startup script timed out after {}s: {}",
+            STARTUP_SCRIPT_TIMEOUT.as_secs(),
+            script_path
+        ));
+    }
 
     Ok(())
 }

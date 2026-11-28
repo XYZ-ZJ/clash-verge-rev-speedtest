@@ -177,22 +177,12 @@ pub fn get_encryption_key() -> Result<Vec<u8>> {
         #[cfg(windows)]
         {
             use std::io::Read as _;
-            match crate::core::owner_identity::open_private_current_user_file(&key_path) {
-                Ok(mut file) => {
-                    let mut buf = Vec::new();
-                    file.read_to_end(&mut buf)
-                        .map_err(|e| anyhow::anyhow!("Failed to read encryption key: {}", e))?;
-                    buf
-                }
-                Err(err) => {
-                    logging!(
-                        warn,
-                        Type::File,
-                        "Encryption key file failed private ACL check ({err}); reading legacy file"
-                    );
-                    fs::read(&key_path).map_err(|e| anyhow::anyhow!("Failed to read encryption key: {}", e))?
-                }
-            }
+            let mut file = crate::core::owner_identity::open_or_repair_private_current_user_file(&key_path)
+                .map_err(|e| anyhow::anyhow!("Failed to open private encryption key: {e:#}"))?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf)
+                .map_err(|e| anyhow::anyhow!("Failed to read encryption key: {}", e))?;
+            buf
         }
         #[cfg(not(windows))]
         fs::read(&key_path).map_err(|e| anyhow::anyhow!("Failed to read encryption key: {}", e))?

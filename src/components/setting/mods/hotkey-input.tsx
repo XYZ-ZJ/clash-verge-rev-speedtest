@@ -1,6 +1,6 @@
 import { DeleteRounded } from '@mui/icons-material'
 import { alpha, Box, IconButton, styled } from '@mui/material'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { parseHotkey } from '@/utils/parse-hotkey'
@@ -63,15 +63,31 @@ export const HotkeyInput = (props: Props) => {
   const { t } = useTranslation()
 
   const changeRef = useRef<string[]>([])
+  const pressedRef = useRef(new Set<string>())
   const [keys, setKeys] = useState(value)
+
+  useEffect(() => {
+    if (pressedRef.current.size === 0) {
+      setKeys(value)
+    }
+  }, [value])
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center' }}>
       <KeyWrapper>
         <input
-          onKeyUp={() => {
-            const ret = changeRef.current.slice()
-            if (ret.length) {
+          onBlur={() => {
+            pressedRef.current.clear()
+            changeRef.current = []
+            setKeys(value)
+          }}
+          onKeyUp={(e) => {
+            const key = parseHotkey(e)
+            if (key !== 'UNIDENTIFIED') {
+              pressedRef.current.delete(key)
+            }
+            if (pressedRef.current.size === 0 && changeRef.current.length > 0) {
+              const ret = changeRef.current.slice()
               onChange(ret)
               changeRef.current = []
             }
@@ -83,6 +99,7 @@ export const HotkeyInput = (props: Props) => {
             const key = parseHotkey(e)
             if (key === 'UNIDENTIFIED') return
 
+            pressedRef.current.add(key)
             changeRef.current = [...new Set([...changeRef.current, key])]
             setKeys(changeRef.current)
           }}

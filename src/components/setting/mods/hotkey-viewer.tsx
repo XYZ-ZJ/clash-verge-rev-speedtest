@@ -69,6 +69,7 @@ export const HotkeyViewer = forwardRef<DialogRef>((props, ref) => {
       })
 
       setHotkeyMap(map)
+      setEnableGlobalHotkey(verge?.enable_global_hotkey ?? true)
     },
     close: () => setOpen(false),
   }))

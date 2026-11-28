@@ -4,7 +4,7 @@ import {
   SwapVertRounded,
 } from '@mui/icons-material'
 import { Box, Button, IconButton, MenuItem } from '@mui/material'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -19,6 +19,18 @@ import {
 import LogItem from '@/components/log/log-item'
 import { useClashLog } from '@/hooks/use-clash-log'
 import { useLogData } from '@/hooks/use-log-data'
+
+const logItemIds = new WeakMap<ILogItem, number>()
+let nextLogItemId = 1
+const getLogItemKey = (item: ILogItem | undefined, fallback: number) => {
+  if (!item) return fallback
+  let id = logItemIds.get(item)
+  if (id === undefined) {
+    id = nextLogItemId++
+    logItemIds.set(item, id)
+  }
+  return id
+}
 
 const LogPage = () => {
   const { t } = useTranslation()
@@ -79,6 +91,12 @@ const LogPage = () => {
   const handleToggleLog = async () => {
     setClashLog((pre) => ({ ...pre!, enable: !enableLog }))
   }
+
+  const handleLogScroll = useCallback((event: Event) => {
+    const element = event.currentTarget as HTMLDivElement
+    scrollRef.current.isNearBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight <= 20
+  }, [])
 
   const handleToggleOrder = () => {
     setClashLog((pre) => ({
@@ -186,15 +204,11 @@ const LogPage = () => {
           ref={virtuosoRef}
           count={filteredLogs.length}
           estimateSize={50}
+          getItemKey={(i) => getLogItemKey(filteredLogs[i], i)}
           renderItem={(i) => (
             <LogItem value={filteredLogs[i]} searchState={searchState} />
           )}
-          onScroll={(event) => {
-            const element = event.currentTarget as HTMLDivElement
-            scrollRef.current.isNearBottom =
-              element.scrollHeight - element.scrollTop - element.clientHeight <=
-              20
-          }}
+          onScroll={handleLogScroll}
           style={{ flex: 1 }}
         />
       ) : (

@@ -4,7 +4,7 @@
 Linux, distributed from
 <https://github.com/XYZ-ZJ/clash-verge-rev-speedtest/releases>.
 
-**Last updated:** 2026-11-25
+**Last updated:** 2026-11-27
 
 Clash Verge Rev is a free and open-source graphical client for the
 [mihomo](https://github.com/MetaCubeX/mihomo) proxy core, maintained by
@@ -50,9 +50,9 @@ All application data lives in a single directory:
 It contains:
 
 - `verge.yaml` — application settings. If you configure WebDAV backup,
-  `webdav_username` and `webdav_password` are stored locally encrypted with
-  AES-256-GCM (`aes-gcm`), while `webdav_url` and general settings remain
-  local configuration fields.
+  `webdav_url`, `webdav_username` and `webdav_password` are stored locally
+  encrypted with AES-256-GCM (`aes-gcm`), while general settings remain local
+  configuration fields.
 - `config.yaml`, `profiles.yaml` and `profiles/` — your proxy configuration and
   downloaded subscriptions. These normally contain **subscription URLs (which
   often embed a personal token), proxy server addresses, ports, passwords and
@@ -139,8 +139,7 @@ card, the application queries specialised analysis endpoints on demand:
   `stun:stun.google.com:19302`.
 - **DNS Leak test (user-initiated unless auto-refresh enabled):** queries
   `https://{test_id}.bash.ws` and `https://bash.ws/dnsleak/test/{test_id}?json`
-  from the mihomo process, and may inspect EDNS details via
-  `https://edns.ip-api.com/json`.
+  from the mihomo process through the active proxy port.
 
 By design these services see and return the IP address the request came from —
 that is the feature. If a proxy is active, they see the proxy's address.

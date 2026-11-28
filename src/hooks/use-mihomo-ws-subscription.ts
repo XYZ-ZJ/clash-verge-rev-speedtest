@@ -181,6 +181,12 @@ export const useMihomoWsSubscription = <T>(
 ) => {
   const { subscriptionKey, fallbackData, connect, throttleMs, setupHandlers } =
     options
+  const connectRef = useRef(connect)
+  connectRef.current = connect
+  const setupHandlersRef = useRef(setupHandlers)
+  setupHandlersRef.current = setupHandlers
+  const fallbackDataRef = useRef(fallbackData)
+  fallbackDataRef.current = fallbackData
 
   const subscriptionCacheKey = subscriptionKey
     ? `$sub$${subscriptionKey}`
@@ -213,7 +219,7 @@ export const useMihomoWsSubscription = <T>(
     let isMounted = true
     let entry = sharedSubscriptions.get(subscriptionCacheKey)
     if (!entry) {
-      entry = createSharedSubscriptionEntry(connect)
+      entry = createSharedSubscriptionEntry(() => connectRef.current())
       sharedSubscriptions.set(subscriptionCacheKey, entry)
     }
 
@@ -233,15 +239,17 @@ export const useMihomoWsSubscription = <T>(
     }
 
     if (throttleMs && throttleMs > 0) {
-      let pendingData: T | Updater<T> | undefined
+      let pendingQueue: Array<T | Updater<T>> = []
       let timerId: ReturnType<typeof setTimeout> | null = null
 
       const flush = () => {
         timerId = null
-        if (pendingData !== undefined) {
-          const data = pendingData
-          pendingData = undefined
-          baseNext(data)
+        if (pendingQueue.length > 0) {
+          const queue = pendingQueue
+          pendingQueue = []
+          for (const item of queue) {
+            baseNext(item)
+          }
         }
       }
 
@@ -249,8 +257,10 @@ export const useMihomoWsSubscription = <T>(
         if (!timerId) {
           baseNext(data)
           timerId = setTimeout(flush, throttleMs)
+        } else if (typeof data === 'function') {
+          pendingQueue.push(data)
         } else {
-          pendingData = data
+          pendingQueue = [data]
         }
       }
 
@@ -268,7 +278,7 @@ export const useMihomoWsSubscription = <T>(
       handleMessage: handleTextMessage,
       onConnected,
       cleanup,
-    } = setupHandlers({
+    } = setupHandlersRef.current({
       next: wrappedNext,
       scheduleReconnect: entry.scheduleReconnect,
       isMounted: () => isMounted,
@@ -322,15 +332,14 @@ export const useMihomoWsSubscription = <T>(
 
   const refresh = useCallback(() => {
     if (subscriptionCacheKey) {
-      writeSubscriptionSnapshot(subscriptionCacheKey, fallbackData)
+      writeSubscriptionSnapshot(subscriptionCacheKey, fallbackDataRef.current)
       const entry = sharedSubscriptions.get(subscriptionCacheKey)
       if (entry && !entry.closed && entry.refs > 1) {
         void entry.scheduleReconnect()
-        return
       }
     }
     setRefreshEpoch((epoch) => epoch + 1)
-  }, [subscriptionCacheKey, fallbackData])
+  }, [subscriptionCacheKey])
 
   const setData = useCallback(
     (data: T) => {

@@ -9,9 +9,25 @@ export interface UseIconCacheOptions {
   enabled?: boolean
 }
 
+const sanitizeFileSegment = (segment: string) => {
+  const cleaned = Array.from(segment, (ch) =>
+    ch.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(ch) ? '_' : ch,
+  )
+    .join('')
+    .trim()
+  return cleaned || 'icon'
+}
+
 const getFileNameFromUrl = (url: string) => {
-  const lastSlashIndex = url.lastIndexOf('/')
-  return lastSlashIndex >= 0 ? url.slice(lastSlashIndex + 1) : url
+  try {
+    const pathname = new URL(url).pathname
+    const segment = pathname.slice(pathname.lastIndexOf('/') + 1)
+    return sanitizeFileSegment(segment)
+  } catch {
+    const clean = url.split(/[?#]/)[0]
+    const segment = clean.slice(clean.lastIndexOf('/') + 1)
+    return sanitizeFileSegment(segment)
+  }
 }
 
 export const useIconCache = ({

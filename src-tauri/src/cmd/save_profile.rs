@@ -177,6 +177,11 @@ async fn handle_saved_profile_file(
             handle::Handle::refresh_clash();
             Ok(ValidationOutcome::Valid)
         }
+        Ok(outcome @ (ValidationOutcome::Busy | crate::core::validate::ValidationOutcome::Skipped { .. })) => {
+            logging!(warn, Type::Config, "[cmd配置save] 运行时配置应用跳过: {}", outcome);
+            handle_validation_notice(&outcome, ValidationNoticeTarget::Runtime, "运行时配置");
+            Ok(outcome)
+        }
         Ok(outcome) => {
             logging!(warn, Type::Config, "[cmd配置save] 运行时配置应用失败: {}", outcome);
             restore_original(file_path, original_content, original_existed).await?;

@@ -172,7 +172,7 @@ export function WebUIViewer({ ref }: { ref?: Ref<DialogRef> }) {
           onlyEdit
           onChange={(v) => {
             setEditing(false)
-            handleAdd(v || '')
+            void handleAdd(v || '').catch(showNotice.error)
           }}
           onCancel={() => setEditing(false)}
         />

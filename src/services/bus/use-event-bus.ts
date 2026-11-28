@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { revalidateQueries } from '@/services/query-client'
 import { useAppDispatch, useAppReads } from '@/store/app-store-context'
@@ -17,6 +17,8 @@ export const useEventBus = (
 ) => {
   const dispatch = useAppDispatch()
   const reads = useAppReads()
+  const handleNoticeRef = useRef(handleNotice)
+  handleNoticeRef.current = handleNotice
 
   useEffect(() => {
     const revalidateKeys = (keys: readonly string[]) => {
@@ -29,7 +31,7 @@ export const useEventBus = (
 
     const bus = createEventBus({
       dispatch,
-      handleNotice,
+      handleNotice: (payload) => handleNoticeRef.current(payload),
       revalidateKeys,
       readPendingFailures,
       readRunState,
@@ -52,10 +54,17 @@ export const useEventBus = (
     )
 
     // Re-read event-only state after subscribing to close the initial race window.
-    void Promise.all(registrations).then(() => {
-      if (disposed) return
-      bus.onSubscribed()
-    })
+    void Promise.all(registrations)
+      .then(() => {
+        if (disposed) return
+        bus.onSubscribed()
+      })
+      .catch((error) => {
+        console.error(
+          '[useEventBus] Failed to register event listeners:',
+          error,
+        )
+      })
 
     const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload }) => {
       if (payload) bus.onWindowFocus()
@@ -66,5 +75,5 @@ export const useEventBus = (
       for (const unlisten of unlisteners.splice(0)) unlisten()
       void unlistenFocus.then((unlisten) => unlisten())
     }
-  }, [dispatch, handleNotice, reads])
+  }, [dispatch, reads])
 }

@@ -191,7 +191,21 @@ impl WebDavClient {
         .await
     }
 
+    fn validate_remote_filename(filename: &str) -> Result<(), Error> {
+        if filename.is_empty()
+            || filename == "."
+            || filename == ".."
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains('\0')
+        {
+            anyhow::bail!("invalid WebDAV backup filename: {filename:?}");
+        }
+        Ok(())
+    }
+
     pub async fn download(&self, filename: String, storage_path: PathBuf) -> Result<(), Error> {
+        Self::validate_remote_filename(filename.as_str())?;
         let client = self.get_client().await?;
         let path = format!("{}/{}", dirs::BACKUP_DIR, filename);
 
@@ -205,7 +219,32 @@ impl WebDavClient {
                 anyhow::bail!("WebDAV backup exceeds maximum allowed size ({MAX_DOWNLOAD_BYTES} bytes)");
             }
 
-            let mut file = fs::File::create(&storage_path).await?;
+            if let Some(parent) = storage_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            let std_file = {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt as _;
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(&storage_path)?
+                }
+                #[cfg(windows)]
+                {
+                    crate::core::owner_identity::create_private_current_user_file(&storage_path)?
+                }
+                #[cfg(not(any(unix, windows)))]
+                {
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&storage_path)?
+                }
+            };
+            let mut file = fs::File::from_std(std_file);
             let mut total: u64 = 0;
             while let Some(chunk) = response.chunk().await? {
                 total = total
@@ -265,6 +304,7 @@ impl WebDavClient {
     }
 
     pub async fn delete(&self, file_name: String) -> Result<(), Error> {
+        Self::validate_remote_filename(file_name.as_str())?;
         let client = self.get_client().await?;
         let path = format!("{}/{}", dirs::BACKUP_DIR, file_name);
 

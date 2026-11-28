@@ -506,6 +506,7 @@ export const ConnectionTable = (props: Props) => {
   const [sorting, setSorting] = useState<SortingState | null>(null)
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 })
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const activeResizeCleanupRef = useRef<(() => void) | null>(null)
   const rowSnapshotCacheRef = useRef(new Map<string, TableRowSnapshot>())
   const getRowSnapshot = useCallback((row: IConnectionsItem) => {
     const cache = rowSnapshotCacheRef.current
@@ -695,13 +696,18 @@ export const ConnectionTable = (props: Props) => {
         const touch = event.touches[0]
         if (touch) handleMove(touch.clientX)
       }
+      activeResizeCleanupRef.current?.()
       const cleanup = () => {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', cleanup)
         window.removeEventListener('touchmove', handleTouchMove)
         window.removeEventListener('touchend', cleanup)
         window.removeEventListener('touchcancel', cleanup)
+        if (activeResizeCleanupRef.current === cleanup) {
+          activeResizeCleanupRef.current = null
+        }
       }
+      activeResizeCleanupRef.current = cleanup
 
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', cleanup)
@@ -711,6 +717,12 @@ export const ConnectionTable = (props: Props) => {
     },
     [setColumnWidths],
   )
+
+  useEffect(() => {
+    return () => {
+      activeResizeCleanupRef.current?.()
+    }
+  }, [])
 
   const handleResizeMouseDown = useCallback(
     (column: DisplayColumn, event: ReactMouseEvent<HTMLDivElement>) => {

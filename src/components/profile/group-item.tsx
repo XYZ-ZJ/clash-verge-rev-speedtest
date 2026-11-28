@@ -41,18 +41,20 @@ export const GroupItem = (props: Props) => {
         borderRadius: '8px',
       })}
     >
-      {group?.icon?.trim().startsWith('http') && (
+      {group?.icon?.trim().startsWith('http') && iconCachePath !== '' && (
         <img
           alt={group.name}
-          src={iconCachePath === '' ? group.icon : iconCachePath}
+          src={iconCachePath}
           width="32px"
           style={{ marginRight: '12px', borderRadius: '6px' }}
         />
       )}
-      {group?.icon?.trim().startsWith('data') && (
+      {/^data:image\/(png|jpe?g|webp|gif|bmp|x-icon|vnd\.microsoft\.icon);/i.test(
+        group?.icon?.trim() ?? '',
+      ) && (
         <img
           alt={group.name}
-          src={group.icon}
+          src={group.icon?.trim()}
           width="32px"
           style={{ marginRight: '12px', borderRadius: '6px' }}
         />

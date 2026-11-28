@@ -42,7 +42,7 @@ export async function getProfiles(): Promise<IProfilesConfig> {
 }
 
 export async function enhanceProfiles() {
-  return (await commands.enhanceProfiles()).status === 'valid'
+  return commands.enhanceProfiles()
 }
 
 export async function patchProfilesConfig(profiles: ProfileSelection) {
@@ -78,7 +78,7 @@ export async function importDroppedProfileFile(path: string) {
 }
 
 export async function saveProfileFile(index: string, fileData: string) {
-  return (await commands.saveProfileFile(index, fileData)).status === 'valid'
+  return commands.saveProfileFile(index, fileData)
 }
 
 export async function importProfile(url: string, option?: IProfileOption) {
@@ -362,10 +362,14 @@ export async function copyIconFile(
   name: 'common' | 'sysproxy' | 'tun',
 ) {
   const key = `icon_${name}_update_time`
-  const previousTime = localStorage.getItem(key) || ''
-
+  let previousTime = ''
   const currentTime = String(Date.now())
-  localStorage.setItem(key, currentTime)
+  try {
+    previousTime = localStorage.getItem(key) || ''
+    localStorage.setItem(key, currentTime)
+  } catch {
+    // Ignore storage access errors in restricted contexts.
+  }
 
   const iconInfo = {
     name,

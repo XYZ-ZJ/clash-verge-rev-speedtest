@@ -592,7 +592,7 @@ export const RulesEditorViewer = (props: Props) => {
         id: `save-profile-file:${property}`,
         errorNotice: false,
       })
-      if (!(result.ok && result.value === true)) {
+      if (!(result.ok && result.value.status === 'valid')) {
         await fetchContent()
         onClose()
         return

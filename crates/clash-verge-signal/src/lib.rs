@@ -54,18 +54,24 @@ where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    RUNTIME.get_or_init(|| match tokio::runtime::Runtime::new() {
-        Ok(rt) => Some(rt),
-        Err(e) => {
-            logging!(
-                info,
-                Type::SystemSignal,
-                "register shutdown signal failed, create tokio runtime error: {}",
-                e
-            );
-            None
-        }
-    });
+    static REGISTERED: OnceLock<()> = OnceLock::new();
+    if REGISTERED.set(()).is_err() {
+        return;
+    }
+    RUNTIME.get_or_init(
+        || match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => Some(rt),
+            Err(e) => {
+                logging!(
+                    info,
+                    Type::SystemSignal,
+                    "register shutdown signal failed, create tokio runtime error: {}",
+                    e
+                );
+                None
+            }
+        },
+    );
 
     unix::register(f);
 }

@@ -142,14 +142,20 @@ export const BackupConfigViewer = memo(
               }
             : current,
         )
+        reset({
+          url: trimmedUrl,
+          username: trimmedUsername,
+          password: data.password,
+        })
         setWebdavStatus(signature, 'unknown')
         showNotice.success('settings.modals.backup.messages.webdavConfigSaved')
         if (!isClearing) await onSaveSuccess(signature)
       } catch (error) {
-        if (error instanceof Error && error.message) {
+        const detail = errorDetail(error)
+        if (detail) {
           showNotice.error(
             'settings.modals.backup.messages.webdavConfigSaveFailed',
-            { error: errorDetail(error) },
+            { error: detail },
             3000,
           )
         }

@@ -36,10 +36,17 @@ export const WindowProvider: React.FC<{ children: React.ReactNode }> = ({
         lastWidth = width
         lastHeight = height
         const value = await currentWindow.isMaximized()
-        setMaximized(value)
+        if (!isUnmounted) setMaximized(value)
       },
       300,
     )
+
+    void currentWindow
+      .isMaximized()
+      .then((value) => {
+        if (!isUnmounted) setMaximized(value)
+      })
+      .catch(() => {})
 
     const unlistenPromise = currentWindow.onResized(checkMaximized)
 

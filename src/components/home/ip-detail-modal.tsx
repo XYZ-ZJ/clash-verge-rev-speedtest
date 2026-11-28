@@ -33,6 +33,7 @@ import {
   fetchIpPurityScores,
   runFullEgressDetection,
 } from '@/services/egress'
+import { showNotice } from '@/services/notice-service'
 import getSystem from '@/utils/get-system'
 
 interface Props {
@@ -60,6 +61,8 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const [scoresLoading, setScoresLoading] = useState(false)
   const lastScoredIpRef = useRef<string | null>(null)
   const scoreRequestIdRef = useRef(0)
+  const detectRequestIdRef = useRef(0)
+  const cfRequestIdRef = useRef(0)
 
   const targetScoreExit =
     report?.exits.find((e) => e.isProxy) || report?.exits[0] || null
@@ -89,28 +92,40 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
 
   // 全量真实网络探测（并发测试所有出口、分流、WebRTC、时区与 Cloudflare）
   const handleDetect = useCallback(async () => {
+    const reqId = ++detectRequestIdRef.current
     setLoading(true)
     setDetectFailed(false)
     try {
       const res = await runFullEgressDetection()
+      if (detectRequestIdRef.current !== reqId) return
       lastScoredIpRef.current = null
       setReport(res)
     } catch (err) {
+      if (detectRequestIdRef.current !== reqId) return
       console.error('[IpDetailModal] egress detection failed:', err)
       setDetectFailed(true)
     } finally {
-      setLoading(false)
+      if (detectRequestIdRef.current === reqId) {
+        setLoading(false)
+      }
     }
   }, [])
 
   // 独立实测 Cloudflare 人机验证与节点放行状态
   const handleRetestCf = useCallback(async () => {
+    const reqId = ++cfRequestIdRef.current
     setCfLoading(true)
     try {
       const cfStatus = await detectCloudflareStatus()
+      if (cfRequestIdRef.current !== reqId) return
       setReport((prev) => (prev ? { ...prev, cfStatus } : prev))
+    } catch (err) {
+      if (cfRequestIdRef.current !== reqId) return
+      showNotice.error(err)
     } finally {
-      setCfLoading(false)
+      if (cfRequestIdRef.current === reqId) {
+        setCfLoading(false)
+      }
     }
   }, [])
 
@@ -134,10 +149,10 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
   const isCfWarn = cfState === 'interactive'
   const cfHintText =
     cfState === 'pass'
-      ? 'Cloudflare 边缘节点实测直接放行，该出口信誉良好。'
+      ? t('home.components.ipInfo.detailModal.cfHintPass')
       : cfState === 'interactive'
-        ? '检测到可能会触发 Cloudflare 质询，访问受保护站点时可能需要完成人机验证。'
-        : 'Cloudflare 边缘探测未通过或连接受阻，建议检查当前节点连通性或切换节点后重试。'
+        ? t('home.components.ipInfo.detailModal.cfHintInteractive')
+        : t('home.components.ipInfo.detailModal.cfHintFail')
 
   return (
     <Dialog
@@ -308,7 +323,8 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                           lineHeight: 1.3,
                         }}
                       >
-                        {report?.cfStatus.title || '直接通过'}
+                        {report?.cfStatus.title ||
+                          t('home.components.ipInfo.detailModal.cfPassTitle')}
                       </Typography>
                       {report?.cfStatus.rttMs ? (
                         <Chip
@@ -388,12 +404,13 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                 variant="subtitle1"
                 sx={{ fontWeight: 700, fontSize: '0.98rem' }}
               >
-                {report?.title || '分流透视'}
+                {report?.title ||
+                  t('home.components.ipInfo.detailModal.splitTitle')}
               </Typography>
               {report?.isSplit && (
                 <Chip
                   size="small"
-                  label="分流生效"
+                  label={t('home.components.ipInfo.detailModal.splitActive')}
                   color="success"
                   variant="outlined"
                   sx={{ height: 22, fontSize: '0.72rem', fontWeight: 600 }}
@@ -474,7 +491,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   ))
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    未检测到出口
+                    {t('home.components.ipInfo.detailModal.noExits')}
                   </Typography>
                 )}
               </Box>
@@ -653,7 +670,7 @@ export const IpDetailModal = memo(({ open, onClose }: Props) => {
                   ))
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    无结论
+                    {t('home.components.ipInfo.detailModal.noFindings')}
                   </Typography>
                 )}
               </Box>

@@ -383,23 +383,73 @@ impl CoreConfigValidator {
         let app_dir_str = dirs::path_to_str(&app_dir)?;
         logging!(info, Type::Validate, "验证目录: {}", app_dir_str);
 
+        const VALIDATE_CORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
         let command = app_handle.shell().sidecar(clash_core.as_str()).map_err(|error| {
             anyhow::anyhow!("failed to build validation command for core {clash_core:?}: {error:#}")
         })?;
         let command = command.args(["-t", "-d", app_dir_str, "-f", config_path]);
-        let output = command.output().await.map_err(|error| {
+        let (mut rx, child) = command.spawn().map_err(|error| {
             anyhow::anyhow!(
                 "failed to run validation core {clash_core:?} for config {config_path:?} in data directory {}: {error:#}",
                 app_dir.display()
             )
         })?;
 
-        let status = &output.status;
-        let stderr = &output.stderr;
-        let stdout = &output.stdout;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code: Option<i32> = None;
+        let mut terminated_by_signal = false;
+        let mut spawn_error: Option<std::string::String> = None;
 
+        let collect = async {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(line) => {
+                        stdout.extend_from_slice(&line);
+                        stdout.push(b'\n');
+                    }
+                    CommandEvent::Stderr(line) => {
+                        stderr.extend_from_slice(&line);
+                        stderr.push(b'\n');
+                    }
+                    CommandEvent::Error(err) => {
+                        spawn_error = Some(err);
+                        break;
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        exit_code = payload.code;
+                        terminated_by_signal = payload.signal.is_some() && payload.code.is_none();
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        };
+
+        if tokio::time::timeout(VALIDATE_CORE_TIMEOUT, collect).await.is_err() {
+            let _ = child.kill();
+            logging!(
+                warn,
+                Type::Validate,
+                "配置验证进程超时 ({VALIDATE_CORE_TIMEOUT:?})，已终止"
+            );
+            return Ok(ValidationOutcome::invalid(
+                ValidationErrorKind::Timeout,
+                format!("配置验证超时（超过 {} 秒）", VALIDATE_CORE_TIMEOUT.as_secs()),
+            ));
+        }
+
+        if let Some(err) = spawn_error {
+            return Err(anyhow::anyhow!(
+                "failed to run validation core {clash_core:?} for config {config_path:?} in data directory {}: {err}",
+                app_dir.display()
+            ));
+        }
+
+        let succeeded = exit_code == Some(0) && !terminated_by_signal;
         let error_keywords = ["FATA", "fatal", "Parse config error", "level=fatal"];
-        let has_error = !status.success() || contains_any_keyword(stderr, &error_keywords);
+        let has_error = !succeeded || contains_any_keyword(&stderr, &error_keywords);
 
         logging!(info, Type::Validate, "-------- 验证结果 --------");
 
@@ -410,17 +460,17 @@ impl CoreConfigValidator {
         if has_error {
             logging!(info, Type::Validate, "发现错误，开始处理错误信息");
             let error_msg: String = if !stdout.is_empty() {
-                str::from_utf8(stdout).unwrap_or_default().into()
+                str::from_utf8(&stdout).unwrap_or_default().into()
             } else if !stderr.is_empty() {
-                str::from_utf8(stderr).unwrap_or_default().into()
-            } else if let Some(code) = status.code() {
+                str::from_utf8(&stderr).unwrap_or_default().into()
+            } else if let Some(code) = exit_code {
                 format!("验证进程异常退出，退出码: {code}").into()
             } else {
                 "验证进程被终止，请检查是否有安全软件阻止了内核运行，或电脑 CPU/运行环境是否支持该内核程序。".into()
             };
 
             logging!(info, Type::Validate, "-------- 验证结束 --------");
-            let outcome = if status.code().is_none() {
+            let outcome = if exit_code.is_none() {
                 ValidationOutcome::invalid(ValidationErrorKind::ProcessTerminated, error_msg)
             } else {
                 ValidationOutcome::invalid_from_message(error_msg)

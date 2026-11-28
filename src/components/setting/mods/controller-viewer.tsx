@@ -82,12 +82,32 @@ export function ControllerViewer({ ref }: { ref?: Ref<DialogRef> }) {
           return
         }
 
+        const prevEnabled = verge?.enable_external_controller ?? false
         await patchVerge({ enable_external_controller: true })
-        await patchInfo({ 'external-controller': controller, secret })
+        try {
+          await patchInfo({ 'external-controller': controller, secret })
+        } catch (infoErr) {
+          if (!prevEnabled) {
+            await patchVerge({ enable_external_controller: false }).catch(
+              () => {},
+            )
+          }
+          throw infoErr
+        }
       } else {
+        const prevEnabled = verge?.enable_external_controller ?? false
         await patchVerge({ enable_external_controller: false })
-        // 如果禁用了外部控制器，则清空控制器地址
-        await patchInfo({ 'external-controller': '' })
+        try {
+          // 如果禁用了外部控制器，则清空控制器地址
+          await patchInfo({ 'external-controller': '' })
+        } catch (infoErr) {
+          if (prevEnabled) {
+            await patchVerge({ enable_external_controller: true }).catch(
+              () => {},
+            )
+          }
+          throw infoErr
+        }
       }
 
       showNotice.success('shared.feedback.notifications.common.saveSuccess')

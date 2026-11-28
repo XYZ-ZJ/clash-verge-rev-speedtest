@@ -54,7 +54,7 @@
         "enable": true,
         "scope": {
           "allow": [
-            "$APPDATA/**",
+            "$APPDATA/icons/**",
             "$RESOURCE/**",
             "$PICTURE/**",
             "$DESKTOP/**",

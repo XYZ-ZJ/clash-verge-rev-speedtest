@@ -197,23 +197,26 @@ impl Logger {
         self.store_config(cfg);
         self.ensure_sidecar_writer(self.generate_sidecar_builder())?;
 
-        std::panic::set_hook(Box::new(move |info| {
-            // Capture both common panic payload types instead of logging String payloads as unknown.
-            // This global hook covers panics after logger init; early setup panics are handled separately.
-            let payload = info
-                .payload()
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_string())
-                .or_else(|| info.payload().downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "Unknown panic payload".to_string());
-            let location = info
-                .location()
-                .map(|loc| format!("{}:{}", loc.file(), loc.line()))
-                .unwrap_or_else(|| "Unknown location".to_string());
-            logging!(error, Type::System, "Panic occurred at {}: {}", location, payload);
-            Self::global().flush_logs();
-            std::thread::sleep(Duration::from_millis(100));
-        }));
+        static PANIC_HOOK_ONCE: std::sync::Once = std::sync::Once::new();
+        PANIC_HOOK_ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(move |info| {
+                // Capture both common panic payload types instead of logging String payloads as unknown.
+                // This global hook covers panics after logger init; early setup panics are handled separately.
+                let payload = info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "Unknown panic payload".to_string());
+                let location = info
+                    .location()
+                    .map(|loc| format!("{}:{}", loc.file(), loc.line()))
+                    .unwrap_or_else(|| "Unknown location".to_string());
+                logging!(error, Type::System, "Panic occurred at {}: {}", location, payload);
+                Self::global().try_flush_logs();
+                std::thread::sleep(Duration::from_millis(100));
+            }));
+        });
 
         Ok(())
     }
@@ -227,7 +230,7 @@ impl Logger {
 
     fn generate_file_log_writer(&self) -> Result<FileLogWriterBuilder> {
         let log_dir = self.log_dir.get().cloned().unwrap_or_default();
-        let log_max_size = self.log_max_size.load(Ordering::SeqCst);
+        let log_max_size = self.log_max_size.load(Ordering::SeqCst).max(1);
         let log_max_count = self.log_max_count.load(Ordering::SeqCst);
         let flwb = FileLogWriter::builder(FileSpec::default().directory(log_dir).basename(""))
             .format(tracing_estuary::file_format_with_level)
@@ -266,7 +269,7 @@ impl Logger {
 
     fn generate_sidecar_builder(&self) -> FileLogWriterBuilder {
         let sidecar_log_dir = self.sidecar_log_dir.get().cloned().unwrap_or_default();
-        let log_max_size = self.log_max_size.load(Ordering::SeqCst);
+        let log_max_size = self.log_max_size.load(Ordering::SeqCst).max(1);
         let log_max_count = self.log_max_count.load(Ordering::SeqCst);
         FileLogWriter::builder(
             FileSpec::default()
@@ -292,6 +295,17 @@ impl Logger {
             pipeline.flush_all();
         }
         if let Some(writer) = self.sidecar_file_writer.read().as_ref() {
+            let _ = writer.flush();
+        }
+    }
+
+    pub fn try_flush_logs(&self) {
+        if let Some(pipeline) = self.pipeline.get() {
+            pipeline.flush_all();
+        }
+        if let Some(guard) = self.sidecar_file_writer.try_read()
+            && let Some(writer) = guard.as_ref()
+        {
             let _ = writer.flush();
         }
     }

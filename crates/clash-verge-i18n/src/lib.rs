@@ -70,6 +70,33 @@ pub fn translate(key: &str) -> Cow<'_, str> {
     rust_i18n::t!(key)
 }
 
+#[doc(hidden)]
+pub fn format_placeholders(template: &str, pairs: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after_open = &rest[start + 1..];
+        if let Some(end) = after_open.find('}') {
+            let key = &after_open[..end];
+            if let Some((_, val)) = pairs.iter().find(|(k, _)| *k == key) {
+                out.push_str(val);
+            } else {
+                out.push('{');
+                out.push_str(key);
+                out.push('}');
+            }
+            rest = &after_open[end + 1..];
+        } else {
+            out.push_str(&rest[start..]);
+            rest = "";
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 #[macro_export]
 macro_rules! t {
     ($key:expr) => {
@@ -77,11 +104,11 @@ macro_rules! t {
     };
     ($key:expr, $($arg_name:ident = $arg_value:expr),*) => {
         {
-            let mut _text = $crate::translate(&$key).into_owned();
-            $(
-                _text = _text.replace(&format!("{{{}}}", stringify!($arg_name)), &$arg_value);
-            )*
-            ::std::borrow::Cow::<'static, str>::Owned(_text)
+            let _template = $crate::translate(&$key);
+            let _pairs: &[(&str, &str)] = &[
+                $((stringify!($arg_name), &$arg_value),)*
+            ];
+            ::std::borrow::Cow::<'static, str>::Owned($crate::format_placeholders(&_template, _pairs))
         }
     };
 }

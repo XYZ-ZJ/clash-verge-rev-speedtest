@@ -40,7 +40,7 @@ pub struct Limiter<C: Clock = SystemClock> {
 impl<C: Clock> Limiter<C> {
     pub const fn new(period: Duration, clock: C) -> Self {
         Self {
-            last_run_ms: AtomicU64::new(0),
+            last_run_ms: AtomicU64::new(u64::MAX),
             period_ms: period.as_millis() as u64,
             clock,
         }
@@ -50,7 +50,7 @@ impl<C: Clock> Limiter<C> {
         let now = self.clock.now_ms();
         let last = self.last_run_ms.load(Ordering::Relaxed);
 
-        if now < last.saturating_add(self.period_ms) && now >= last {
+        if last != u64::MAX && now < last.saturating_add(self.period_ms) && now >= last {
             return false;
         }
 

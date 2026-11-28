@@ -40,7 +40,11 @@ fn alpha2_to_emoji(alpha2: &str) -> String {
 }
 
 pub(crate) async fn get_text(client: &Client, url: &str) -> Option<String> {
-    client.get(url).send().await.ok()?.text().await.ok()
+    let response = client.get(url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    response.text().await.ok()
 }
 
 pub(crate) async fn get_trace_location(client: &Client, url: &str) -> Option<String> {
@@ -52,11 +56,20 @@ pub(crate) async fn get_trace_location(client: &Client, url: &str) -> Option<Str
 }
 
 pub(crate) fn extract_quoted_field<'a>(body: &'a str, key: &str) -> Option<&'a str> {
-    let (_, rest) = body.split_once(&format!(r#""{key}""#))?;
-    let value = rest.split_once(':')?.1.trim_start();
-    let value = value.strip_prefix('"')?;
-
-    Some(value.split_once('"')?.0)
+    let needle = format!(r#""{key}""#);
+    let mut cursor = body;
+    while let Some((_, rest)) = cursor.split_once(&needle) {
+        if let Some((_, after_colon)) = rest.split_once(':') {
+            let trimmed = after_colon.trim_start();
+            if let Some(after_quote) = trimmed.strip_prefix('"')
+                && let Some((val, _)) = after_quote.split_once('"')
+            {
+                return Some(val);
+            }
+        }
+        cursor = rest;
+    }
+    None
 }
 
 pub(crate) fn classify_restricted_status(status: StatusCode) -> Option<&'static str> {

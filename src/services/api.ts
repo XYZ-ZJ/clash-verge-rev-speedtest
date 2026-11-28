@@ -909,47 +909,8 @@ export const getDnsLeakInfo = async (): Promise<DnsLeakResult> => {
               'Proxy port is unavailable for DNS leak check',
           )
     }
-    debugLog('testDnsLeak IPC error, fallback to direct test', err)
+    debugLog('testDnsLeak IPC error', err)
   }
 
-  // 2. 回退备选：edns.ip-api.com
-  try {
-    const userAgent = await getUserAgentPromise()
-    const res = await fetch('https://edns.ip-api.com/json', {
-      method: 'GET',
-      connectTimeout: 5000,
-      headers: { 'User-Agent': userAgent },
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const servers: DnsServerInfo[] = []
-      if (data.dns) {
-        servers.push({
-          ip: data.dns.ip || '',
-          org: data.dns.geo || '',
-        })
-      }
-      if (data.edns && data.edns.ip && data.edns.ip !== data.dns?.ip) {
-        servers.push({
-          ip: data.edns.ip || '',
-          org: data.edns.geo || '',
-        })
-      }
-
-      const hasLeak = servers.some((s) =>
-        s.org?.toLowerCase().includes('china'),
-      )
-
-      return {
-        hasLeak,
-        servers,
-        conclusion: hasLeak ? 'DNS may be leaking.' : 'DNS is not leaking.',
-        lastFetchTs: Date.now(),
-      }
-    }
-  } catch (err) {
-    debugLog('edns.ip-api.com fallback error', err)
-  }
-
-  throw new Error('All DNS leak test services failed')
+  throw new Error('DNS leak test failed')
 }

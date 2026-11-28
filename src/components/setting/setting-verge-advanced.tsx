@@ -62,20 +62,32 @@ const SettingVergeAdvanced = ({ onError: _ }: Props) => {
   }
 
   const onExportDiagnosticInfo = useCallback(async () => {
-    await mutate(() => exportDiagnosticInfo(), {
-      id: 'export-diagnostic-info',
-      errorNotice: false,
-    })
-    showNotice.success('shared.feedback.notifications.common.copySuccess', 1000)
+    try {
+      await mutate(() => exportDiagnosticInfo(), {
+        id: 'export-diagnostic-info',
+        errorNotice: false,
+      })
+      showNotice.success(
+        'shared.feedback.notifications.common.copySuccess',
+        1000,
+      )
+    } catch (err) {
+      showNotice.error(err)
+    }
   }, [])
 
   const copyVersion = useCallback(() => {
-    navigator.clipboard.writeText(`v${version}`).then(() => {
-      showNotice.success(
-        'settings.components.verge.advanced.notifications.versionCopied',
-        1000,
-      )
-    })
+    navigator.clipboard
+      .writeText(`v${version}`)
+      .then(() => {
+        showNotice.success(
+          'settings.components.verge.advanced.notifications.versionCopied',
+          1000,
+        )
+      })
+      .catch((err) => {
+        showNotice.error(err)
+      })
   }, [])
 
   return (

@@ -118,7 +118,15 @@
         "purityLevelFair": "一般",
         "purityLevelSuspicious": "可疑",
         "purityLevelDanger": "高危",
-        "purityUnavailable": "暫無評分"
+        "purityUnavailable": "暫無評分",
+        "cfHintPass": "Cloudflare 邊緣節點實測直接放行，該出口信譽良好。",
+        "cfHintInteractive": "偵測到可能會觸發 Cloudflare 質詢，造訪受保護站點時可能需要完成人機驗證。",
+        "cfHintFail": "Cloudflare 邊緣探測未通過或連線受阻，建議檢查目前節點連通性或切換節點後重試。",
+        "cfPassTitle": "直接通過",
+        "splitTitle": "分流透視",
+        "splitActive": "分流生效",
+        "noExits": "未偵測到出口",
+        "noFindings": "無結論"
       },
       "errors": {
         "load": "取得 IP 資訊失敗",

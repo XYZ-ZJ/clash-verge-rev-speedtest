@@ -320,6 +320,7 @@ impl IProfiles {
                         let file =
                             file.unwrap_or_else(|| item.file.take().unwrap_or_else(|| format!("{}.yaml", uid).into()));
 
+                        Self::validate_profile_file(file.as_str())?;
                         each.file = Some(file.clone());
 
                         let path = dirs::app_profiles_dir()?.join(file.as_str());

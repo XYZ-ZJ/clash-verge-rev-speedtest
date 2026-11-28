@@ -207,18 +207,34 @@ export const ProxiesEditorViewer = (props: Props) => {
           // 不阻塞主流程
         }
       }
+      if (!mountedRef.current) return
       if (idx < lines.length) {
         parseTimer = window.setTimeout(parseBatch, 0)
+        parseTimerRef.current = parseTimer
       } else {
         if (parseTimer !== undefined) {
           clearTimeout(parseTimer)
           parseTimer = undefined
+          parseTimerRef.current = undefined
         }
         cb(proxies)
       }
     }
     parseBatch()
   }
+  const parseTimerRef = useRef<number | undefined>(undefined)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (parseTimerRef.current !== undefined) {
+        clearTimeout(parseTimerRef.current)
+        parseTimerRef.current = undefined
+      }
+    }
+  }, [])
+
   const fetchProfile = useCallback(async () => {
     const data = await readProfileFile(profileUid)
 
@@ -336,7 +352,7 @@ export const ProxiesEditorViewer = (props: Props) => {
         id: `save-profile-file:${property}`,
         errorNotice: false,
       })
-      if (!(result.ok && result.value === true)) {
+      if (!(result.ok && result.value.status === 'valid')) {
         await fetchContent()
         onClose()
         return

@@ -60,8 +60,14 @@ where
                 }
                 logging!(info, Type::SystemSignal, "Caught signal {}", signal_name);
 
+                struct LatchGuard;
+                impl Drop for LatchGuard {
+                    fn drop(&mut self) {
+                        SHUTDOWN_LATCH.finish();
+                    }
+                }
+                let _latch_guard = LatchGuard;
                 f().await;
-                SHUTDOWN_LATCH.finish();
             }
         });
     } else {

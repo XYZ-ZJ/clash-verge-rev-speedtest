@@ -342,7 +342,15 @@ export function UpdateViewer({ ref }: { ref?: Ref<DialogRef> }) {
       }}
       okBtn={t('settings.modals.update.actions.update')}
       cancelBtn={t('shared.actions.cancel')}
-      onClose={() => setOpen(false)}
+      onClose={() => {
+        if (updateState) {
+          void mutate(() => cancelUpdateDownload(), {
+            id: 'cancel-update-download',
+            errorNotice: false,
+          }).catch(showNotice.error)
+        }
+        setOpen(false)
+      }}
       onCancel={() => {
         if (updateState) {
           void mutate(() => cancelUpdateDownload(), {

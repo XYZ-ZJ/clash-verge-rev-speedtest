@@ -231,8 +231,6 @@ impl CoreManager {
                 )
             })?
         };
-        let (terminated, termination) = tokio::sync::oneshot::channel();
-        *self.sidecar_exit.lock().await = Some(execution.release_after_exit(child.pid(), termination));
         #[cfg(target_os = "windows")]
         let job = {
             match create_and_assign_sidecar_job(child.pid()) {
@@ -253,6 +251,8 @@ impl CoreManager {
                 }
             }
         };
+        let (terminated, termination) = tokio::sync::oneshot::channel();
+        *self.sidecar_exit.lock().await = Some(execution.release_after_exit(child.pid(), termination));
 
         let pid = child.pid();
         tracing::Span::current().record("pid", pid);

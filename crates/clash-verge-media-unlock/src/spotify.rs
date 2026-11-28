@@ -18,7 +18,9 @@ pub(super) async fn check_spotify(client: &Client) -> UnlockItem {
 
     let status = response.status();
     let final_url = response.url().clone();
-    let body = response.text().await.unwrap_or_default();
+    let Ok(body) = response.text().await else {
+        return UnlockItem::checked(SPOTIFY_NAME, "Failed", None);
+    };
 
     let region = extract_region(&final_url).or_else(|| extract_region_from_body(&body));
 

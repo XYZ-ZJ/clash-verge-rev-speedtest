@@ -30,11 +30,37 @@ pub(crate) async fn capture_config_files() -> Result<Vec<FileSnapshot>> {
     capture_files(&[dirs::clash_path()?, dirs::verge_path()?, runtime_path]).await
 }
 
+async fn write_bytes_atomic(path: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt as _;
+    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), nanoid::nanoid!()));
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .await?;
+    if let Err(err) = file.write_all(content).await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(err);
+    }
+    if let Err(err) = file.flush().await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(err);
+    }
+    drop(file);
+    if let Err(err) = tokio::fs::rename(&temporary, path).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
 pub(crate) async fn restore_files(snapshots: &[FileSnapshot]) -> Result<()> {
     let mut errors = Vec::new();
     for snapshot in snapshots {
         let result = match &snapshot.content {
-            Some(content) => tokio::fs::write(&snapshot.path, content).await,
+            Some(content) => write_bytes_atomic(&snapshot.path, content).await,
             None => match tokio::fs::remove_file(&snapshot.path).await {
                 Ok(()) => Ok(()),
                 Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),

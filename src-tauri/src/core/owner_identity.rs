@@ -63,6 +63,11 @@ pub(crate) fn open_private_current_user_file(path: &Path) -> Result<std::fs::Fil
 }
 
 #[cfg(windows)]
+pub(crate) fn open_or_repair_private_current_user_file(path: &Path) -> Result<std::fs::File> {
+    windows_owner::open_or_repair_private_file(path)
+}
+
+#[cfg(windows)]
 pub(crate) fn open_or_create_current_user_lock(path: &Path) -> Result<std::fs::File> {
     windows_owner::open_or_create_lock_file(path)
 }
@@ -239,6 +244,32 @@ mod windows_owner {
         let descriptor = LocalSecurityDescriptor::from_sid(&sid)?;
         let file = open_file(path)?;
         validate_private_file(&file, descriptor.owner()?)?;
+        Ok(file)
+    }
+
+    pub(super) fn open_or_repair_private_file(path: &Path) -> Result<std::fs::File> {
+        let sid = current_sid()?;
+        let descriptor = LocalSecurityDescriptor::from_sid(&sid)?;
+        let file = open_file(path)?;
+        let expected_owner = descriptor.owner()?;
+        if validate_private_file(&file, expected_owner).is_ok() {
+            return Ok(file);
+        }
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+            return Err(std::io::Error::last_os_error()).context("failed to inspect private file metadata");
+        }
+        if information.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0
+            || unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK
+            || information.nNumberOfLinks != 1
+        {
+            bail!("private file is not an ordinary, single-link file");
+        }
+        if !owner_matches(&file, expected_owner)? {
+            bail!("private file belongs to a different Windows user");
+        }
+        descriptor.apply_dacl(file.as_raw_handle())?;
+        validate_private_file(&file, expected_owner)?;
         Ok(file)
     }
 

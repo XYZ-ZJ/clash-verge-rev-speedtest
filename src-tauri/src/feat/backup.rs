@@ -122,22 +122,19 @@ async fn finalize_restored_verge_config(
 
     let restored_clash = IClashTemp::new().await;
     let clash_draft = Config::clash().await;
+    let profiles_draft = Config::profiles().await;
+    let verge_draft = Config::verge().await;
+    let transaction = clash_verge_draft::DraftTransaction::begin(vec![&clash_draft, &profiles_draft, &verge_draft])?;
+
     clash_draft.edit_draft(|d| {
         *d = restored_clash;
     });
-    clash_draft.apply();
-
-    let profiles_draft = Config::profiles().await;
     profiles_draft.edit_draft(|d| {
         *d = restored_profiles;
     });
-    profiles_draft.apply();
-
-    let verge_draft = Config::verge().await;
     verge_draft.edit_draft(|d| {
         *d = restored.clone();
     });
-    verge_draft.apply();
 
     // Turn it off here; a failing core side effect below would otherwise skip this step.
     if !restored.enable_system_proxy.unwrap_or_default() {
@@ -154,6 +151,8 @@ async fn finalize_restored_verge_config(
             }
         }
     }
+
+    transaction.commit();
 
     // `patch_verge` re-acquires the configuration write lock.
     drop(config_write);
@@ -328,17 +327,73 @@ fn stage_backup_archive(
     Ok((staging_dir, files_to_apply))
 }
 
-fn apply_staged_backup(files_to_apply: &[(PathBuf, PathBuf)]) -> Result<()> {
-    for (staged, target) in files_to_apply {
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
+struct BackupRestoreRollback {
+    rollback_dir: PathBuf,
+    entries: Vec<(PathBuf, Option<PathBuf>)>,
+}
+
+impl BackupRestoreRollback {
+    fn capture(home_dir: &std::path::Path, files_to_apply: &[(PathBuf, PathBuf)]) -> Result<Self> {
+        let rollback_dir = home_dir.join(format!(".restore-rollback-{}", nanoid::nanoid!(8)));
+        std::fs::create_dir_all(&rollback_dir)?;
+        let mut entries = Vec::with_capacity(files_to_apply.len());
+        for (idx, (_, target)) in files_to_apply.iter().enumerate() {
+            if target.exists() {
+                let saved = rollback_dir.join(format!("orig-{idx}"));
+                std::fs::copy(target, &saved)?;
+                entries.push((target.clone(), Some(saved)));
+            } else {
+                entries.push((target.clone(), None));
+            }
         }
-        std::fs::copy(staged, target)?;
+        Ok(Self { rollback_dir, entries })
     }
-    Ok(())
+
+    fn restore(&self) {
+        for (target, saved) in &self.entries {
+            match saved {
+                Some(orig) => {
+                    let _ = std::fs::copy(orig, target);
+                }
+                None => {
+                    let _ = std::fs::remove_file(target);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for BackupRestoreRollback {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.rollback_dir);
+    }
+}
+
+fn apply_staged_backup(
+    home_dir: &std::path::Path,
+    files_to_apply: &[(PathBuf, PathBuf)],
+) -> Result<BackupRestoreRollback> {
+    let rollback = BackupRestoreRollback::capture(home_dir, files_to_apply)?;
+    for (staged, target) in files_to_apply {
+        if let Some(parent) = target.parent()
+            && let Err(err) = std::fs::create_dir_all(parent)
+        {
+            rollback.restore();
+            return Err(err.into());
+        }
+        if let Err(err) = std::fs::copy(staged, target) {
+            rollback.restore();
+            return Err(err.into());
+        }
+    }
+    Ok(rollback)
 }
 
 /// Backup creation strips the WebDAV credentials, so the live ones are kept.
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "config_write is moved into finalize_restored_verge_config"
+)]
 async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     let (webdav_url, webdav_username, webdav_password) = {
         let verge = Config::verge().await;
@@ -351,30 +406,57 @@ async fn restore_backup_archive(path: PathBuf) -> Result<()> {
     };
 
     let home_dir = app_home_dir()?;
-    let (staging_dir, files_to_apply) = AsyncHandler::spawn_blocking(move || stage_backup_archive(&path, &home_dir))
-        .await
-        .map_err(|join| anyhow!("backup extraction task failed: {join}"))??;
+    let home_for_stage = home_dir.clone();
+    let (staging_dir, files_to_apply) =
+        AsyncHandler::spawn_blocking(move || stage_backup_archive(&path, &home_for_stage))
+            .await
+            .map_err(|join| anyhow!("backup extraction task failed: {join}"))??;
     let _cleanup_staging = scopeguard::guard(staging_dir, |dir| {
         let _ = std::fs::remove_dir_all(dir);
     });
 
     let _profile_write = crate::config::profiles::PROFILE_WRITE_LOCK.lock().await;
-    let config_write = Config::lock_config_write().await;
-    AsyncHandler::spawn_blocking(move || apply_staged_backup(&files_to_apply))
-        .await
-        .map_err(|join| anyhow!("backup apply task failed: {join}"))??;
-
-    finalize_restored_verge_config(config_write, webdav_url, webdav_username, webdav_password).await
+    let (rollback, finalize_res) = {
+        let config_write = Config::lock_config_write().await;
+        let rollback = AsyncHandler::spawn_blocking(move || apply_staged_backup(&home_dir, &files_to_apply))
+            .await
+            .map_err(|join| anyhow!("backup apply task failed: {join}"))??;
+        let finalize_res =
+            finalize_restored_verge_config(config_write, webdav_url, webdav_username, webdav_password).await;
+        (rollback, finalize_res)
+    };
+    if let Err(err) = finalize_res {
+        rollback.restore();
+        reload_configs_from_disk().await;
+        return Err(err);
+    }
+    Ok(())
 }
 
-fn webdav_restore_temp_path() -> PathBuf {
-    std::env::temp_dir().join(format!("clash-verge-webdav-restore-{}.zip", nanoid::nanoid!(8)))
+async fn reload_configs_from_disk() {
+    let _config_write = Config::lock_config_write().await;
+    let clash_draft = Config::clash().await;
+    let profiles_draft = Config::profiles().await;
+    let verge_draft = Config::verge().await;
+    let Ok(transaction) = clash_verge_draft::DraftTransaction::begin(vec![&clash_draft, &profiles_draft, &verge_draft])
+    else {
+        return;
+    };
+    let (clash, profiles, verge) = tokio::join!(IClashTemp::new(), IProfiles::new(), IVerge::new());
+    clash_draft.edit_draft(|d| *d = clash);
+    profiles_draft.edit_draft(|d| *d = profiles);
+    verge_draft.edit_draft(|d| *d = verge);
+    transaction.commit();
+}
+
+fn webdav_restore_temp_path() -> Result<PathBuf> {
+    Ok(app_home_dir()?.join(format!(".webdav-restore-{}.zip", nanoid::nanoid!(8))))
 }
 
 #[tracing::instrument(skip_all, level = "info", fields(filename = %filename))]
 pub async fn restore_webdav_backup(filename: String) -> Result<()> {
     validate_backup_archive_name(filename.as_str())?;
-    let backup_storage_path = webdav_restore_temp_path();
+    let backup_storage_path = webdav_restore_temp_path()?;
     let name = filename.to_string();
     let download_res = backup::WebDavClient::global()
         .download(filename, backup_storage_path.clone())
@@ -615,8 +697,8 @@ mod tests {
         assert!(validate_backup_archive_name("config.yaml").is_err());
         assert!(validate_backup_archive_name("backup-2026.zip").is_ok());
         assert_eq!(
-            webdav_restore_temp_path().parent(),
-            Some(std::env::temp_dir().as_path())
+            webdav_restore_temp_path().ok().as_deref().and_then(Path::parent),
+            super::app_home_dir().ok().as_deref()
         );
     }
 

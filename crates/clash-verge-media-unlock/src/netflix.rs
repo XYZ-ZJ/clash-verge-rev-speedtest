@@ -39,27 +39,29 @@ pub(super) async fn check_netflix(client: &Client) -> UnlockItem {
     }
 
     let (r1, r2) = tokio::join!(check_title(client, "81280792"), check_title(client, "70143836"));
+    let s1 = r1.ok();
+    let s2 = r2.ok();
 
-    let (Ok(status1), Ok(status2)) = (r1, r2) else {
-        return item("Failed");
-    };
-
-    if status1 == StatusCode::NOT_FOUND && status2 == StatusCode::NOT_FOUND {
-        return item("Originals Only");
-    }
-
-    if status1 == StatusCode::FORBIDDEN || status2 == StatusCode::FORBIDDEN {
+    if s1 == Some(StatusCode::FORBIDDEN) || s2 == Some(StatusCode::FORBIDDEN) {
         return item("No");
     }
 
-    if [status1, status2]
-        .iter()
-        .any(|s| matches!(*s, StatusCode::OK | StatusCode::MOVED_PERMANENTLY))
+    if [s1, s2]
+        .into_iter()
+        .flatten()
+        .any(|s| matches!(s, StatusCode::OK | StatusCode::MOVED_PERMANENTLY))
     {
         return check_region(client).await;
     }
 
-    item(format!("Failed (状态码: {status1}_{status2})"))
+    if s1 == Some(StatusCode::NOT_FOUND) && s2 == Some(StatusCode::NOT_FOUND) {
+        return item("Originals Only");
+    }
+
+    match (s1, s2) {
+        (Some(status1), Some(status2)) => item(format!("Failed (状态码: {status1}_{status2})")),
+        _ => item("Failed"),
+    }
 }
 
 async fn check_title(client: &Client, id: &str) -> reqwest::Result<StatusCode> {
@@ -108,10 +110,12 @@ async fn check_region(client: &Client) -> UnlockItem {
                 .and_then(parse_country_segment)
                 .or_else(|| location.split('/').nth(1).and_then(parse_country_segment))
         })
-        .or_else(|| response.url().path().split('/').nth(1).and_then(parse_country_segment))
-        .unwrap_or("us");
+        .or_else(|| response.url().path().split('/').nth(1).and_then(parse_country_segment));
 
-    UnlockItem::checked_region(NETFLIX_NAME, "Yes", region)
+    match region {
+        Some(code) => UnlockItem::checked_region(NETFLIX_NAME, "Yes", code),
+        None => item("Yes"),
+    }
 }
 
 async fn check_netflix_cdn(client: &Client) -> UnlockItem {

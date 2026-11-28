@@ -38,12 +38,23 @@ pub fn apply_wayland_webkit_fix() {
         .and_then(|output| String::from_utf8(output.stdout).ok());
 
     if let Some(v) = version
-        && v.trim() <= "1.23.0"
+        && is_wayland_client_at_most_1_23_0(&v)
     {
         unsafe {
             env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
     }
+}
+
+fn is_wayland_client_at_most_1_23_0(version: &str) -> bool {
+    let core = version.trim().split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.');
+    let Ok(major) = parts.next().unwrap_or_default().parse::<u64>() else {
+        return false;
+    };
+    let minor = parts.next().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+    let patch = parts.next().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+    (major, minor, patch) <= (1, 23, 0)
 }
 
 fn has_nvidia_gpu() -> bool {

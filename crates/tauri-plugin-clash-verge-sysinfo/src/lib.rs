@@ -142,23 +142,24 @@ pub fn list_network_interfaces() -> Vec<String> {
 
 #[inline]
 pub fn set_app_core_mode<R: Runtime>(app: &tauri::AppHandle<R>, mode: impl Into<String>) {
-    let platform_spec = app.state::<RwLock<Platform>>();
-    let mut spec = platform_spec.write();
-    spec.appinfo.app_core_mode = mode.into();
+    if let Some(platform_spec) = app.try_state::<RwLock<Platform>>() {
+        let mut spec = platform_spec.write();
+        spec.appinfo.app_core_mode = mode.into();
+    }
 }
 
 #[inline]
 pub fn get_app_uptime<R: Runtime>(app: &tauri::AppHandle<R>) -> Instant {
-    let platform_spec = app.state::<RwLock<Platform>>();
-    let spec = platform_spec.read();
-    spec.appinfo.app_startup_time
+    app.try_state::<RwLock<Platform>>()
+        .map_or_else(Instant::now, |platform_spec| {
+            platform_spec.read().appinfo.app_startup_time
+        })
 }
 
 #[inline]
 pub fn is_current_app_handle_admin<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
-    let platform_spec = app.state::<RwLock<Platform>>();
-    let spec = platform_spec.read();
-    spec.appinfo.app_is_admin
+    app.try_state::<RwLock<Platform>>()
+        .is_some_and(|platform_spec| platform_spec.read().appinfo.app_is_admin)
 }
 
 #[inline]

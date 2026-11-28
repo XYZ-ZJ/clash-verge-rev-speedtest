@@ -118,7 +118,15 @@
         "purityLevelFair": "Fair",
         "purityLevelSuspicious": "Suspicious",
         "purityLevelDanger": "Risky",
-        "purityUnavailable": "Unavailable"
+        "purityUnavailable": "Unavailable",
+        "cfHintPass": "Cloudflare edge passed directly in live probe; this exit has good reputation.",
+        "cfHintInteractive": "Cloudflare challenge detected; human verification may be required on protected sites.",
+        "cfHintFail": "Cloudflare edge probe failed or was blocked; check connectivity or switch proxy node.",
+        "cfPassTitle": "عبور مستقیم",
+        "splitTitle": "مسیریابی تفکیک‌شده",
+        "splitActive": "تفکیک فعال",
+        "noExits": "خروجی شناسایی نشد",
+        "noFindings": "نتیجه‌ای یافت نشد"
       },
       "errors": {
         "load": "دریافت اطلاعات IP با خطا مواجه شد",

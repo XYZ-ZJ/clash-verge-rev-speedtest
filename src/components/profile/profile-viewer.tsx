@@ -82,11 +82,15 @@ export function ProfileViewer({ onChange, ref }: ProfileViewerProps) {
   useImperativeHandle(ref, () => ({
     create: () => {
       clearResetTimer()
+      fileDataRef.current = null
+      reset()
       setOpenType('new')
       setOpen(true)
     },
     edit: (item: IProfileItem) => {
       clearResetTimer()
+      fileDataRef.current = null
+      reset()
       if (item) {
         Object.entries(item).forEach(([key, value]) => {
           setValue(key as any, value)

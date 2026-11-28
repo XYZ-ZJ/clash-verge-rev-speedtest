@@ -106,12 +106,14 @@ impl SystemHotkey {
 
 pub struct Hotkey {
     current: ArcSwap<Vec<String>>,
+    op_lock: tokio::sync::Mutex<()>,
 }
 
 impl Hotkey {
     fn new() -> Self {
         Self {
             current: ArcSwap::new(Arc::new(Vec::new())),
+            op_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -209,6 +211,7 @@ impl Hotkey {
     #[cfg(target_os = "macos")]
     /// Register a system hotkey using enum
     pub async fn register_system_hotkey(&self, hotkey: SystemHotkey) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
         let hotkey_str = hotkey.to_string();
         let function = hotkey.function();
         self.register_hotkey_with_function(&hotkey_str, function).await
@@ -216,7 +219,8 @@ impl Hotkey {
 
     #[cfg(target_os = "macos")]
     /// Unregister a system hotkey using enum
-    pub fn unregister_system_hotkey(&self, hotkey: SystemHotkey) -> Result<()> {
+    pub async fn unregister_system_hotkey(&self, hotkey: SystemHotkey) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
         let hotkey_str = hotkey.to_string();
         self.unregister(&hotkey_str)
     }
@@ -311,6 +315,7 @@ singleton!(Hotkey, INSTANCE);
 
 impl Hotkey {
     pub async fn init(&self, skip: bool) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
         if skip {
             logging!(debug, Type::Hotkey, "skip register all hotkeys");
             // Nothing is registered on this path; keep the diff baseline empty
@@ -382,7 +387,8 @@ impl Hotkey {
         Ok(())
     }
 
-    pub fn reset(&self) -> Result<()> {
+    pub async fn reset(&self) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
         let app_handle = handle::Handle::app_handle();
         let manager = app_handle.global_shortcut();
         manager.unregister_all()?;
@@ -407,6 +413,7 @@ impl Hotkey {
     }
 
     pub async fn update(&self, new_hotkeys: Vec<String>) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
         // Extract current hotkeys before async operations
         let current_hotkeys = &*self.current.load();
         let old_map = Self::get_map_from_vec(current_hotkeys);

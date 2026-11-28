@@ -558,7 +558,7 @@ const ProfilePage = () => {
         id: 'enhance-profiles',
         errorNotice: false,
       })
-      if (!(result.ok && result.value === true)) return
+      if (!(result.ok && result.value.status === 'valid')) return
       mutateLogs()
       if (notifySuccess) {
         showNotice.success(
@@ -648,8 +648,12 @@ const ProfilePage = () => {
   })
 
   const onCopyLink = async () => {
-    const text = await readText()
-    if (text) setUrl(text)
+    try {
+      const text = await readText()
+      if (text) setUrl(text)
+    } catch (err) {
+      showNotice.error(err)
+    }
   }
 
   const toggleBatchMode = () => {

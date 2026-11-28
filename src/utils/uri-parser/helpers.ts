@@ -82,7 +82,7 @@ export function splitOnce(input: string, delimiter: string): [string, string?] {
 export function parseQueryString(
   query: string | undefined,
 ): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = {}
+  const out: Record<string, string | undefined> = Object.create(null)
   if (!query) return out
   for (const part of query.split('&')) {
     if (!part) continue
@@ -105,7 +105,7 @@ export function parseQueryStringNormalized(
   query: string | undefined,
 ): Record<string, string | undefined> {
   const raw = parseQueryString(query)
-  const normalized: Record<string, string | undefined> = {}
+  const normalized: Record<string, string | undefined> = Object.create(null)
   for (const [key, value] of Object.entries(raw)) {
     normalized[normalizeQueryKey(key)] = value
   }

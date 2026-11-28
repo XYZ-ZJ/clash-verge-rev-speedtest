@@ -115,12 +115,18 @@ export interface TranslationResources {
         }
         ipInfo: {
           detailModal: {
+            cfHintFail: string
+            cfHintInteractive: string
+            cfHintPass: string
+            cfPassTitle: string
             cfTitle: string
             close: string
             exitsTitle: string
             findingsTitle: string
             hideIp: string
             lastCheck: string
+            noExits: string
+            noFindings: string
             openTooltip: string
             purityHighRisk: string
             purityLevelDanger: string
@@ -136,6 +142,8 @@ export interface TranslationResources {
             refresh: string
             retest: string
             showIp: string
+            splitActive: string
+            splitTitle: string
             startDetect: string
             testing: string
             title: string

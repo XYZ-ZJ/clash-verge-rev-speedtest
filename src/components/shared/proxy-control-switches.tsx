@@ -163,8 +163,14 @@ const ProxyControlSwitches = ({
       })
       return false
     }
+    const previousVerge = verge
     mutateVerge({ ...verge, enable_tun_mode: value })
-    await patchVerge({ enable_tun_mode: value })
+    try {
+      await patchVerge({ enable_tun_mode: value })
+    } catch (err) {
+      mutateVerge(previousVerge)
+      throw err
+    }
   }
 
   const onUninstallService = useLockFn(async () => {

@@ -477,7 +477,7 @@ export const GroupsEditorViewer = (props: Props) => {
         id: `save-profile-file:${property}`,
         errorNotice: false,
       })
-      if (!(result.ok && result.value === true)) {
+      if (!(result.ok && result.value.status === 'valid')) {
         await fetchContent()
         onClose()
         return
@@ -705,8 +705,10 @@ export const GroupsEditorViewer = (props: Props) => {
                         placeholder="*"
                         size="small"
                         sx={{ width: 'calc(100% - 150px)' }}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseInt(e.target.value, 10))
+                          const raw = e.target.value
+                          field.onChange(raw === '' ? undefined : raw)
                         }}
                       />
                     </Item>
@@ -728,8 +730,17 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ width: 'calc(100% - 150px)' }}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseInt(e.target.value, 10))
+                          const raw = e.target.value.trim()
+                          if (raw === '') {
+                            field.onChange(undefined)
+                            return
+                          }
+                          const parsed = Number.parseInt(raw, 10)
+                          field.onChange(
+                            Number.isFinite(parsed) ? parsed : undefined,
+                          )
                         }}
                         slotProps={{
                           input: {
@@ -756,8 +767,17 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ width: 'calc(100% - 150px)' }}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseInt(e.target.value, 10))
+                          const raw = e.target.value.trim()
+                          if (raw === '') {
+                            field.onChange(undefined)
+                            return
+                          }
+                          const parsed = Number.parseInt(raw, 10)
+                          field.onChange(
+                            Number.isFinite(parsed) ? parsed : undefined,
+                          )
                         }}
                         slotProps={{
                           input: {
@@ -788,8 +808,17 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ width: 'calc(100% - 150px)' }}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseInt(e.target.value, 10))
+                          const raw = e.target.value.trim()
+                          if (raw === '') {
+                            field.onChange(undefined)
+                            return
+                          }
+                          const parsed = Number.parseInt(raw, 10)
+                          field.onChange(
+                            Number.isFinite(parsed) ? parsed : undefined,
+                          )
                         }}
                       />
                     </Item>
@@ -831,8 +860,17 @@ export const GroupsEditorViewer = (props: Props) => {
                         type="number"
                         size="small"
                         sx={{ width: 'calc(100% - 150px)' }}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseInt(e.target.value, 10))
+                          const raw = e.target.value.trim()
+                          if (raw === '') {
+                            field.onChange(undefined)
+                            return
+                          }
+                          const parsed = Number.parseInt(raw, 10)
+                          field.onChange(
+                            Number.isFinite(parsed) ? parsed : undefined,
+                          )
                         }}
                       />
                     </Item>

@@ -23,6 +23,7 @@ vi.mock('react', async (importOriginal) => {
   return {
     ...actual,
     useEffect: (effect: () => void | (() => void)) => effect(),
+    useRef: <T>(initial: T) => ({ current: initial }),
   }
 })
 vi.mock('@/store/app-store-context', () => ({

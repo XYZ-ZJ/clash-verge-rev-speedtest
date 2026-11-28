@@ -325,12 +325,52 @@ fn scan_current_profile_from(
     scan_provider_file(&profile_path, features);
 }
 
-fn collect_node_features(config: Option<&Mapping>) -> NodeFeatureScopes {
-    let mut scopes = NodeFeatureScopes::default();
-    let Some(config) = config else {
-        return scopes;
+#[derive(Clone, PartialEq, Eq)]
+struct NodeFeatureCacheKey {
+    profiles_mtime: Option<std::time::SystemTime>,
+    profiles_len: Option<u64>,
+}
+
+struct NodeFeatureCacheEntry {
+    runtime: std::sync::Weak<Box<crate::config::runtime::IRuntime>>,
+    key: NodeFeatureCacheKey,
+    scopes: NodeFeatureScopes,
+}
+
+fn file_stamp(path: &std::path::Path) -> (Option<std::time::SystemTime>, Option<u64>) {
+    match std::fs::metadata(path) {
+        Ok(meta) => (meta.modified().ok(), Some(meta.len())),
+        Err(_) => (None, None),
+    }
+}
+
+#[allow(clippy::redundant_allocation)]
+fn collect_node_features(runtime: &std::sync::Arc<Box<crate::config::runtime::IRuntime>>) -> NodeFeatureScopes {
+    static CACHE: parking_lot::Mutex<Option<NodeFeatureCacheEntry>> = parking_lot::Mutex::new(None);
+
+    let Some(config) = runtime.config.as_ref() else {
+        return NodeFeatureScopes::default();
     };
 
+    let (profiles_mtime, profiles_len) = crate::utils::dirs::profiles_path()
+        .map(|p| file_stamp(&p))
+        .unwrap_or((None, None));
+    let key = NodeFeatureCacheKey {
+        profiles_mtime,
+        profiles_len,
+    };
+
+    if let Some(entry) = CACHE.lock().as_ref()
+        && entry.key == key
+        && entry
+            .runtime
+            .upgrade()
+            .is_some_and(|cached| std::sync::Arc::ptr_eq(&cached, runtime))
+    {
+        return entry.scopes.clone();
+    }
+
+    let mut scopes = NodeFeatureScopes::default();
     if let Some(proxies) = config.get("proxies").and_then(|v| v.as_sequence()) {
         scan_proxies_slice(proxies, &mut scopes.core);
     }
@@ -340,7 +380,11 @@ fn collect_node_features(config: Option<&Mapping>) -> NodeFeatureScopes {
     }
 
     scan_current_profile(&mut scopes.core);
-
+    *CACHE.lock() = Some(NodeFeatureCacheEntry {
+        runtime: std::sync::Arc::downgrade(runtime),
+        key,
+        scopes: scopes.clone(),
+    });
     scopes
 }
 
@@ -354,7 +398,7 @@ pub async fn get_proxy_view() -> CmdResult<ProxyViewV1> {
     let runtime_for_scan = std::sync::Arc::clone(&latest_runtime);
 
     let (node_features, (proxies, providers)) = tokio::join!(
-        tokio::task::spawn_blocking(move || collect_node_features(runtime_for_scan.config.as_ref())),
+        tokio::task::spawn_blocking(move || collect_node_features(&runtime_for_scan)),
         async {
             let mihomo = Handle::mihomo();
             tokio::join!(mihomo.get_proxies(), mihomo.get_proxy_providers())

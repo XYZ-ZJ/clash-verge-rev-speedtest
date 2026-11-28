@@ -67,6 +67,7 @@ export const createEventBus = (deps: BusHandlerDeps) => {
         'getClashInfo',
         'getClashMode',
         'getRuntimeConfig',
+        'getRules',
         'getRuleProviders',
       ]),
     'verge://refresh-verge-config': () =>

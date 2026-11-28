@@ -213,6 +213,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
   const [visualization, setVisualization] = useState(true)
   const pendingFormSyncRef = useRef(false)
   const loadedConfigRef = useRef<Record<string, any> | null>(null)
+  const previousSavedConfigRef = useRef<Record<string, any> | null>(null)
   const editorRef = useRef<MonacoEditorInstance | null>(null)
   const [values, setValues] = useState<{
     enable: boolean
@@ -486,8 +487,9 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
 
       if (dnsConfig !== null) {
         const config = yaml.load(dnsConfig) as any
-        loadedConfigRef.current =
-          config && typeof config === 'object' ? config : null
+        const parsedObj = config && typeof config === 'object' ? config : null
+        loadedConfigRef.current = parsedObj
+        previousSavedConfigRef.current = parsedObj
         updateValuesFromConfig(config)
         setYamlContent(dnsConfig)
       } else {
@@ -541,6 +543,7 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
         config = parsedConfig as Record<string, any>
       }
 
+      const rollbackConfig = previousSavedConfigRef.current
       await mutate(() => saveDnsConfig(config), {
         id: 'save-dns-config',
         errorNotice: false,
@@ -549,6 +552,11 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
       const validation = await validateDnsConfig()
 
       if (validation.status !== 'valid') {
+        if (rollbackConfig) {
+          await saveDnsConfig(rollbackConfig).catch((rollbackErr) => {
+            console.error('Failed to rollback invalid DNS config:', rollbackErr)
+          })
+        }
         const errorMsg =
           validation.status === 'invalid'
             ? validation.message
@@ -590,6 +598,8 @@ export function DnsViewer({ ref }: { ref?: Ref<DialogRef> }) {
         mutateClash()
       }
 
+      previousSavedConfigRef.current = config
+      loadedConfigRef.current = config
       setOpen(false)
       showNotice.success('settings.modals.dns.messages.saved')
     } catch (err) {

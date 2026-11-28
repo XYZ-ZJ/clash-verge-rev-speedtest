@@ -156,7 +156,6 @@ const ConnectionsPage = () => {
   const onCloseAll = useLockFn(() =>
     mutate(() => closeAllConnections(), {
       id: 'close-all-connections',
-      errorNotice: false,
     }),
   )
 
@@ -304,6 +303,7 @@ const ConnectionsPage = () => {
           key={connectionsType}
           count={displayRows.length}
           estimateSize={56}
+          getItemKey={(i) => displayRows[i]?.id ?? i}
           renderItem={(i) => (
             <ConnectionRowItem
               row={displayRows[i]}

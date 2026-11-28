@@ -358,6 +358,9 @@ export type IVergeTheme_Deserialize = {
   success_color?: string | null
   font_family?: string | null
   css_injection?: string | null
+  background_image?: string | null
+  background_blend_mode?: string | null
+  background_opacity?: number | null
 }
 
 export type IVergeTheme_Serialize = {
@@ -371,6 +374,9 @@ export type IVergeTheme_Serialize = {
   success_color: string | null
   font_family: string | null
   css_injection: string | null
+  background_image: string | null
+  background_blend_mode: string | null
+  background_opacity: number | null
 }
 
 /**  ### `verge.yaml` schema */

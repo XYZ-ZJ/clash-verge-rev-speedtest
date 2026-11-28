@@ -199,6 +199,11 @@ impl Tray {
     }
 
     async fn update_menu_internal(&self, app_handle: &AppHandle, include_proxy_groups: bool) -> Result<()> {
+        static MENU_UPDATE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let generation = MENU_UPDATE_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            .wrapping_add(1);
+
         let Some(tray) = app_handle.tray_by_id(TRAY_ID) else {
             logging!(warn, Type::Tray, "Failed to update tray menu: tray not found");
             return Ok(());
@@ -223,24 +228,26 @@ impl Tray {
         let profiles_preview = profiles_arc.profiles_preview().unwrap_or_default();
         let is_lightweight_mode = is_in_lightweight_mode();
 
-        logging_error!(
-            Type::Tray,
-            tray.set_menu(Some(
-                create_tray_menu(
-                    app_handle,
-                    Some(mode.as_str()),
-                    *system_proxy,
-                    *tun_mode,
-                    tun_mode_available,
-                    profiles_preview,
-                    TrayMenuOptions {
-                        is_lightweight_mode,
-                        include_proxy_groups,
-                    },
-                )
-                .await?,
-            ))
-        );
+        let menu = create_tray_menu(
+            app_handle,
+            Some(mode.as_str()),
+            *system_proxy,
+            *tun_mode,
+            tun_mode_available,
+            profiles_preview,
+            TrayMenuOptions {
+                is_lightweight_mode,
+                include_proxy_groups,
+            },
+        )
+        .await?;
+
+        if MENU_UPDATE_GEN.load(std::sync::atomic::Ordering::Acquire) != generation {
+            logging!(debug, Type::Tray, "跳过过时的托盘菜单更新");
+            return Ok(());
+        }
+
+        logging_error!(Type::Tray, tray.set_menu(Some(menu)));
 
         logging!(debug, Type::Tray, "托盘菜单更新成功");
         Ok(())

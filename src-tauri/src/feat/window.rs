@@ -172,6 +172,10 @@ pub async fn quit() {
     logging!(debug, Type::System, "启动退出流程");
     let cleanup_result = run_exit_cleanup_flow(NoticeStatus::AppQuitCoreStopFailed).await;
 
+    if !cleanup_result.core_stopped {
+        return;
+    }
+
     utils::server::shutdown_embedded_server();
     let app_handle = handle::Handle::app_handle();
     app_handle.exit(if cleanup_result.all_success { 0 } else { 1 });

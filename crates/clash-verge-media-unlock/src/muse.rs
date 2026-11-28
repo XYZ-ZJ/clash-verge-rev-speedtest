@@ -27,7 +27,9 @@ pub(super) async fn check_muse_ai(client: &Client) -> UnlockItem {
 
     let status = response.status();
     let landed_on_aymh = response.url().host_str() == Some("auth.muse.ai");
-    let body = response.text().await.unwrap_or_default();
+    let Ok(body) = response.text().await else {
+        return UnlockItem::checked(MUSE_AI_NAME, "Failed (Cannot Read Response)", region);
+    };
 
     // Every region is redirected to the aymh anti-bot gateway before the app
     // loads, and a non-browser HTTP client cannot finish the JavaScript

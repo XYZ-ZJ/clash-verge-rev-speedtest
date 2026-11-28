@@ -41,7 +41,12 @@ pub(crate) fn resolve_setup_sync() {
         AsyncHandler::spawn_blocking(init_scheme);
         AsyncHandler::spawn_blocking(server::embed_server);
         #[cfg(target_os = "linux")]
-        AsyncHandler::spawn_blocking(watch_linux_theme_changed);
+        if let Err(err) = std::thread::Builder::new()
+            .name("linux-theme-watcher".to_owned())
+            .spawn(watch_linux_theme_changed)
+        {
+            logging!(warn, Type::Setup, "Failed to spawn linux theme watcher: {err}");
+        }
     });
 }
 
@@ -108,6 +113,9 @@ fn watch_linux_theme_changed() {
     match dark_light::subscribe() {
         Ok(watcher) => {
             for mode in watcher.iter() {
+                if Handle::global().is_exiting() {
+                    break;
+                }
                 use crate::core::notification;
 
                 let theme = match mode {

@@ -14,7 +14,13 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { exists } from '@tauri-apps/plugin-fs'
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BaseDialog, DialogRef, Switch, TooltipIcon } from '@/components/base'
@@ -37,16 +43,31 @@ const clampHoverDelay = (value: number) => {
   return Math.min(5000, Math.max(0, Math.round(value)))
 }
 
-const getIcons = async (icon_dir: string, name: string) => {
-  const updateTime = localStorage.getItem(`icon_${name}_update_time`) || ''
+const ICON_EXTS = [
+  'ico',
+  'png',
+  'svg',
+  'webp',
+  'jpg',
+  'jpeg',
+  'bmp',
+  'icns',
+] as const
 
-  const icon_png = await join(icon_dir, `${name}-${updateTime}.png`)
-  const icon_ico = await join(icon_dir, `${name}-${updateTime}.ico`)
-
-  return {
-    icon_png,
-    icon_ico,
+const resolveExistingIcon = async (icon_dir: string, name: string) => {
+  let updateTime = ''
+  try {
+    updateTime = localStorage.getItem(`icon_${name}_update_time`) || ''
+  } catch {
+    // Ignore storage access errors.
   }
+  for (const ext of ICON_EXTS) {
+    const candidate = await join(icon_dir, `${name}-${updateTime}.${ext}`)
+    if (await exists(candidate)) {
+      return candidate
+    }
+  }
+  return await join(icon_dir, `${name}-${updateTime}.png`)
 }
 
 export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
@@ -60,42 +81,28 @@ export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
 
   const { decorated, toggleDecorations } = useWindowDecorations()
 
-  useEffect(() => {
-    initIconPath()
+  const initIconPath = useCallback(async () => {
+    try {
+      const appDir = await getAppDir()
+      const icon_dir = await join(appDir, 'icons')
+      const [common, sysproxy, tun] = await Promise.all([
+        resolveExistingIcon(icon_dir, 'common'),
+        resolveExistingIcon(icon_dir, 'sysproxy'),
+        resolveExistingIcon(icon_dir, 'tun'),
+      ])
+      setCommonIcon(common)
+      setSysproxyIcon(sysproxy)
+      setTunIcon(tun)
+    } catch (err) {
+      console.warn('[LayoutViewer] Failed to resolve icon paths:', err)
+    }
   }, [])
 
-  async function initIconPath() {
-    const appDir = await getAppDir()
-
-    const icon_dir = await join(appDir, 'icons')
-
-    const { icon_png: common_icon_png, icon_ico: common_icon_ico } =
-      await getIcons(icon_dir, 'common')
-
-    const { icon_png: sysproxy_icon_png, icon_ico: sysproxy_icon_ico } =
-      await getIcons(icon_dir, 'sysproxy')
-
-    const { icon_png: tun_icon_png, icon_ico: tun_icon_ico } = await getIcons(
-      icon_dir,
-      'tun',
-    )
-
-    if (await exists(common_icon_ico)) {
-      setCommonIcon(common_icon_ico)
-    } else {
-      setCommonIcon(common_icon_png)
+  useEffect(() => {
+    if (open) {
+      void initIconPath()
     }
-    if (await exists(sysproxy_icon_ico)) {
-      setSysproxyIcon(sysproxy_icon_ico)
-    } else {
-      setSysproxyIcon(sysproxy_icon_png)
-    }
-    if (await exists(tun_icon_ico)) {
-      setTunIcon(tun_icon_ico)
-    } else {
-      setTunIcon(tun_icon_png)
-    }
-  }
+  }, [open, initIconPath])
 
   useImperativeHandle(ref, () => ({
     open: () => setOpen(true),
@@ -132,7 +139,7 @@ export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
             valueProps="checked"
             onCatch={onError}
             onFormat={onSwitchFormat}
-            onChange={async () => {
+            onGuard={async () => {
               await toggleDecorations()
             }}
           >
@@ -521,29 +528,38 @@ export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
                 )
               }
               onClick={async () => {
-                if (verge?.common_tray_icon) {
-                  onChangeData({ common_tray_icon: false })
-                  patchVerge({ common_tray_icon: false })
-                } else {
-                  const selected = await openDialog({
-                    directory: false,
-                    multiple: false,
-                    filters: [
-                      {
-                        name: 'Tray Icon Image',
-                        extensions: ['png', 'ico'],
-                      },
-                    ],
-                  })
-
-                  if (selected) {
-                    await mutate(() => copyIconFile(`${selected}`, 'common'), {
-                      id: 'copy-icon:common',
+                const prev = verge?.common_tray_icon
+                try {
+                  if (prev) {
+                    onChangeData({ common_tray_icon: false })
+                    await patchVerge({ common_tray_icon: false })
+                  } else {
+                    const selected = await openDialog({
+                      directory: false,
+                      multiple: false,
+                      filters: [
+                        {
+                          name: 'Tray Icon Image',
+                          extensions: ['png', 'ico'],
+                        },
+                      ],
                     })
-                    await initIconPath()
-                    onChangeData({ common_tray_icon: true })
-                    patchVerge({ common_tray_icon: true })
+
+                    if (selected) {
+                      await mutate(
+                        () => copyIconFile(`${selected}`, 'common'),
+                        {
+                          id: 'copy-icon:common',
+                        },
+                      )
+                      await initIconPath()
+                      onChangeData({ common_tray_icon: true })
+                      await patchVerge({ common_tray_icon: true })
+                    }
                   }
+                } catch (err) {
+                  onChangeData({ common_tray_icon: prev })
+                  onError(err)
                 }
               }}
             >
@@ -576,29 +592,35 @@ export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
                 )
               }
               onClick={async () => {
-                if (verge?.sysproxy_tray_icon) {
-                  onChangeData({ sysproxy_tray_icon: false })
-                  patchVerge({ sysproxy_tray_icon: false })
-                } else {
-                  const selected = await openDialog({
-                    directory: false,
-                    multiple: false,
-                    filters: [
-                      {
-                        name: 'Tray Icon Image',
-                        extensions: ['png', 'ico'],
-                      },
-                    ],
-                  })
-                  if (selected) {
-                    await mutate(
-                      () => copyIconFile(`${selected}`, 'sysproxy'),
-                      { id: 'copy-icon:sysproxy' },
-                    )
-                    await initIconPath()
-                    onChangeData({ sysproxy_tray_icon: true })
-                    patchVerge({ sysproxy_tray_icon: true })
+                const prev = verge?.sysproxy_tray_icon
+                try {
+                  if (prev) {
+                    onChangeData({ sysproxy_tray_icon: false })
+                    await patchVerge({ sysproxy_tray_icon: false })
+                  } else {
+                    const selected = await openDialog({
+                      directory: false,
+                      multiple: false,
+                      filters: [
+                        {
+                          name: 'Tray Icon Image',
+                          extensions: ['png', 'ico'],
+                        },
+                      ],
+                    })
+                    if (selected) {
+                      await mutate(
+                        () => copyIconFile(`${selected}`, 'sysproxy'),
+                        { id: 'copy-icon:sysproxy' },
+                      )
+                      await initIconPath()
+                      onChangeData({ sysproxy_tray_icon: true })
+                      await patchVerge({ sysproxy_tray_icon: true })
+                    }
                   }
+                } catch (err) {
+                  onChangeData({ sysproxy_tray_icon: prev })
+                  onError(err)
                 }
               }}
             >
@@ -627,28 +649,34 @@ export const LayoutViewer = forwardRef<DialogRef>((_, ref) => {
                 tunIcon && <img height="20px" src={convertFileSrc(tunIcon)} />
               }
               onClick={async () => {
-                if (verge?.tun_tray_icon) {
-                  onChangeData({ tun_tray_icon: false })
-                  patchVerge({ tun_tray_icon: false })
-                } else {
-                  const selected = await openDialog({
-                    directory: false,
-                    multiple: false,
-                    filters: [
-                      {
-                        name: 'Tun Icon Image',
-                        extensions: ['png', 'ico'],
-                      },
-                    ],
-                  })
-                  if (selected) {
-                    await mutate(() => copyIconFile(`${selected}`, 'tun'), {
-                      id: 'copy-icon:tun',
+                const prev = verge?.tun_tray_icon
+                try {
+                  if (prev) {
+                    onChangeData({ tun_tray_icon: false })
+                    await patchVerge({ tun_tray_icon: false })
+                  } else {
+                    const selected = await openDialog({
+                      directory: false,
+                      multiple: false,
+                      filters: [
+                        {
+                          name: 'Tun Icon Image',
+                          extensions: ['png', 'ico'],
+                        },
+                      ],
                     })
-                    await initIconPath()
-                    onChangeData({ tun_tray_icon: true })
-                    patchVerge({ tun_tray_icon: true })
+                    if (selected) {
+                      await mutate(() => copyIconFile(`${selected}`, 'tun'), {
+                        id: 'copy-icon:tun',
+                      })
+                      await initIconPath()
+                      onChangeData({ tun_tray_icon: true })
+                      await patchVerge({ tun_tray_icon: true })
+                    }
                   }
+                } catch (err) {
+                  onChangeData({ tun_tray_icon: prev })
+                  onError(err)
                 }
               }}
             >

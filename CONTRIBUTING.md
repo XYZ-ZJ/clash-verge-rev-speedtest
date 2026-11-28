@@ -122,8 +122,12 @@ pnpm build:fast
 ```bash
 # Rust backend
 cargo clippy-all
+cargo test --workspace --exclude clash-verge
+cargo test-win  # Windows unit tests for clash-verge
 # Frontend
+pnpm typecheck
 pnpm lint
+pnpm test
 ```
 
 **Code formatting:**

@@ -20,6 +20,7 @@ import { TestItem } from '@/components/test/test-item'
 import { TestViewer, type TestViewerRef } from '@/components/test/test-viewer'
 import { useVerge } from '@/hooks/use-verge'
 import { emitTestAll } from '@/services/bus'
+import { showNotice } from '@/services/notice-service'
 
 import { EnhancedCard } from './enhanced-card'
 
@@ -93,10 +94,16 @@ export const TestCard = () => {
   )
 
   const onDeleteTestListItem = useCallback(
-    (uid: string) => {
+    async (uid: string) => {
+      const previousVerge = verge
       const newList = testList.filter((x) => x.uid !== uid)
-      patchVerge({ test_list: newList })
       mutateVerge({ ...verge, test_list: newList })
+      try {
+        await patchVerge({ test_list: newList })
+      } catch (err) {
+        mutateVerge(previousVerge)
+        showNotice.error(err)
+      }
     },
     [testList, verge, patchVerge, mutateVerge],
   )
@@ -128,17 +135,24 @@ export const TestCard = () => {
       const [removed] = newList.splice(oldIndex, 1)
       newList.splice(newIndex, 0, removed)
 
-      // 优化：先本地更新，再异步 patch，避免UI卡死
+      const previousVerge = verge
       mutateVerge({ ...verge, test_list: newList })
-      const patchFn = () => {
+      const patchFn = async () => {
         try {
-          patchVerge({ test_list: newList })
-        } catch {}
+          await patchVerge({ test_list: newList })
+        } catch (err) {
+          mutateVerge(previousVerge)
+          showNotice.error(err)
+        }
       }
       if (window.requestIdleCallback) {
-        window.requestIdleCallback(patchFn)
+        window.requestIdleCallback(() => {
+          void patchFn()
+        })
       } else {
-        setTimeout(patchFn, 0)
+        setTimeout(() => {
+          void patchFn()
+        }, 0)
       }
     },
     [testList, verge, mutateVerge, patchVerge],

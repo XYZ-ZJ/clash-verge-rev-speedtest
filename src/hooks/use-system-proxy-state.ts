@@ -16,6 +16,9 @@ import {
   useQuery,
 } from '@/services/query-client'
 
+let sharedPendingProxyState: boolean | null = null
+let sharedActiveProxyLoop: Promise<void> | null = null
+
 export const useSystemProxyState = () => {
   const { verge, mutateVerge } = useVerge()
   const { sysproxy } = useSystemData()
@@ -45,9 +48,8 @@ export const useSystemProxyState = () => {
     }
   })()
 
-  // Coalesce rapid clicks so only the latest requested state is applied.
-  const pendingRef = useRef<boolean | null>(null)
-  const activeLoopRef = useRef<Promise<void> | null>(null)
+  const autoCloseRef = useRef(verge?.auto_close_connection ?? false)
+  autoCloseRef.current = verge?.auto_close_connection ?? false
 
   const toggleSystemProxy = async (enabled: boolean) => {
     // Roll failed optimistic writes back to the latest confirmed state.
@@ -55,17 +57,17 @@ export const useSystemProxyState = () => {
     mutateVerge((prev) =>
       prev ? { ...prev, enable_system_proxy: enabled } : prev,
     )
-    pendingRef.current = enabled
+    sharedPendingProxyState = enabled
 
-    if (activeLoopRef.current) {
-      return activeLoopRef.current
+    if (sharedActiveProxyLoop) {
+      return sharedActiveProxyLoop
     }
 
     const runLoop = (async () => {
       try {
-        while (pendingRef.current !== null) {
-          const target = pendingRef.current
-          pendingRef.current = null
+        while (sharedPendingProxyState !== null) {
+          const target = sharedPendingProxyState
+          sharedPendingProxyState = null
           await mutate(
             () => patchVergeConfig({ enable_system_proxy: target }),
             {
@@ -74,7 +76,7 @@ export const useSystemProxyState = () => {
             },
           )
           confirmed = target
-          if (!target && verge?.auto_close_connection) {
+          if (!target && autoCloseRef.current) {
             await mutate(() => closeAllConnections(), {
               id: 'close-all-connections',
               errorNotice: false,
@@ -86,10 +88,10 @@ export const useSystemProxyState = () => {
           prev ? { ...prev, enable_system_proxy: confirmed } : prev,
         )
         // Queued requests were based on a state that never landed.
-        pendingRef.current = null
+        sharedPendingProxyState = null
         throw error
       } finally {
-        activeLoopRef.current = null
+        sharedActiveProxyLoop = null
         // Refreshing cached state is not part of the toggle's result: a failed read must not
         // turn a write that landed into a reported failure.
         try {
@@ -118,7 +120,7 @@ export const useSystemProxyState = () => {
       }
     })()
 
-    activeLoopRef.current = runLoop
+    sharedActiveProxyLoop = runLoop
     return runLoop
   }
 

@@ -249,7 +249,11 @@ impl NetworkManager {
             .await
             .map_err(|e| Self::context_reqwest_error(e, "Failed to read response body"))?
         {
-            if bytes.len() + chunk.len() > Self::MAX_TEXT_BODY_BYTES {
+            if bytes
+                .len()
+                .checked_add(chunk.len())
+                .is_none_or(|total| total > Self::MAX_TEXT_BODY_BYTES)
+            {
                 return Err(anyhow!(
                     "response body exceeded the {} byte limit",
                     Self::MAX_TEXT_BODY_BYTES
@@ -275,8 +279,15 @@ impl NetworkManager {
                 Some(format!("http://127.0.0.1:{port}"))
             }
             ProxyType::System => {
-                if let Ok(p @ Sysproxy { enable: true, .. }) = Sysproxy::get_system_proxy() {
-                    Some(format!("http://{}:{}", p.host, p.port))
+                if let Ok(Ok(p @ Sysproxy { enable: true, .. })) =
+                    tokio::task::spawn_blocking(Sysproxy::get_system_proxy).await
+                {
+                    let host = if p.host.contains(':') && !p.host.starts_with('[') {
+                        format!("[{}]", p.host)
+                    } else {
+                        p.host
+                    };
+                    Some(format!("http://{host}:{}", p.port))
                 } else {
                     None
                 }

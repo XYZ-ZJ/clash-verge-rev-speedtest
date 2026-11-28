@@ -319,10 +319,11 @@ function ChainProxyGroups(props: {
     node.addEventListener('scroll', listener, options)
 
     return () => {
+      saveScrollPositionThrottled.cancel()
       saveScrollPosition(scrollTopRef.current)
       node.removeEventListener('scroll', listener, options)
     }
-  }, [handleScroll, saveScrollPosition])
+  }, [handleScroll, saveScrollPosition, saveScrollPositionThrottled])
 
   const scrollToTop = useCallback(() => {
     parentRef.current?.scrollTo?.({
@@ -473,9 +474,10 @@ function NormalProxyGroups(props: { mode: string }) {
     node.addEventListener('scroll', listener, options)
 
     return () => {
+      saveScrollPositionThrottled.cancel()
       node.removeEventListener('scroll', listener, options)
     }
-  }, [handleScroll])
+  }, [handleScroll, saveScrollPositionThrottled])
 
   const { select } = useProxySelection({
     onSuccess: () => {
