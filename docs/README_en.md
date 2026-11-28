@@ -59,7 +59,7 @@ Language: [简体中文](../README.md) | English
 
 | Architecture | Package | Description |
 | :--- | :--- | :--- |
-| **Windows x64** | `Clash Verge_2.6.2_x64-setup.exe` | Standard 64-bit Windows NSIS installer |
+| **Windows x64** | `Clash Verge_2.6.3_x64-setup.exe` | Standard 64-bit Windows NSIS installer |
 
 ---
 
