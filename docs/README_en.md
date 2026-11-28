@@ -30,7 +30,7 @@ Language: [简体中文](../README.md) | English
 
 ### 4. IP Egress & Split-Routing Inspector
 - Expand the IP Info card to launch an on-demand diagnostic modal:
-  - **Left column**: Direct and proxy IPv4/IPv6 exits (country/city, ISP, ASN, with IP masking toggle).
+  - **Left column**: Direct and proxy IPv4/IPv6 exits (country/city, ISP, ASN, with IP masking toggle) plus a **Multi-Source IP Purity Score** panel (concurrently querying Scamalytics, ipquery, proxycheck.io, and ipapi on a 0–100 trust scale with gradient bars, tier badges, and manual refresh).
   - **Right column**: Structured split-routing findings, accurate system vs. exit timezone offset comparison, WebRTC public `srflx` leak detection, and live **Cloudflare Turnstile / edge trust probing** with one-click retest.
 
 ### 5. DNS Leak Guard & Unified Overseas Default DNS
